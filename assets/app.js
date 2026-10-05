@@ -1426,16 +1426,33 @@
     return scene;
   }
 
+  function updateHotspotTargetHint() {
+    const target = getScene(els.hotspotTarget.value);
+    if (!target) {
+      els.hotspotTargetTypeHint.textContent = 'Выберите целевую сцену';
+      els.hotspotTargetTypeHint.dataset.sceneType = '';
+      return;
+    }
+    const meta = sceneTypeMeta(target);
+    els.hotspotTargetTypeHint.textContent =
+      meta.icon + ' ' + meta.label + ' — ' + meta.detail;
+    els.hotspotTargetTypeHint.dataset.sceneType = target.sceneType || 'panorama';
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
-    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType === 'panorama');
+    const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
     els.hotspotTarget.innerHTML = candidates.length
-      ? candidates.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
+      ? candidates.map((scene) => {
+          const meta = sceneTypeMeta(scene);
+          return `<option value="${escapeHtml(scene.id)}">${meta.icon} ${escapeHtml(scene.title)} — ${meta.label}</option>`;
+        }).join('')
       : '<option value="">Сначала добавьте вторую сцену</option>';
     els.hotspotTarget.disabled = !candidates.length;
     if (selectedId && candidates.some((scene) => scene.id === selectedId)) {
       els.hotspotTarget.value = selectedId;
     }
+    updateHotspotTargetHint();
   }
 
   function setHotspotType(type) {
