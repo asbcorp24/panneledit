@@ -4013,18 +4013,26 @@
     });
 
     let draggedTextElement = null;
+    let textDragOffsetX = 0;
+    let textDragOffsetY = 0;
     els.sceneOverlay.addEventListener('pointerdown', (event) => {
       const element = event.target.closest('[data-text-object-id]');
       if (!element) return;
       event.preventDefault();
       draggedTextElement = element;
+      const elementRect = element.getBoundingClientRect();
+      textDragOffsetX = event.clientX - elementRect.left;
+      textDragOffsetY = event.clientY - elementRect.top;
       element.classList.add('dragging');
       try { element.setPointerCapture(event.pointerId); } catch (_) {}
-      updateDraggedTextObject(element, event.clientX, event.clientY);
     });
     els.sceneOverlay.addEventListener('pointermove', (event) => {
       if (!draggedTextElement) return;
-      updateDraggedTextObject(draggedTextElement, event.clientX, event.clientY);
+      updateDraggedTextObject(
+        draggedTextElement,
+        event.clientX - textDragOffsetX,
+        event.clientY - textDragOffsetY
+      );
     });
     const finishTextDrag = () => {
       if (!draggedTextElement) return;
