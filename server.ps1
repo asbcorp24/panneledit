@@ -36,6 +36,9 @@ function Get-MimeType {
         '.wasm' { return 'application/wasm' }
         '.zip'  { return 'application/zip' }
         '.stl'  { return 'model/stl' }
+        '.wav'  { return 'audio/wav' }
+        '.ogg'  { return 'audio/ogg' }
+        '.mp3'  { return 'audio/mpeg' }
         default { return 'application/octet-stream' }
     }
 }
