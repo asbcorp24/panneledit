@@ -911,7 +911,9 @@
           zoom: data.zoom,
           wireframe: data.wireframe,
           autoRotate: false,
-          color: data.color
+          color: data.color,
+          backgroundMode: data.backgroundMode,
+          backgroundImage: stlBackgroundImageForData(data)
         });
         await tempStl.ready;
         tempStl.render();
@@ -1247,6 +1249,8 @@
           wireframe: data.wireframe,
           autoRotate: data.autoplay,
           color: data.color,
+          backgroundMode: data.backgroundMode,
+          backgroundImage: stlBackgroundImageForData(data),
           onChange: (state) => {
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
@@ -2523,7 +2527,9 @@
         zoom: data.zoom,
         wireframe: data.wireframe,
         autoRotate: data.autoplay,
-        color: data.color
+        color: data.color,
+        backgroundMode: data.backgroundMode,
+        backgroundImage: data.backgroundImage || ''
       });
       stlViewer.ready.catch((error) => {
         console.error(error);
@@ -3264,7 +3270,9 @@
         zoom: data.zoom,
         wireframe: data.wireframe,
         autoRotate: data.autoplay,
-        color: data.color
+        color: data.color,
+        backgroundMode: data.backgroundMode,
+        backgroundImage: stlBackgroundImageForData(data)
       });
       previewStlViewer.ready.catch(console.error);
       return;
