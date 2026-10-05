@@ -614,6 +614,16 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                         captureSession.register(row, sector, actual.angleDeg, file)
                     }
 
+                    runCatching {
+                        PublicStorage.publishPhoto(
+                            this@ArCaptureActivity,
+                            file,
+                            captureSession.sessionId,
+                            row,
+                            sector
+                        )
+                    }
+
                     if (fromAuto) lastAutoKey = "${row}:${sector}"
 
                     runOnUiThread {
@@ -860,10 +870,19 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     }
                 }
 
+                PublicStorage.publishZip(
+                    this,
+                    zip,
+                    "${captureSession.sessionId}.ar.object360.zip"
+                )
+
                 runOnUiThread {
                     AlertDialog.Builder(this)
                         .setTitle("AR-экспорт готов")
-                        .setMessage(zip.absolutePath)
+                        .setMessage(
+                            "ZIP сохранён в Загрузки/Object360/\n\n" +
+                                "Фотографии доступны в Pictures/Object360/${captureSession.sessionId}/"
+                        )
                         .setPositiveButton("OK", null)
                         .show()
                 }
