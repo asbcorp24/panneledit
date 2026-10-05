@@ -2095,11 +2095,16 @@
     };
   }
 
-  function buildPortableTourConfig(sceneFiles, multiresScenes = new Map(), objectSceneFiles = new Map()) {
-    const firstPanorama = project.scenes.find((scene) => scene.sceneType !== 'object360')?.id || null;
+  function buildPortableTourConfig(
+    sceneFiles,
+    multiresScenes = new Map(),
+    objectSceneFiles = new Map(),
+    stlSceneFiles = new Map()
+  ) {
+    const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
 
-    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
+    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
       const sceneConfig = config.scenes[scene.id];
       if (!sceneConfig) return;
 
@@ -2129,10 +2134,11 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: scene.sceneType === 'object360' ? 'object360' : 'panorama'
+        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama'
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
+    config.stlScenes = Object.fromEntries(stlSceneFiles);
     return config;
   }
 
