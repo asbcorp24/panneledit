@@ -4,38 +4,38 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $Root = [System.IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
+$Sep = [System.IO.Path]::DirectorySeparatorChar.ToString()
 $RootPrefix = $Root
-if (-not $RootPrefix.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
-    $RootPrefix += [System.IO.Path]::DirectorySeparatorChar
+if (-not $RootPrefix.EndsWith($Sep)) {
+    $RootPrefix += $Sep
 }
 
 function Get-MimeType {
     param([string]$Path)
 
     switch ([System.IO.Path]::GetExtension($Path).ToLowerInvariant()) {
-        '.html' { 'text/html; charset=utf-8' }
-        '.htm'  { 'text/html; charset=utf-8' }
-        '.css'  { 'text/css; charset=utf-8' }
-        '.js'   { 'application/javascript; charset=utf-8' }
-        '.mjs'  { 'application/javascript; charset=utf-8' }
-        '.json' { 'application/json; charset=utf-8' }
-        '.txt'  { 'text/plain; charset=utf-8' }
-        '.svg'  { 'image/svg+xml' }
-        '.png'  { 'image/png' }
-        '.jpg'  { 'image/jpeg' }
-        '.jpeg' { 'image/jpeg' }
-        '.webp' { 'image/webp' }
-        '.gif'  { 'image/gif' }
-        '.ico'  { 'image/x-icon' }
-        '.woff' { 'font/woff' }
-        '.woff2' { 'font/woff2' }
-        '.ttf'  { 'font/ttf' }
-        '.wasm' { 'application/wasm' }
-        '.zip'  { 'application/zip' }
-        default { 'application/octet-stream' }
+        '.html' { return 'text/html; charset=utf-8' }
+        '.htm'  { return 'text/html; charset=utf-8' }
+        '.css'  { return 'text/css; charset=utf-8' }
+        '.js'   { return 'application/javascript; charset=utf-8' }
+        '.mjs'  { return 'application/javascript; charset=utf-8' }
+        '.json' { return 'application/json; charset=utf-8' }
+        '.txt'  { return 'text/plain; charset=utf-8' }
+        '.svg'  { return 'image/svg+xml' }
+        '.png'  { return 'image/png' }
+        '.jpg'  { return 'image/jpeg' }
+        '.jpeg' { return 'image/jpeg' }
+        '.webp' { return 'image/webp' }
+        '.gif'  { return 'image/gif' }
+        '.ico'  { return 'image/x-icon' }
+        '.woff' { return 'font/woff' }
+        '.woff2' { return 'font/woff2' }
+        '.ttf'  { return 'font/ttf' }
+        '.wasm' { return 'application/wasm' }
+        '.zip'  { return 'application/zip' }
+        default { return 'application/octet-stream' }
     }
 }
 
@@ -47,11 +47,13 @@ function Send-Headers {
     )
 
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.Append("HTTP/1.1 $Status`r`n")
+    [void]$builder.Append("HTTP/1.1 $Status" + [char]13 + [char]10)
+
     foreach ($key in $Headers.Keys) {
-        [void]$builder.Append($key + ': ' + $Headers[$key] + "`r`n")
+        [void]$builder.Append($key + ': ' + $Headers[$key] + [char]13 + [char]10)
     }
-    [void]$builder.Append("`r`n")
+
+    [void]$builder.Append([char]13 + [char]10)
 
     $bytes = [System.Text.Encoding]::ASCII.GetBytes($builder.ToString())
     $Stream.Write($bytes, 0, $bytes.Length)
@@ -66,12 +68,14 @@ function Send-TextResponse {
     )
 
     $body = [System.Text.Encoding]::UTF8.GetBytes($Text)
+
     Send-Headers -Stream $Stream -Status "$Code $Reason" -Headers @{
         'Content-Type'   = 'text/html; charset=utf-8'
         'Content-Length' = $body.Length
         'Cache-Control'  = 'no-cache'
         'Connection'     = 'close'
     }
+
     $Stream.Write($body, 0, $body.Length)
 }
 
@@ -86,10 +90,15 @@ function Resolve-RequestPath {
         $relative = 'index.html'
     }
 
-    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($Root, $relative))
+    $candidate = [System.IO.Path]::GetFullPath(
+        [System.IO.Path]::Combine($Root, $relative)
+    )
 
-    if (-not $candidate.StartsWith($RootPrefix, [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not $candidate.Equals($Root, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $insideRoot =
+        $candidate.Equals($Root, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $candidate.StartsWith($RootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+
+    if (-not $insideRoot) {
         return $null
     }
 
@@ -104,25 +113,30 @@ $listener = $null
 $actualPort = $Port
 
 for ($tryPort = $Port; $tryPort -le ($Port + 20); $tryPort++) {
-    $candidate = $null
+    $candidateListener = $null
+
     try {
-        $candidate = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $tryPort)
-        $candidate.Start()
-        $listener = $candidate
+        $candidateListener = New-Object System.Net.Sockets.TcpListener(
+            [System.Net.IPAddress]::Loopback,
+            $tryPort
+        )
+        $candidateListener.Start()
+
+        $listener = $candidateListener
         $actualPort = $tryPort
         break
     }
     catch {
-        if ($candidate) {
-            try { $candidate.Stop() } catch {}
+        if ($candidateListener) {
+            try { $candidateListener.Stop() } catch {}
         }
     }
 }
 
 if (-not $listener) {
     Write-Host ''
-    Write-Host "Не удалось открыть порты $Port-$($Port + 20)." -ForegroundColor Red
-    Write-Host 'Закройте другой локальный сервер или укажите другой порт:' -ForegroundColor Yellow
+    Write-Host "Unable to open ports $Port-$($Port + 20)." -ForegroundColor Red
+    Write-Host 'Close another local server or run:' -ForegroundColor Yellow
     Write-Host '.\server.ps1 -Port 9000'
     exit 1
 }
@@ -131,16 +145,18 @@ $url = "http://127.0.0.1:$actualPort/"
 
 Write-Host ''
 Write-Host '=============================================' -ForegroundColor DarkCyan
-Write-Host '  Pannellum Tour Editor - локальный сервер' -ForegroundColor Cyan
+Write-Host '  Pannellum Tour - Local Windows Server' -ForegroundColor Cyan
 Write-Host '=============================================' -ForegroundColor DarkCyan
 Write-Host ''
-Write-Host "Папка: $Root"
-Write-Host "Адрес: $url" -ForegroundColor Green
+Write-Host "Folder: $Root"
+Write-Host "URL:    $url" -ForegroundColor Green
+
 if ($actualPort -ne $Port) {
-    Write-Host "Порт $Port был занят, выбран $actualPort." -ForegroundColor Yellow
+    Write-Host "Port $Port is busy. Using port $actualPort." -ForegroundColor Yellow
 }
+
 Write-Host ''
-Write-Host 'Для остановки нажмите Ctrl+C.' -ForegroundColor DarkGray
+Write-Host 'Press Ctrl+C to stop the server.' -ForegroundColor DarkGray
 Write-Host ''
 
 if (-not $NoBrowser) {
@@ -148,7 +164,7 @@ if (-not $NoBrowser) {
         Start-Process $url
     }
     catch {
-        Write-Host "Откройте адрес вручную: $url" -ForegroundColor Yellow
+        Write-Host "Open this URL manually: $url" -ForegroundColor Yellow
     }
 }
 
@@ -156,12 +172,15 @@ try {
     while ($true) {
         $client = $listener.AcceptTcpClient()
         $client.NoDelay = $true
-        $stream = $client.GetStream()
+
+        $stream = $null
         $reader = $null
         $fileStream = $null
 
         try {
-            $reader = [System.IO.StreamReader]::new(
+            $stream = $client.GetStream()
+
+            $reader = New-Object System.IO.StreamReader(
                 $stream,
                 [System.Text.Encoding]::ASCII,
                 $false,
@@ -170,11 +189,13 @@ try {
             )
 
             $requestLine = $reader.ReadLine()
+
             if ([string]::IsNullOrWhiteSpace($requestLine)) {
                 continue
             }
 
             $parts = $requestLine.Split(' ')
+
             if ($parts.Length -lt 2) {
                 Send-TextResponse -Stream $stream -Code 400 -Reason 'Bad Request' -Text '<h1>400 Bad Request</h1>'
                 continue
@@ -184,13 +205,16 @@ try {
             $target = $parts[1]
 
             $headers = @{}
+
             while ($true) {
                 $line = $reader.ReadLine()
+
                 if ([string]::IsNullOrEmpty($line)) {
                     break
                 }
 
                 $separator = $line.IndexOf(':')
+
                 if ($separator -gt 0) {
                     $name = $line.Substring(0, $separator).Trim().ToLowerInvariant()
                     $value = $line.Substring($separator + 1).Trim()
@@ -224,12 +248,13 @@ try {
                 continue
             }
 
-            $fileInfo = [System.IO.FileInfo]::new($filePath)
-            $totalLength = $fileInfo.Length
+            $fileInfo = New-Object System.IO.FileInfo($filePath)
+            $totalLength = [int64]$fileInfo.Length
             $start = [int64]0
             $end = [int64]($totalLength - 1)
             $status = '200 OK'
             $contentLength = $totalLength
+
             $responseHeaders = @{
                 'Content-Type'  = Get-MimeType -Path $filePath
                 'Accept-Ranges' = 'bytes'
@@ -237,7 +262,10 @@ try {
                 'Connection'    = 'close'
             }
 
-            if ($headers.ContainsKey('range') -and $headers['range'] -match '^bytes=(\d*)-(\d*)$') {
+            if (
+                $headers.ContainsKey('range') -and
+                $headers['range'] -match '^bytes=(\d*)-(\d*)$'
+            ) {
                 $startText = $Matches[1]
                 $endText = $Matches[2]
 
@@ -285,12 +313,13 @@ try {
                 [void]$fileStream.Seek($start, [System.IO.SeekOrigin]::Begin)
             }
 
-            $buffer = [byte[]]::new(65536)
+            $buffer = New-Object byte[] 65536
             $remaining = [int64]$contentLength
 
             while ($remaining -gt 0) {
                 $toRead = [int][Math]::Min([int64]$buffer.Length, $remaining)
                 $read = $fileStream.Read($buffer, 0, $toRead)
+
                 if ($read -le 0) {
                     break
                 }
@@ -300,13 +329,7 @@ try {
             }
         }
         catch {
-            try {
-                if ($stream -and $stream.CanWrite) {
-                    Send-TextResponse -Stream $stream -Code 500 -Reason 'Internal Server Error' -Text '<h1>500 Internal Server Error</h1>'
-                }
-            }
-            catch {}
-            Write-Host "Ошибка запроса: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            Write-Host ("Request error: " + $_.Exception.Message) -ForegroundColor DarkYellow
         }
         finally {
             if ($fileStream) { $fileStream.Dispose() }
