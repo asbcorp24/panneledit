@@ -347,3 +347,76 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
   .toolbar-status{width:100%;justify-content:space-between}
   .field-grid{grid-template-columns:1fr}
 }
+
+/* Object 360 scenes */
+.scene-type-control{margin-bottom:14px}
+.object360-import-note{
+  margin-top:10px;padding:10px 12px;border:1px solid rgba(31,214,187,.18);border-radius:10px;
+  background:rgba(31,214,187,.05);color:var(--muted);font-size:10px;line-height:1.55
+}
+.object360-import-note code{color:#9af0e3}
+.scene-type-badge{
+  display:inline-flex;align-items:center;min-height:22px;padding:3px 8px;border-radius:999px;
+  background:rgba(31,214,187,.11);border:1px solid rgba(31,214,187,.2);color:#75e7d6;
+  font-size:8px;font-weight:900;letter-spacing:.08em
+}
+.object360-scene-summary{
+  display:flex;flex-direction:column;align-items:flex-start;gap:5px;margin-bottom:12px;
+  padding:11px;border:1px solid var(--line);border-radius:11px;background:#090f1b
+}
+.object360-scene-summary b{font-size:12px}
+.object360-scene-summary small{color:var(--muted);font-size:9px;word-break:break-all}
+.scene-card.object360 .scene-thumb{object-fit:contain;background:
+  radial-gradient(circle at 50% 45%,rgba(31,214,187,.12),transparent 55%),#050914}
+.scene-card.object360 .scene-index{color:#75e7d6;background:rgba(31,214,187,.08)}
+.scene-meta .scene-kind{
+  display:inline-flex;margin-left:5px;padding:1px 5px;border-radius:999px;
+  background:rgba(31,214,187,.1);color:#75e7d6;font-size:7px;font-weight:800;vertical-align:1px
+}
+
+.object360-host{position:relative;overflow:hidden}
+.object360-viewer{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:
+    radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),
+    #040812;
+  background-size:auto,38px 38px,38px 38px;
+  outline:0;user-select:none;touch-action:none;cursor:grab
+}
+.object360-viewer.dragging{cursor:grabbing}
+.object360-image-wrap{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden
+}
+.object360-image{
+  max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;
+  transform-origin:center center;transition:transform .08s linear;
+  filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none
+}
+.object360-loading{
+  position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;
+  background:rgba(5,9,18,.78);backdrop-filter:blur(8px);color:var(--muted);font-size:10px
+}
+.object360-hud{
+  position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(8,13,24,.78);
+  backdrop-filter:blur(12px);box-shadow:0 12px 30px rgba(0,0,0,.18)
+}
+.object360-counter,.object360-row-label{
+  flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);
+  font-size:9px;font-variant-numeric:tabular-nums
+}
+.object360-row-label{color:#75e7d6}
+.object360-hint{flex:1;min-width:0;color:var(--muted);font-size:9px;text-align:center}
+.object360-autoplay,.object360-reset{
+  flex:none;width:34px;height:28px;border:1px solid var(--line);border-radius:8px;
+  background:#121b2e;color:#fff;cursor:pointer;font-size:10px;font-weight:800
+}
+.object360-autoplay:hover,.object360-reset:hover{border-color:var(--line-strong);background:#18243b}
+
+#sceneMenuExport{
+  position:fixed;z-index:50;left:12px;top:12px;max-width:min(320px,calc(100vw - 24px));
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);
+  color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui
+}
