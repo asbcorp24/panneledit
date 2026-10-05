@@ -1595,6 +1595,24 @@
       return;
     }
 
+    if (scene.sceneType === 'stl') {
+      if (!stlViewer) return;
+      const state = stlViewer.getState();
+      scene.stl = normalizeStlData({
+        ...scene.stl,
+        yaw: Number(state.yaw.toFixed(2)),
+        pitch: Number(state.pitch.toFixed(2)),
+        zoom: Number(state.zoom.toFixed(3)),
+        wireframe: state.wireframe,
+        autoplay: state.autoRotate,
+        color: state.color
+      });
+      markDirty();
+      renderSceneSettings();
+      showToast('Ракурс STL-модели сохранён');
+      return;
+    }
+
     if (!viewer) return;
     scene.pitch = Number(viewer.getPitch().toFixed(2));
     scene.yaw = Number(viewer.getYaw().toFixed(2));
@@ -2908,6 +2926,10 @@
         try { previewObjectViewer.destroy(); } catch (_) {}
         previewObjectViewer = null;
       }
+      if (previewStlViewer) {
+        try { previewStlViewer.destroy(); } catch (_) {}
+        previewStlViewer = null;
+      }
       els.previewPanorama.innerHTML = '';
 
       if (scene.sceneType === 'object360') {
@@ -2921,6 +2943,22 @@
           startRow: data.startRow,
           autoplay: data.autoplay
         });
+        return;
+      }
+
+      if (scene.sceneType === 'stl') {
+        if (!window.StlViewer) return;
+        const data = normalizeStlData(scene.stl || {});
+        previewStlViewer = new StlViewer(els.previewPanorama, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: data.autoplay,
+          color: data.color
+        });
+        previewStlViewer.ready.catch(console.error);
         return;
       }
 
@@ -2940,6 +2978,10 @@
     if (previewObjectViewer) {
       try { previewObjectViewer.destroy(); } catch (_) {}
       previewObjectViewer = null;
+    }
+    if (previewStlViewer) {
+      try { previewStlViewer.destroy(); } catch (_) {}
+      previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
     if (els.previewDialog.open) els.previewDialog.close();
@@ -2974,6 +3016,15 @@
       data.startRow = Math.max(0, Math.min(data.rows - 1, Number(els.object360StartRow.value) || 0));
       data.autoplay = els.object360Autoplay.checked;
       scene.object360 = data;
+    } else if (scene.sceneType === 'stl') {
+      const data = normalizeStlData(scene.stl || {});
+      data.yaw = Number(els.stlYaw.value) || 0;
+      data.pitch = clampNumber(els.stlPitch.value, -89, 89, -15);
+      data.zoom = clampNumber(els.stlZoom.value, 0.35, 5, 1);
+      data.color = /^#[0-9a-f]{6}$/i.test(els.stlColor.value) ? els.stlColor.value.toLowerCase() : '#7c8cff';
+      data.wireframe = els.stlWireframe.checked;
+      data.autoplay = els.stlAutoplay.checked;
+      scene.stl = data;
     } else {
       scene.pitch = Number(els.scenePitch.value) || 0;
       scene.yaw = Number(els.sceneYaw.value) || 0;
@@ -3387,13 +3438,17 @@
       els.dropOverlay.classList.remove('visible');
       const files = [...event.dataTransfer?.files || []];
       const file = files.find((item) => item.type.startsWith('image/')) ||
-        files.find((item) => /\.zip$/i.test(item.name || ''));
+        files.find((item) => /\.zip$/i.test(item.name || '')) ||
+        files.find((item) => /\.stl$/i.test(item.name || ''));
       if (!file) return;
       event.preventDefault();
       try {
         if (/\.zip$/i.test(file.name || '')) {
           await createObject360SceneFromZip(file, file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
           showToast('Объект 360° добавлен');
+        } else if (/\.stl$/i.test(file.name || '')) {
+          await createStlSceneFromFile(file, file.name.replace(/\.stl$/i, ''));
+          showToast('STL-модель добавлена');
         } else {
           await createSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''));
           showToast('Панорама добавлена');
@@ -3415,8 +3470,10 @@
     window.addEventListener('resize', () => {
       try { viewer?.resize(); } catch (_) {}
       try { objectViewer?.resize(); } catch (_) {}
+      try { stlViewer?.resize(); } catch (_) {}
       try { previewViewer?.resize(); } catch (_) {}
       try { previewObjectViewer?.resize(); } catch (_) {}
+      try { previewStlViewer?.resize(); } catch (_) {}
     });
   }
 
