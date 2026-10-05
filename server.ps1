@@ -35,6 +35,7 @@ function Get-MimeType {
         '.ttf'  { return 'font/ttf' }
         '.wasm' { return 'application/wasm' }
         '.zip'  { return 'application/zip' }
+        '.stl'  { return 'model/stl' }
         default { return 'application/octet-stream' }
     }
 }
