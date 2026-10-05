@@ -663,6 +663,12 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             binding.arCoverageOverlay.currentRow = currentRow
             binding.arCoverageOverlay.captured = capturedKeys
 
+            binding.arCoverageSphere.sectors = captureSession.sectors
+            binding.arCoverageSphere.rows = captureSession.rows
+            binding.arCoverageSphere.currentSector = metrics?.sector ?: currentSector
+            binding.arCoverageSphere.currentRow = currentRow
+            binding.arCoverageSphere.captured = capturedKeys
+
             if (metrics == null) {
                 if (centerAnchor == null) {
                     binding.arMetricsText.text = "Угол —   Радиус —   Высота —"
@@ -761,10 +767,18 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arCoverageOverlay.sectors = captureSession.sectors
         binding.arCoverageOverlay.rows = captureSession.rows
         binding.arCoverageOverlay.currentRow = currentRow
-        binding.arCoverageOverlay.currentSector = currentSector
-        binding.arCoverageOverlay.captured = synchronized(captureSession) {
+        val capturedKeys = synchronized(captureSession) {
             captureSession.shots.keys.toSet()
         }
+
+        binding.arCoverageOverlay.currentSector = currentSector
+        binding.arCoverageOverlay.captured = capturedKeys
+
+        binding.arCoverageSphere.sectors = captureSession.sectors
+        binding.arCoverageSphere.rows = captureSession.rows
+        binding.arCoverageSphere.currentRow = currentRow
+        binding.arCoverageSphere.currentSector = currentSector
+        binding.arCoverageSphere.captured = capturedKeys
     }
 
     private fun showReview() {
