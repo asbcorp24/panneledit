@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 4;
+  const PROJECT_VERSION = 5;
 
   const $ = (id) => document.getElementById(id);
 
@@ -19,6 +19,12 @@
     saveState: $('saveState'),
     projectTitle: $('projectTitle'),
     firstScene: $('firstScene'),
+    projectMusicName: $('projectMusicName'),
+    projectMusicFile: $('projectMusicFile'),
+    projectMusicVolume: $('projectMusicVolume'),
+    projectMusicVolumeValue: $('projectMusicVolumeValue'),
+    projectMusicLoop: $('projectMusicLoop'),
+    btnRemoveProjectMusic: $('btnRemoveProjectMusic'),
     sceneFadeEnabled: $('sceneFadeEnabled'),
     sceneFadeDuration: $('sceneFadeDuration'),
     autoRotateEnabled: $('autoRotateEnabled'),
@@ -89,7 +95,36 @@
     stlAutoplay: $('stlAutoplay'),
     stlFilename: $('stlFilename'),
     stlFileReplace: $('stlFileReplace'),
+    sceneMusicName: $('sceneMusicName'),
+    sceneMusicFile: $('sceneMusicFile'),
+    sceneMusicVolume: $('sceneMusicVolume'),
+    sceneMusicVolumeValue: $('sceneMusicVolumeValue'),
+    sceneMusicLoop: $('sceneMusicLoop'),
+    btnRemoveSceneMusic: $('btnRemoveSceneMusic'),
+    sceneNarrationName: $('sceneNarrationName'),
+    sceneNarrationFile: $('sceneNarrationFile'),
+    sceneNarrationVolume: $('sceneNarrationVolume'),
+    sceneNarrationVolumeValue: $('sceneNarrationVolumeValue'),
+    btnRemoveSceneNarration: $('btnRemoveSceneNarration'),
     btnDeleteScene: $('btnDeleteScene'),
+    sceneOverlay: $('sceneOverlay'),
+    textObjectList: $('textObjectList'),
+    btnAddTextObject: $('btnAddTextObject'),
+    textObjectDialog: $('textObjectDialog'),
+    textObjectForm: $('textObjectForm'),
+    textObjectDialogTitle: $('textObjectDialogTitle'),
+    textObjectEditId: $('textObjectEditId'),
+    textObjectType: $('textObjectType'),
+    textObjectText: $('textObjectText'),
+    textObjectX: $('textObjectX'),
+    textObjectY: $('textObjectY'),
+    textObjectWidth: $('textObjectWidth'),
+    textObjectFontSize: $('textObjectFontSize'),
+    textObjectColor: $('textObjectColor'),
+    textObjectAlign: $('textObjectAlign'),
+    textObjectBackground: $('textObjectBackground'),
+    textObjectAnimation: $('textObjectAnimation'),
+    btnDeleteTextObject: $('btnDeleteTextObject'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
     hotspotDialogTitle: $('hotspotDialogTitle'),
@@ -129,6 +164,10 @@
     btnDeleteHotspot: $('btnDeleteHotspot'),
     previewDialog: $('previewDialog'),
     previewPanorama: $('previewPanorama'),
+    previewSceneOverlay: $('previewSceneOverlay'),
+    previewAudioControls: $('previewAudioControls'),
+    previewMusicButton: $('previewMusicButton'),
+    previewNarrationButton: $('previewNarrationButton'),
     closePreview: $('closePreview'),
     downloadDialog: $('downloadDialog'),
     downloadReadyInfo: $('downloadReadyInfo'),
@@ -148,6 +187,8 @@
   let previewViewer = null;
   let previewObjectViewer = null;
   let previewStlViewer = null;
+  let previewMusicAudio = null;
+  let previewNarrationAudio = null;
   let dbPromise = null;
   let saveTimer = null;
   let toastTimer = null;
@@ -165,6 +206,9 @@
       version: PROJECT_VERSION,
       title: 'Виртуальная экскурсия',
       firstScene: null,
+      audio: {
+        music: { data: '', filename: '', volume: 35, loop: true }
+      },
       settings: {
         fadeEnabled: true,
         fadeDuration: 900,
@@ -449,11 +493,47 @@
     }
   }
 
+  function normalizeAudioSlot(input = {}, defaults = {}) {
+    return {
+      data: String(input.data || ''),
+      filename: String(input.filename || ''),
+      volume: clampNumber(input.volume, 0, 100, defaults.volume ?? 50),
+      loop: input.loop === undefined ? Boolean(defaults.loop) : Boolean(input.loop)
+    };
+  }
+
+  function normalizeSceneAudio(input = {}) {
+    return {
+      music: normalizeAudioSlot(input.music || {}, { volume: 45, loop: true }),
+      narration: normalizeAudioSlot(input.narration || {}, { volume: 80, loop: false })
+    };
+  }
+
+  function normalizeTextObject(input = {}) {
+    const type = ['title','description'].includes(input.type) ? input.type : 'description';
+    return {
+      id: String(input.id || uid('text')),
+      type,
+      text: String(input.text || ''),
+      x: clampNumber(input.x, 0, 100, 5),
+      y: clampNumber(input.y, 0, 100, type === 'title' ? 8 : 70),
+      width: clampNumber(input.width, 10, 90, type === 'title' ? 55 : 42),
+      fontSize: clampNumber(input.fontSize, 12, 96, type === 'title' ? 42 : 20),
+      color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#ffffff',
+      align: ['left','center','right'].includes(input.align) ? input.align : 'left',
+      background: ['none','dark','light'].includes(input.background) ? input.background : (type === 'description' ? 'dark' : 'none'),
+      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade'
+    };
+  }
+
   function normalizeProject(input) {
     if (!input || typeof input !== 'object') throw new Error('Некорректный JSON проекта');
 
     const next = createEmptyProject();
     next.title = String(input.title || next.title);
+    next.audio = {
+      music: normalizeAudioSlot(input.audio?.music || {}, { volume: 35, loop: true })
+    };
     next.settings = { ...next.settings, ...(input.settings || {}) };
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
@@ -477,6 +557,8 @@
       pitch: Number.isFinite(Number(scene.pitch)) ? Number(scene.pitch) : 0,
       yaw: Number.isFinite(Number(scene.yaw)) ? Number(scene.yaw) : 0,
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
+      audio: normalizeSceneAudio(scene.audio || {}),
+      textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
       hotspots: Array.isArray(scene.hotspots) ? scene.hotspots.map((hotspot) => ({
         id: String(hotspot.id || uid('hotspot')),
         type: ['scene', 'info', 'url'].includes(hotspot.type) ? hotspot.type : 'info',
@@ -509,6 +591,7 @@
     renderSceneList();
     renderProjectSettings();
     renderSceneSettings();
+    renderTextObjectList();
     renderHotspotList();
     updateToolbarState();
     renderViewer();
@@ -553,6 +636,12 @@
 
   function renderProjectSettings() {
     els.projectTitle.value = project.title || '';
+    const projectMusic = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+    project.audio = { music: projectMusic };
+    els.projectMusicName.textContent = projectMusic.filename || 'Не выбрана';
+    els.projectMusicVolume.value = String(projectMusic.volume);
+    els.projectMusicVolumeValue.textContent = projectMusic.volume + '%';
+    els.projectMusicLoop.checked = Boolean(projectMusic.loop);
     els.sceneFadeEnabled.checked = Boolean(project.settings.fadeEnabled);
     els.sceneFadeDuration.value = Number(project.settings.fadeDuration ?? 900);
     els.autoRotateEnabled.checked = Boolean(project.settings.autoRotateEnabled);
@@ -632,6 +721,69 @@
       els.sceneHfov.value = Number(scene.hfov);
       els.sceneFilename.textContent = scene.filename || 'panorama.jpg';
     }
+
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    els.sceneMusicName.textContent = scene.audio.music.filename || 'Не выбрана';
+    els.sceneMusicVolume.value = String(scene.audio.music.volume);
+    els.sceneMusicVolumeValue.textContent = scene.audio.music.volume + '%';
+    els.sceneMusicLoop.checked = Boolean(scene.audio.music.loop);
+    els.sceneNarrationName.textContent = scene.audio.narration.filename || 'Не выбрана';
+    els.sceneNarrationVolume.value = String(scene.audio.narration.volume);
+    els.sceneNarrationVolumeValue.textContent = scene.audio.narration.volume + '%';
+
+    renderTextObjectList();
+  }
+
+  function textObjectMarkup(item, { editor = false } = {}) {
+    const classes = [
+      'scene-text-object',
+      'scene-text-' + item.type,
+      'scene-text-bg-' + item.background,
+      'scene-text-anim-' + item.animation,
+      editor ? 'is-editor' : ''
+    ].filter(Boolean).join(' ');
+
+    const style = [
+      'left:' + item.x + '%',
+      'top:' + item.y + '%',
+      'width:' + item.width + '%',
+      'font-size:' + item.fontSize + 'px',
+      'color:' + item.color,
+      'text-align:' + item.align
+    ].join(';');
+
+    return '<div class="' + classes + '" data-text-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
+      '<div class="scene-text-inner">' + escapeHtml(item.text).replace(/\n/g, '<br>') + '</div>' +
+      (editor ? '<span class="scene-text-drag-hint">перетащить</span>' : '') +
+      '</div>';
+  }
+
+  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true } = {}) {
+    if (!target) return;
+    const items = Array.isArray(scene?.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    if (scene) scene.textObjects = items;
+    target.innerHTML = items.map((item) => textObjectMarkup(item, { editor })).join('');
+    target.hidden = !scene || !items.length;
+  }
+
+  function renderTextObjectList() {
+    const scene = getScene();
+    const items = scene?.textObjects || [];
+    if (!items.length) {
+      els.textObjectList.className = 'text-object-list empty';
+      els.textObjectList.innerHTML = '<div class="empty-state">Нет текста</div>';
+      return;
+    }
+
+    els.textObjectList.className = 'text-object-list';
+    els.textObjectList.innerHTML = items.map((item) => {
+      const label = item.type === 'title' ? 'Заголовок' : 'Описание';
+      return '<article class="text-object-card" data-text-object-id="' + escapeHtml(item.id) + '">' +
+        '<span class="text-object-kind">' + (item.type === 'title' ? 'H' : 'T') + '</span>' +
+        '<div><b>' + escapeHtml(label) + '</b><span>' + escapeHtml(item.text || 'Без текста') + '</span></div>' +
+        '<em>' + Math.round(item.x) + '% / ' + Math.round(item.y) + '%</em>' +
+        '</article>';
+    }).join('');
   }
 
   function renderHotspotList() {
@@ -682,7 +834,9 @@
       ? 'Сохранить текущий кадр'
       : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
+    els.btnAddTextObject.disabled = !hasScene;
     els.viewerPlaceholder.hidden = hasScene;
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
   }
 
   function clampNumber(value, min, max, fallback) {
@@ -1380,6 +1534,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
@@ -1434,6 +1590,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
@@ -1549,6 +1707,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
@@ -1571,6 +1731,160 @@
     els.hotspotTargetTypeHint.textContent =
       meta.icon + ' ' + meta.label + ' — ' + meta.detail;
     els.hotspotTargetTypeHint.dataset.sceneType = target.sceneType || 'panorama';
+  }
+
+  function openTextObjectDialog(textObjectId = '') {
+    const scene = getScene();
+    if (!scene) return;
+
+    scene.textObjects = Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    const existing = textObjectId
+      ? scene.textObjects.find((item) => item.id === textObjectId)
+      : null;
+    const item = normalizeTextObject(existing || {
+      type: 'title',
+      text: scene.title || 'Заголовок',
+      x: 5,
+      y: 8,
+      width: 55,
+      fontSize: 42,
+      color: '#ffffff',
+      align: 'left',
+      background: 'none',
+      animation: 'fade'
+    });
+
+    els.textObjectForm.reset();
+    els.textObjectEditId.value = existing?.id || '';
+    els.textObjectDialogTitle.textContent = existing ? 'Редактировать текст' : 'Новый текстовый объект';
+    els.textObjectType.value = item.type;
+    els.textObjectText.value = item.text;
+    els.textObjectX.value = String(item.x);
+    els.textObjectY.value = String(item.y);
+    els.textObjectWidth.value = String(item.width);
+    els.textObjectFontSize.value = String(item.fontSize);
+    els.textObjectColor.value = item.color;
+    els.textObjectAlign.value = item.align;
+    els.textObjectBackground.value = item.background;
+    els.textObjectAnimation.value = item.animation;
+    els.btnDeleteTextObject.hidden = !existing;
+    els.textObjectDialog.showModal();
+  }
+
+  function saveTextObjectFromDialog() {
+    const scene = getScene();
+    if (!scene) return;
+
+    const text = els.textObjectText.value.trim();
+    if (!text) {
+      showToast('Введите текст');
+      return;
+    }
+
+    scene.textObjects = Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    const existingId = els.textObjectEditId.value;
+    let item = existingId ? scene.textObjects.find((entry) => entry.id === existingId) : null;
+    if (!item) {
+      item = { id: uid('text') };
+      scene.textObjects.push(item);
+    }
+
+    const normalized = normalizeTextObject({
+      id: item.id,
+      type: els.textObjectType.value,
+      text,
+      x: els.textObjectX.value,
+      y: els.textObjectY.value,
+      width: els.textObjectWidth.value,
+      fontSize: els.textObjectFontSize.value,
+      color: els.textObjectColor.value,
+      align: els.textObjectAlign.value,
+      background: els.textObjectBackground.value,
+      animation: els.textObjectAnimation.value
+    });
+
+    Object.assign(item, normalized);
+    els.textObjectDialog.close();
+    markDirty();
+    renderTextObjectList();
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+  }
+
+  function deleteTextObject(textObjectId) {
+    const scene = getScene();
+    if (!scene) return;
+    scene.textObjects = (scene.textObjects || []).filter((item) => item.id !== textObjectId);
+    if (els.textObjectDialog.open) els.textObjectDialog.close();
+    markDirty();
+    renderTextObjectList();
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+  }
+
+  function updateDraggedTextObject(element, clientX, clientY) {
+    const scene = getScene();
+    if (!scene || !element) return;
+    const item = (scene.textObjects || []).find((entry) => entry.id === element.dataset.textObjectId);
+    if (!item) return;
+
+    const rect = els.sceneOverlay.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = clampNumber(((clientX - rect.left) / rect.width) * 100, 0, 100, item.x);
+    const y = clampNumber(((clientY - rect.top) / rect.height) * 100, 0, 100, item.y);
+    item.x = Number(x.toFixed(2));
+    item.y = Number(y.toFixed(2));
+    element.style.left = item.x + '%';
+    element.style.top = item.y + '%';
+  }
+
+  function audioExtension(slot) {
+    const name = String(slot?.filename || '').toLowerCase();
+    const ext = name.match(/\.([a-z0-9]{2,5})$/)?.[1];
+    if (['mp3','ogg','wav'].includes(ext)) return ext;
+    const mime = String(slot?.data || '').match(/^data:audio\/([^;,]+)/i)?.[1]?.toLowerCase() || '';
+    if (mime.includes('ogg')) return 'ogg';
+    if (mime.includes('wav')) return 'wav';
+    return 'mp3';
+  }
+
+  function stopPreviewAudio() {
+    for (const audio of [previewMusicAudio, previewNarrationAudio]) {
+      if (!audio) continue;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (_) {}
+    }
+    previewMusicAudio = null;
+    previewNarrationAudio = null;
+    els.previewMusicButton?.classList.remove('active');
+    els.previewNarrationButton?.classList.remove('active');
+  }
+
+  function configurePreviewAudio(scene) {
+    stopPreviewAudio();
+    if (!scene) return;
+
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    const projectMusic = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+    const music = scene.audio.music.data ? scene.audio.music : projectMusic;
+
+    if (music.data) {
+      previewMusicAudio = new Audio(music.data);
+      previewMusicAudio.volume = music.volume / 100;
+      previewMusicAudio.loop = Boolean(music.loop);
+      els.previewMusicButton.hidden = false;
+    } else {
+      els.previewMusicButton.hidden = true;
+    }
+
+    if (scene.audio.narration.data) {
+      previewNarrationAudio = new Audio(scene.audio.narration.data);
+      previewNarrationAudio.volume = scene.audio.narration.volume / 100;
+      els.previewNarrationButton.hidden = false;
+    } else {
+      els.previewNarrationButton.hidden = true;
+    }
   }
 
   function populateHotspotTargets(selectedId = '') {
@@ -2268,7 +2582,8 @@
     sceneFiles,
     multiresScenes = new Map(),
     objectSceneFiles = new Map(),
-    stlSceneFiles = new Map()
+    stlSceneFiles = new Map(),
+    audioConfig = { projectMusic: null, scenes: {} }
   ) {
     const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
@@ -2303,12 +2618,34 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama'
+        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
+        textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+        audio: audioConfig.scenes?.[scene.id] || { music: null, narration: null }
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
     config.stlScenes = Object.fromEntries(stlSceneFiles);
+    config.projectAudio = { music: audioConfig.projectMusic || null };
     return config;
+  }
+
+  function bundleAudioSlot(root, slot, baseName) {
+    const data = normalizeAudioSlot(slot || {}, { volume: 50, loop: false });
+    if (!data.data) return null;
+
+    const ext = audioExtension(data);
+    const filename = safeFilename(baseName, 'audio') + '.' + ext;
+    const path = 'audio/' + filename;
+    const payload = dataUrlPayload(data.data);
+    if (payload.base64) root.file(path, payload.data, { base64: true });
+    else root.file(path, decodeURIComponent(payload.data));
+
+    return {
+      src: path,
+      volume: data.volume,
+      loop: Boolean(data.loop),
+      filename: data.filename || filename
+    };
   }
 
   function exportedViewerHtml() {
@@ -2327,6 +2664,11 @@
       '    <select id="sceneMenuExport" aria-label="Сцены тура"></select>\n' +
       '  </div>\n' +
       '  <div id="panorama"></div>\n' +
+      '  <div id="sceneTextOverlay" class="scene-text-overlay"></div>\n' +
+      '  <div id="tourAudioControls" class="tour-audio-controls">\n' +
+      '    <button id="tourMusicButton" type="button" title="Музыка">♪</button>\n' +
+      '    <button id="tourNarrationButton" type="button" title="Озвучка" hidden>🔊</button>\n' +
+      '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
@@ -2404,6 +2746,18 @@
       '.object360-host{position:relative;overflow:hidden}.object360-viewer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),#040812;outline:0;user-select:none;touch-action:none;cursor:grab}.object360-viewer.dragging{cursor:grabbing}.object360-image-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.object360-image{max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;transform-origin:center center;transition:transform .08s linear;filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none}.object360-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.78);color:#a9b4ca;font-size:10px}.object360-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.78);backdrop-filter:blur(12px)}.object360-counter,.object360-row-label{flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);font-size:9px}.object360-row-label{color:#75e7d6}.object360-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.object360-autoplay,.object360-reset{flex:none;width:34px;height:28px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer}\n' +
       '.stl-host{position:relative;overflow:hidden}.stl-viewer{position:absolute;inset:0;overflow:hidden;background:radial-gradient(circle at 50% 45%,rgba(124,140,255,.16),transparent 42%),linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),#040812;background-size:auto,40px 40px,40px 40px;outline:0;touch-action:none;cursor:grab}.stl-viewer.dragging{cursor:grabbing}.stl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}.stl-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.82);color:#a9b4ca;font-size:10px}.stl-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.8);backdrop-filter:blur(12px)}.stl-stats{flex:none;padding:4px 7px;border-radius:7px;background:rgba(124,140,255,.12);color:#c8ceff;font-size:9px}.stl-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.stl-mode,.stl-auto,.stl-reset{flex:none;min-width:34px;height:28px;padding:0 8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:800}.viewer-error{padding:30px;color:#fff;font:14px system-ui}\n';
 
+    css +=
+      '.scene-text-overlay{position:fixed;inset:0;z-index:35;pointer-events:none;overflow:hidden}\n' +
+      '.scene-text-object{position:absolute;pointer-events:none;max-width:90%;line-height:1.15;text-shadow:0 2px 14px rgba(0,0,0,.5);overflow-wrap:anywhere;animation-duration:.48s;animation-fill-mode:both}\n' +
+      '.scene-text-title{font-weight:900;letter-spacing:-.03em}.scene-text-description{font-weight:500;line-height:1.45}\n' +      '.scene-text-inner{white-space:pre-line}\n' +
+
+      '.scene-text-bg-dark .scene-text-inner{display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(5,9,18,.64);backdrop-filter:blur(12px)}\n' +
+      '.scene-text-bg-light .scene-text-inner{display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.35);border-radius:14px;background:rgba(255,255,255,.78);color:#101827;text-shadow:none;backdrop-filter:blur(12px)}\n' +
+      '.scene-text-anim-fade{animation-name:sceneTextFade}.scene-text-anim-slide{animation-name:sceneTextSlide}.scene-text-anim-none{animation:none}\n' +
+      '@keyframes sceneTextFade{from{opacity:0}to{opacity:1}}@keyframes sceneTextSlide{from{opacity:0;translate:0 18px}to{opacity:1;translate:0 0}}\n' +
+      '.tour-audio-controls{position:fixed;right:12px;bottom:12px;z-index:60;display:flex;gap:7px}.tour-audio-controls button{width:40px;height:40px;border:1px solid rgba(255,255,255,.15);border-radius:50%;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px);cursor:pointer;font-size:16px;font-weight:900}.tour-audio-controls button.active{border-color:rgba(31,214,187,.65);box-shadow:0 0 0 3px rgba(31,214,187,.12);color:#75e7d6}.tour-audio-controls button[hidden]{display:none}\n' +
+      '@media(max-width:640px){#tourNavBar{right:12px;max-width:none}#sceneMenuExport{min-width:0;flex:1}.scene-text-object{max-width:92%!important}.tour-audio-controls{bottom:10px;right:10px}}\n';
+
     customIconFiles.forEach((filename, hotspotId) => {
       css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
         '{background-image:url("../images/icons/' + filename.replace(/"/g, '%22') + '")!important}\n';
@@ -2433,18 +2787,21 @@
   let objectViewer = null;
   let stlViewer = null;
   let currentSceneId = '';
+  let musicAudio = null;
+  let musicKey = '';
+  let narrationAudio = null;
+  let musicEnabled = true;
+  let userInteracted = false;
   const historyStack = [];
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
   const backButton = document.getElementById('tourBackButton');
+  const overlay = document.getElementById('sceneTextOverlay');
+  const musicButton = document.getElementById('tourMusicButton');
+  const narrationButton = document.getElementById('tourNarrationButton');
 
-  const escapeHtmlText = (value) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/"/g, '&quot;');
-
-  const destroy = () => {
+  const destroyViewer = () => {
     if (panoViewer) {
       try { panoViewer.destroy(); } catch (_) {}
       panoViewer = null;
@@ -2468,15 +2825,130 @@
     if (!backButton) return;
     backButton.hidden = historyStack.length === 0;
     if (!historyStack.length) return;
-
     const previousId = historyStack[historyStack.length - 1];
     const previous = config.sceneMeta?.[previousId];
-    backButton.textContent = previous?.title
-      ? '← ' + previous.title
-      : '← Назад';
-    backButton.title = previous?.title
-      ? 'Вернуться: ' + previous.title
-      : 'Вернуться назад';
+    backButton.textContent = previous?.title ? '← ' + previous.title : '← Назад';
+    backButton.title = previous?.title ? 'Вернуться: ' + previous.title : 'Вернуться назад';
+  };
+
+  const renderTextOverlay = (id) => {
+    if (!overlay) return;
+    overlay.innerHTML = '';
+    const items = config.sceneMeta?.[id]?.textObjects || [];
+
+    items.forEach((item) => {
+      const el = document.createElement('div');
+      el.className = [
+        'scene-text-object',
+        'scene-text-' + (item.type || 'description'),
+        'scene-text-bg-' + (item.background || 'none'),
+        'scene-text-anim-' + (item.animation || 'fade')
+      ].join(' ');
+
+      el.style.left = Number(item.x || 0) + '%';
+      el.style.top = Number(item.y || 0) + '%';
+      el.style.width = Number(item.width || 40) + '%';
+      el.style.fontSize = Number(item.fontSize || 20) + 'px';
+      el.style.color = item.color || '#ffffff';
+      el.style.textAlign = item.align || 'left';
+
+      const inner = document.createElement('div');
+      inner.className = 'scene-text-inner';
+      inner.textContent = item.text || '';
+      el.appendChild(inner);
+      overlay.appendChild(el);
+    });
+  };
+
+  const desiredMusic = (id) => {
+    const sceneMusic = config.sceneMeta?.[id]?.audio?.music;
+    return sceneMusic?.src ? sceneMusic : config.projectAudio?.music;
+  };
+
+  const stopNarration = () => {
+    if (narrationAudio) {
+      try {
+        narrationAudio.pause();
+        narrationAudio.currentTime = 0;
+      } catch (_) {}
+    }
+    narrationAudio = null;
+    if (narrationButton) narrationButton.classList.remove('active');
+    if (musicAudio) {
+      const desired = desiredMusic(currentSceneId);
+      musicAudio.volume = Math.max(0, Math.min(1, Number(desired?.volume ?? 50) / 100));
+    }
+  };
+
+  const tryPlayMusic = async () => {
+    if (!musicAudio || !musicEnabled || !userInteracted) return;
+    try {
+      await musicAudio.play();
+      musicButton?.classList.add('active');
+    } catch (_) {}
+  };
+
+  const configureAudio = (id) => {
+    stopNarration();
+
+    const music = desiredMusic(id);
+    if (musicButton) musicButton.hidden = !music?.src;
+
+    const nextKey = music?.src || '';
+    if (nextKey !== musicKey) {
+      if (musicAudio) {
+        try { musicAudio.pause(); } catch (_) {}
+      }
+      musicAudio = null;
+      musicKey = nextKey;
+
+      if (music?.src) {
+        musicAudio = new Audio(music.src);
+        musicAudio.loop = Boolean(music.loop);
+      }
+    }
+
+    if (musicAudio && music) {
+      musicAudio.volume = Math.max(0, Math.min(1, Number(music.volume ?? 50) / 100));
+      tryPlayMusic();
+    }
+
+    const narration = config.sceneMeta?.[id]?.audio?.narration;
+    if (narrationButton) narrationButton.hidden = !narration?.src;
+  };
+
+  const playNarration = async () => {
+    const narration = config.sceneMeta?.[currentSceneId]?.audio?.narration;
+    if (!narration?.src) return;
+
+    if (narrationAudio && !narrationAudio.paused) {
+      stopNarration();
+      return;
+    }
+
+    stopNarration();
+    narrationAudio = new Audio(narration.src);
+    narrationAudio.volume = Math.max(0, Math.min(1, Number(narration.volume ?? 80) / 100));
+
+    if (musicAudio && !musicAudio.paused) {
+      musicAudio.volume *= 0.28;
+    }
+
+    narrationAudio.addEventListener('ended', stopNarration, { once: true });
+
+    try {
+      await narrationAudio.play();
+      narrationButton?.classList.add('active');
+    } catch (_) {
+      stopNarration();
+    }
+  };
+
+  const applySceneUi = (id) => {
+    renderTextOverlay(id);
+    configureAudio(id);
+    updateMenu(id);
+    updateBackButton();
   };
 
   const decorateUniversalHotspots = (panoConfig) => {
@@ -2484,10 +2956,7 @@
       (scene.hotSpots || []).forEach((hotspot) => {
         const target = hotspot.tourTargetSceneId;
         if (!target) return;
-
-        hotspot.clickHandlerFunc = () => {
-          showScene(target, true);
-        };
+        hotspot.clickHandlerFunc = () => showScene(target, true);
       });
     });
   };
@@ -2497,8 +2966,7 @@
     if (!meta) return;
 
     if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
-      updateMenu(id);
-      updateBackButton();
+      applySceneUi(id);
       return;
     }
 
@@ -2507,9 +2975,8 @@
     }
 
     currentSceneId = id;
-    destroy();
-    updateMenu(id);
-    updateBackButton();
+    destroyViewer();
+    applySceneUi(id);
 
     if (meta.sceneType === 'object360') {
       const data = config.object360Scenes?.[id];
@@ -2563,6 +3030,7 @@
     delete panoConfig.sceneMeta;
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
+    delete panoConfig.projectAudio;
 
     decorateUniversalHotspots(panoConfig);
 
@@ -2575,8 +3043,7 @@
       }
 
       currentSceneId = sceneId;
-      updateMenu(sceneId);
-      updateBackButton();
+      applySceneUi(sceneId);
     });
   };
 
@@ -2595,17 +3062,38 @@
         const icon = meta.sceneType === 'object360'
           ? '◉ '
           : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
-
-        return '<option value="' + escapeHtmlText(id) + '">' +
-          icon + escapeHtmlText(meta.title || id) + '</option>';
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = icon + (meta.title || id);
+        return option.outerHTML;
       }).join('');
-
       menu.addEventListener('change', () => showScene(menu.value, true));
     }
 
-    if (backButton) {
-      backButton.addEventListener('click', goBack);
-    }
+    backButton?.addEventListener('click', goBack);
+
+    musicButton?.addEventListener('click', async () => {
+      userInteracted = true;
+      musicEnabled = !musicEnabled;
+      if (!musicEnabled) {
+        musicAudio?.pause();
+        musicButton.classList.remove('active');
+      } else {
+        await tryPlayMusic();
+      }
+    });
+
+    narrationButton?.addEventListener('click', async () => {
+      userInteracted = true;
+      await playNarration();
+    });
+
+    const unlockAudio = () => {
+      userInteracted = true;
+      tryPlayMusic();
+    };
+    document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
+    document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
 
     showScene(config.tourFirstScene || order[0], false);
   };
@@ -2668,6 +3156,9 @@
       "        '.wasm' { return 'application/wasm' }",
       "        '.zip'  { return 'application/zip' }",
       "        '.stl'  { return 'model/stl' }",
+      "        '.mp3'  { return 'audio/mpeg' }",
+      "        '.ogg'  { return 'audio/ogg' }",
+      "        '.wav'  { return 'audio/wav' }",
       "        default { return 'application/octet-stream' }",
       "    }",
       "}",
@@ -3177,7 +3668,30 @@
         });
       }
 
-      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles, stlSceneFiles);
+      const audioConfig = {
+        projectMusic: bundleAudioSlot(
+          root,
+          project.audio?.music,
+          'project-music'
+        ),
+        scenes: {}
+      };
+
+      project.scenes.forEach((scene, index) => {
+        const audio = normalizeSceneAudio(scene.audio || {});
+        audioConfig.scenes[scene.id] = {
+          music: bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
+          narration: bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
+        };
+      });
+
+      const config = buildPortableTourConfig(
+        sceneFiles,
+        multiresScenes,
+        objectSceneFiles,
+        stlSceneFiles,
+        audioConfig
+      );
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
@@ -3197,6 +3711,7 @@
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
+        '- audio/ — музыка тура, музыка сцен и озвучка\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -3261,6 +3776,11 @@
   }
 
   function destroyPreviewViewers() {
+    stopPreviewAudio();
+    if (els.previewSceneOverlay) {
+      els.previewSceneOverlay.innerHTML = '';
+      els.previewSceneOverlay.hidden = true;
+    }
     if (previewViewer) {
       try { previewViewer.destroy(); } catch (_) {}
       previewViewer = null;
@@ -3281,6 +3801,8 @@
     if (!scene) return;
 
     destroyPreviewViewers();
+    renderSceneTextOverlay(scene, els.previewSceneOverlay, { editor: false });
+    configurePreviewAudio(scene);
 
     if (scene.sceneType === 'object360') {
       if (!window.Object360Viewer) return;
@@ -3320,6 +3842,12 @@
       firstSceneId: scene.id,
       universalSceneHandler: renderPreviewScene
     }));
+    previewViewer.on('scenechange', (nextSceneId) => {
+      const nextScene = getScene(nextSceneId);
+      if (!nextScene) return;
+      renderSceneTextOverlay(nextScene, els.previewSceneOverlay, { editor: false });
+      configurePreviewAudio(nextScene);
+    });
   }
 
   function openPreview() {
@@ -3337,6 +3865,14 @@
   function applyProjectSettingChange() {
     project.title = els.projectTitle.value.trim() || 'Виртуальная экскурсия';
     project.firstScene = els.firstScene.value || project.scenes[0]?.id || null;
+    project.audio = {
+      music: normalizeAudioSlot({
+        ...(project.audio?.music || {}),
+        volume: els.projectMusicVolume.value,
+        loop: els.projectMusicLoop.checked
+      }, { volume: 35, loop: true })
+    };
+    els.projectMusicVolumeValue.textContent = project.audio.music.volume + '%';
     project.settings.fadeEnabled = els.sceneFadeEnabled.checked;
     project.settings.fadeDuration = Math.max(0, Number(els.sceneFadeDuration.value) || 0);
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
@@ -3356,6 +3892,12 @@
     if (!scene) return;
 
     scene.title = els.sceneTitle.value.trim() || scene.title;
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    scene.audio.music.volume = clampNumber(els.sceneMusicVolume.value, 0, 100, 45);
+    scene.audio.music.loop = els.sceneMusicLoop.checked;
+    scene.audio.narration.volume = clampNumber(els.sceneNarrationVolume.value, 0, 100, 80);
+    els.sceneMusicVolumeValue.textContent = scene.audio.music.volume + '%';
+    els.sceneNarrationVolumeValue.textContent = scene.audio.narration.volume + '%';
 
     if (scene.sceneType === 'object360') {
       const data = normalizeObject360Data(scene.object360 || {});
@@ -3454,6 +3996,63 @@
     els.sceneList.addEventListener('click', (event) => {
       const card = event.target.closest('[data-scene-id]');
       if (card) selectScene(card.dataset.sceneId);
+    });
+
+    els.btnAddTextObject.addEventListener('click', () => openTextObjectDialog());
+
+    els.textObjectList.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-text-object-id]');
+      if (card) openTextObjectDialog(card.dataset.textObjectId);
+    });
+
+    els.textObjectForm.addEventListener('submit', (event) => {
+      if (event.submitter?.value === 'cancel') return;
+      event.preventDefault();
+      saveTextObjectFromDialog();
+    });
+
+    els.btnDeleteTextObject.addEventListener('click', () => {
+      const id = els.textObjectEditId.value;
+      if (id && confirm('Удалить этот текстовый объект?')) deleteTextObject(id);
+    });
+
+    let draggedTextElement = null;
+    let textDragOffsetX = 0;
+    let textDragOffsetY = 0;
+    els.sceneOverlay.addEventListener('pointerdown', (event) => {
+      const element = event.target.closest('[data-text-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      draggedTextElement = element;
+      const elementRect = element.getBoundingClientRect();
+      textDragOffsetX = event.clientX - elementRect.left;
+      textDragOffsetY = event.clientY - elementRect.top;
+      element.classList.add('dragging');
+      try { element.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    els.sceneOverlay.addEventListener('pointermove', (event) => {
+      if (!draggedTextElement) return;
+      updateDraggedTextObject(
+        draggedTextElement,
+        event.clientX - textDragOffsetX,
+        event.clientY - textDragOffsetY
+      );
+    });
+    const finishTextDrag = () => {
+      if (!draggedTextElement) return;
+      draggedTextElement.classList.remove('dragging');
+      draggedTextElement = null;
+      markDirty();
+      renderTextObjectList();
+    };
+    els.sceneOverlay.addEventListener('pointerup', finishTextDrag);
+    els.sceneOverlay.addEventListener('pointercancel', finishTextDrag);
+    els.sceneOverlay.addEventListener('dblclick', (event) => {
+      const element = event.target.closest('[data-text-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openTextObjectDialog(element.dataset.textObjectId);
     });
 
     els.hotspotList.addEventListener('click', (event) => {
@@ -3599,6 +4198,40 @@
     els.multiresQuality.addEventListener('change', applyProjectSettingChange);
     els.multiresMaxCubeSize.addEventListener('change', applyProjectSettingChange);
 
+    els.projectMusicFile.addEventListener('change', async () => {
+      const file = els.projectMusicFile.files?.[0];
+      if (!file) return;
+      try {
+        const current = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+        project.audio = {
+          music: normalizeAudioSlot({
+            ...current,
+            data: await fileToDataURL(file),
+            filename: file.name
+          }, { volume: 35, loop: true })
+        };
+        els.projectMusicName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить музыку тура');
+      } finally {
+        els.projectMusicFile.value = '';
+      }
+    });
+    els.projectMusicVolume.addEventListener('input', applyProjectSettingChange);
+    els.projectMusicLoop.addEventListener('change', applyProjectSettingChange);
+    els.btnRemoveProjectMusic.addEventListener('click', () => {
+      project.audio = {
+        music: normalizeAudioSlot({
+          volume: els.projectMusicVolume.value,
+          loop: els.projectMusicLoop.checked
+        }, { volume: 35, loop: true })
+      };
+      els.projectMusicName.textContent = 'Не выбрана';
+      markDirty();
+    });
+
     els.sceneTitle.addEventListener('input', () => applySceneFieldChanges());
     els.scenePitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.sceneYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
@@ -3640,6 +4273,73 @@
     });
     els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+
+    els.sceneMusicFile.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.sceneMusicFile.files?.[0];
+      if (!scene || !file) return;
+      try {
+        scene.audio = normalizeSceneAudio(scene.audio || {});
+        scene.audio.music = normalizeAudioSlot({
+          ...scene.audio.music,
+          data: await fileToDataURL(file),
+          filename: file.name
+        }, { volume: 45, loop: true });
+        els.sceneMusicName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить музыку сцены');
+      } finally {
+        els.sceneMusicFile.value = '';
+      }
+    });
+    els.sceneMusicVolume.addEventListener('input', () => applySceneFieldChanges());
+    els.sceneMusicLoop.addEventListener('change', () => applySceneFieldChanges());
+    els.btnRemoveSceneMusic.addEventListener('click', () => {
+      const scene = getScene();
+      if (!scene) return;
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      scene.audio.music = normalizeAudioSlot({
+        volume: els.sceneMusicVolume.value,
+        loop: els.sceneMusicLoop.checked
+      }, { volume: 45, loop: true });
+      els.sceneMusicName.textContent = 'Не выбрана';
+      markDirty();
+    });
+
+    els.sceneNarrationFile.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.sceneNarrationFile.files?.[0];
+      if (!scene || !file) return;
+      try {
+        scene.audio = normalizeSceneAudio(scene.audio || {});
+        scene.audio.narration = normalizeAudioSlot({
+          ...scene.audio.narration,
+          data: await fileToDataURL(file),
+          filename: file.name
+        }, { volume: 80, loop: false });
+        els.sceneNarrationName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить озвучку');
+      } finally {
+        els.sceneNarrationFile.value = '';
+      }
+    });
+    els.sceneNarrationVolume.addEventListener('input', () => applySceneFieldChanges());
+    els.btnRemoveSceneNarration.addEventListener('click', () => {
+      const scene = getScene();
+      if (!scene) return;
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      scene.audio.narration = normalizeAudioSlot({
+        volume: els.sceneNarrationVolume.value,
+        loop: false
+      }, { volume: 80, loop: false });
+      els.sceneNarrationName.textContent = 'Не выбрана';
+      markDirty();
+    });
 
     els.sceneImageReplace.addEventListener('change', async () => {
       const scene = getScene();
@@ -3775,6 +4475,35 @@
     els.downloadZipLink.addEventListener('click', savePendingZip);
 
     els.btnPreview.addEventListener('click', openPreview);
+    els.previewMusicButton.addEventListener('click', async () => {
+      if (!previewMusicAudio) return;
+      try {
+        if (previewMusicAudio.paused) {
+          await previewMusicAudio.play();
+          els.previewMusicButton.classList.add('active');
+        } else {
+          previewMusicAudio.pause();
+          els.previewMusicButton.classList.remove('active');
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+    });
+    els.previewNarrationButton.addEventListener('click', async () => {
+      if (!previewNarrationAudio) return;
+      try {
+        if (previewNarrationAudio.paused) {
+          previewNarrationAudio.currentTime = 0;
+          await previewNarrationAudio.play();
+          els.previewNarrationButton.classList.add('active');
+        } else {
+          previewNarrationAudio.pause();
+          els.previewNarrationButton.classList.remove('active');
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+    });
     els.closePreview.addEventListener('click', closePreview);
     els.previewDialog.addEventListener('cancel', (event) => {
       event.preventDefault();
