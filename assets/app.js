@@ -403,10 +403,22 @@
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
-      sceneType: (scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama',
-      filename: String(scene.filename || ('panorama-' + (index + 1) + '.jpg')),
-      imageData: String(scene.imageData || scene.panorama || scene.object360?.coverData || ''),
+      sceneType: (scene.sceneType === 'stl' || scene.stl)
+        ? 'stl'
+        : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'),
+      filename: String(scene.filename || (
+        scene.sceneType === 'stl' || scene.stl
+          ? ('model-' + (index + 1) + '.stl')
+          : ('panorama-' + (index + 1) + '.jpg')
+      )),
+      imageData: String(
+        scene.imageData ||
+        scene.panorama ||
+        scene.object360?.coverData ||
+        ((scene.sceneType === 'stl' || scene.stl) ? stlPlaceholderDataUrl() : '')
+      ),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
+      stl: scene.sceneType === 'stl' || scene.stl ? normalizeStlData(scene.stl || {}) : null,
       pitch: Number.isFinite(Number(scene.pitch)) ? Number(scene.pitch) : 0,
       yaw: Number.isFinite(Number(scene.yaw)) ? Number(scene.yaw) : 0,
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
