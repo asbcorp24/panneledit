@@ -58,6 +58,10 @@ button{color:inherit}
 .sidebar-right{border-left:1px solid var(--line)}
 .panel{padding:16px;border-bottom:1px solid var(--line)}
 .panel.compact{padding-bottom:20px}
+.multires-options{margin:4px 0 2px;padding:10px;border:1px solid var(--line);border-radius:11px;background:rgba(108,124,255,.035)}
+.multires-options .field:last-of-type{margin-bottom:7px}
+.field-note{margin:2px 0 0;color:var(--muted);font-size:9px;line-height:1.5}
+
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
 .panel-head h2{font-size:14px;margin:0 0 3px}
 .panel-head p{font-size:11px;margin:0;color:var(--muted)}
