@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -55,6 +56,10 @@ class MainActivity : AppCompatActivity() {
         if (granted) startCamera() else Toast.makeText(this, "Нужен доступ к камере", Toast.LENGTH_LONG).show()
     }
 
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -68,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupUi()
+        requestLegacyStoragePermission()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
@@ -107,6 +113,18 @@ class MainActivity : AppCompatActivity() {
         binding.btnReview.setOnClickListener { showReview() }
         binding.btnExport.setOnClickListener { exportZip() }
         updateUi()
+    }
+
+    private fun requestLegacyStoragePermission() {
+        if (
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
     }
 
     private fun startCamera() {
@@ -182,6 +200,15 @@ class MainActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     session.register(row, sector, rel, file)
+                    runCatching {
+                        PublicStorage.publishPhoto(
+                            this@MainActivity,
+                            file,
+                            session.sessionId,
+                            row,
+                            sector
+                        )
+                    }
                     runOnUiThread {
                         captureBusy = false
                         updateUi()
@@ -339,10 +366,18 @@ class MainActivity : AppCompatActivity() {
                         zos.closeEntry()
                     }
                 }
+                PublicStorage.publishZip(
+                    this,
+                    zip,
+                    "${session.sessionId}.object360.zip"
+                )
                 runOnUiThread {
                     AlertDialog.Builder(this)
                         .setTitle("Экспорт готов")
-                        .setMessage("${zip.absolutePath}\n\nВ архиве фотографии и config.json.")
+                        .setMessage(
+                            "ZIP сохранён в Загрузки/Object360/\n\n" +
+                                "Фотографии доступны в Pictures/Object360/${session.sessionId}/"
+                        )
                         .setPositiveButton("OK", null)
                         .show()
                 }
