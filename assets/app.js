@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 2;
+  const PROJECT_VERSION = 3;
 
   const $ = (id) => document.getElementById(id);
 
@@ -45,10 +45,14 @@
     panoramaUploadBox: $('panoramaUploadBox'),
     object360UploadBox: $('object360UploadBox'),
     object360ImportNote: $('object360ImportNote'),
+    stlUploadBox: $('stlUploadBox'),
+    stlImportNote: $('stlImportNote'),
     newSceneImage: $('newSceneImage'),
     newSceneFileName: $('newSceneFileName'),
     newObject360Zip: $('newObject360Zip'),
     newObject360FileName: $('newObject360FileName'),
+    newStlFile: $('newStlFile'),
+    newStlFileName: $('newStlFileName'),
     sceneSettings: $('sceneSettings'),
     noSceneSettings: $('noSceneSettings'),
     sceneSettingsSubtitle: $('sceneSettingsSubtitle'),
@@ -68,6 +72,17 @@
     object360Autoplay: $('object360Autoplay'),
     object360Filename: $('object360Filename'),
     object360ZipReplace: $('object360ZipReplace'),
+    stlSceneSettings: $('stlSceneSettings'),
+    stlSceneStats: $('stlSceneStats'),
+    stlSceneFile: $('stlSceneFile'),
+    stlYaw: $('stlYaw'),
+    stlPitch: $('stlPitch'),
+    stlZoom: $('stlZoom'),
+    stlColor: $('stlColor'),
+    stlWireframe: $('stlWireframe'),
+    stlAutoplay: $('stlAutoplay'),
+    stlFilename: $('stlFilename'),
+    stlFileReplace: $('stlFileReplace'),
     btnDeleteScene: $('btnDeleteScene'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
@@ -122,8 +137,10 @@
   let currentSceneId = null;
   let viewer = null;
   let objectViewer = null;
+  let stlViewer = null;
   let previewViewer = null;
   let previewObjectViewer = null;
+  let previewStlViewer = null;
   let dbPromise = null;
   let saveTimer = null;
   let toastTimer = null;
@@ -234,6 +251,36 @@
   function objectFrameAngle(data, sector) {
     const sectors = Math.max(1, Number(data?.sectors) || 1);
     return 360 * ((Number(sector) || 0) % sectors) / sectors;
+  }
+
+  function normalizeStlData(input = {}) {
+    return {
+      data: String(input.data || ''),
+      filename: String(input.filename || 'model.stl'),
+      triangleCount: Math.max(0, Number(input.triangleCount) || 0),
+      yaw: Number(input.yaw) || 0,
+      pitch: clampNumber(input.pitch, -89, 89, -15),
+      zoom: clampNumber(input.zoom, 0.35, 5, 1),
+      wireframe: Boolean(input.wireframe),
+      autoplay: Boolean(input.autoplay),
+      color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#7c8cff',
+      size: {
+        x: Math.max(0, Number(input.size?.x) || 0),
+        y: Math.max(0, Number(input.size?.y) || 0),
+        z: Math.max(0, Number(input.size?.z) || 0)
+      }
+    };
+  }
+
+  function stlPlaceholderDataUrl() {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240">' +
+      '<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#101a33"/><stop offset="1" stop-color="#07101b"/></linearGradient></defs>' +
+      '<rect width="320" height="240" fill="url(#g)"/>' +
+      '<g fill="none" stroke="#7c8cff" stroke-width="3" opacity=".9">' +
+      '<path d="M160 48 236 92 236 164 160 208 84 164 84 92Z"/>' +
+      '<path d="M160 48 160 124 236 164M160 124 84 164M84 92 160 124 236 92"/>' +
+      '</g><text x="160" y="224" text-anchor="middle" fill="#b9c2ff" font-family="Arial" font-size="18" font-weight="700">STL 3D</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
 
   function showToast(message, timeout = 2400) {
@@ -356,10 +403,22 @@
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
-      sceneType: (scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama',
-      filename: String(scene.filename || ('panorama-' + (index + 1) + '.jpg')),
-      imageData: String(scene.imageData || scene.panorama || scene.object360?.coverData || ''),
+      sceneType: (scene.sceneType === 'stl' || scene.stl)
+        ? 'stl'
+        : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'),
+      filename: String(scene.filename || (
+        scene.sceneType === 'stl' || scene.stl
+          ? ('model-' + (index + 1) + '.stl')
+          : ('panorama-' + (index + 1) + '.jpg')
+      )),
+      imageData: String(
+        scene.imageData ||
+        scene.panorama ||
+        scene.object360?.coverData ||
+        ((scene.sceneType === 'stl' || scene.stl) ? stlPlaceholderDataUrl() : '')
+      ),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
+      stl: scene.sceneType === 'stl' || scene.stl ? normalizeStlData(scene.stl || {}) : null,
       pitch: Number.isFinite(Number(scene.pitch)) ? Number(scene.pitch) : 0,
       yaw: Number.isFinite(Number(scene.yaw)) ? Number(scene.yaw) : 0,
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
@@ -403,7 +462,7 @@
   function renderSceneList() {
     if (!project.scenes.length) {
       els.sceneList.className = 'scene-list empty';
-      els.sceneList.innerHTML = '<div class="empty-state">Добавьте первую панораму</div>';
+      els.sceneList.innerHTML = '<div class="empty-state">Добавьте первую сцену</div>';
       return;
     }
 
@@ -411,14 +470,24 @@
     els.sceneList.innerHTML = project.scenes.map((scene, index) => {
       const count = scene.hotspots?.length || 0;
       const isObject = scene.sceneType === 'object360';
-      const thumb = scene.imageData || scene.object360?.coverData || '';
+      const isStl = scene.sceneType === 'stl';
+      const thumb = scene.imageData || scene.object360?.coverData || (isStl ? stlPlaceholderDataUrl() : '');
+      const kind = isObject
+        ? '<span class="scene-kind">ОБЪЕКТ 360</span>'
+        : (isStl ? '<span class="scene-kind stl-kind">STL 3D</span>' : '');
+      const info = isObject
+        ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.')
+        : (isStl
+          ? ((scene.stl?.triangleCount || 0).toLocaleString('ru-RU') + ' треуг.')
+          : (count + ' ' + (count === 1 ? 'точка' : 'точек')));
+
       return `
-        <article class="scene-card ${isObject ? 'object360' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
+        <article class="scene-card ${isObject ? 'object360' : ''} ${isStl ? 'stl-scene' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
           <div class="scene-card-main">
             <img class="scene-thumb" src="${escapeHtml(thumb)}" alt="">
             <div class="scene-meta">
-              <b>${escapeHtml(scene.title)}${isObject ? '<span class="scene-kind">ОБЪЕКТ 360</span>' : ''}</b>
-              <span>${isObject ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.') : (count + ' ' + (count === 1 ? 'точка' : 'точек'))}${project.firstScene === scene.id ? ' · старт' : ''}</span>
+              <b>${escapeHtml(scene.title)}${kind}</b>
+              <span>${info}${project.firstScene === scene.id ? ' · старт' : ''}</span>
             </div>
             <span class="scene-index">${index + 1}</span>
           </div>
@@ -466,8 +535,10 @@
     els.sceneId.value = scene.id;
 
     const isObject = scene.sceneType === 'object360';
-    els.panoramaSceneSettings.hidden = isObject;
+    const isStl = scene.sceneType === 'stl';
+    els.panoramaSceneSettings.hidden = isObject || isStl;
     els.object360SceneSettings.hidden = !isObject;
+    els.stlSceneSettings.hidden = !isStl;
 
     if (isObject) {
       const data = scene.object360 || normalizeObject360Data({});
@@ -479,6 +550,20 @@
       els.object360StartRow.value = String(Math.min(Math.max(0, Number(data.startRow) || 0), Math.max(0, (data.rows || 1) - 1)));
       els.object360Autoplay.checked = Boolean(data.autoplay);
       els.object360Filename.textContent = scene.filename || 'object360.zip';
+    } else if (isStl) {
+      const data = normalizeStlData(scene.stl || {});
+      const sx = data.size.x ? data.size.x.toFixed(1) : '—';
+      const sy = data.size.y ? data.size.y.toFixed(1) : '—';
+      const sz = data.size.z ? data.size.z.toFixed(1) : '—';
+      els.stlSceneStats.textContent = data.triangleCount.toLocaleString('ru-RU') + ' треугольников';
+      els.stlSceneFile.textContent = 'Размер STL: ' + sx + ' × ' + sy + ' × ' + sz;
+      els.stlYaw.value = String(data.yaw);
+      els.stlPitch.value = String(data.pitch);
+      els.stlZoom.value = String(data.zoom);
+      els.stlColor.value = data.color;
+      els.stlWireframe.checked = Boolean(data.wireframe);
+      els.stlAutoplay.checked = Boolean(data.autoplay);
+      els.stlFilename.textContent = scene.filename || data.filename || 'model.stl';
     } else {
       els.scenePitch.value = formatNum(scene.pitch);
       els.sceneYaw.value = formatNum(scene.yaw);
@@ -524,9 +609,12 @@
     const scene = getScene();
     const hasScene = Boolean(scene);
     const isObject = scene?.sceneType === 'object360';
-    els.btnAddHotspot.disabled = !hasScene || isObject;
+    const isStl = scene?.sceneType === 'stl';
+    els.btnAddHotspot.disabled = !hasScene || isObject || isStl;
     els.btnSetInitialView.disabled = !hasScene;
-    els.btnSetInitialView.textContent = isObject ? 'Сохранить текущий кадр' : 'Сохранить текущий вид';
+    els.btnSetInitialView.textContent = isObject
+      ? 'Сохранить текущий кадр'
+      : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
     els.viewerPlaceholder.hidden = hasScene;
   }
@@ -916,7 +1004,7 @@
   function buildPannellumConfig({ useEmbeddedImages = true, firstSceneId = null } = {}) {
     const scenes = {};
 
-    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
+    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
       scenes[scene.id] = {
         type: 'equirectangular',
         panorama: useEmbeddedImages ? scene.imageData : scene.filename,
@@ -925,7 +1013,7 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType !== 'object360'))
+          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType === 'panorama'))
           .map(hotspotToPannellum)
       };
     });
@@ -959,6 +1047,10 @@
     if (objectViewer) {
       try { objectViewer.destroy(); } catch (error) { console.warn(error); }
       objectViewer = null;
+    }
+    if (stlViewer) {
+      try { stlViewer.destroy(); } catch (error) { console.warn(error); }
+      stlViewer = null;
     }
   }
 
@@ -998,6 +1090,42 @@
       } catch (error) {
         console.error(error);
         showToast('Ошибка запуска Object 360°');
+      }
+      return;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) {
+        showToast('STL Viewer не загрузился');
+        return;
+      }
+      const data = normalizeStlData(scene.stl || {});
+      scene.stl = data;
+      try {
+        stlViewer = new StlViewer(els.panorama, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: data.autoplay,
+          color: data.color,
+          onChange: (state) => {
+            els.coords.textContent =
+              'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
+              '° · zoom ' + Number(state.zoom).toFixed(2);
+          }
+        });
+        stlViewer.ready.catch((error) => {
+          console.error(error);
+          showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
+        });
+        els.coords.textContent =
+          'yaw ' + formatNum(data.yaw) + '° · pitch ' + formatNum(data.pitch) +
+          '° · zoom ' + Number(data.zoom).toFixed(2);
+      } catch (error) {
+        console.error(error);
+        showToast('Ошибка запуска STL Viewer');
       }
       return;
     }
@@ -1054,7 +1182,7 @@
     updateToolbarState();
 
     const target = getScene(sceneId);
-    if (viewer && target?.sceneType !== 'object360') {
+    if (viewer && target?.sceneType === 'panorama') {
       try {
         viewer.loadScene(sceneId);
         return;
@@ -1122,22 +1250,76 @@
     return scene;
   }
 
+  async function createStlSceneFromFile(file, title) {
+    if (!file || !/\.stl$/i.test(file.name || '')) {
+      throw new Error('Выберите STL-файл');
+    }
+    if (!window.StlTools) throw new Error('STL parser не загрузился');
+
+    const buffer = await file.arrayBuffer();
+    const parsed = StlTools.parseStl(buffer);
+    const stlDataUrl = await fileToDataURL(file);
+
+    const baseId = slugify(title || file.name.replace(/\.stl$/i, ''));
+    let id = baseId;
+    let n = 2;
+    while (project.scenes.some((scene) => scene.id === id)) id = baseId + '-' + n++;
+
+    const stl = normalizeStlData({
+      data: stlDataUrl,
+      filename: file.name,
+      triangleCount: parsed.triangleCount,
+      size: parsed.originalSize,
+      yaw: 0,
+      pitch: -15,
+      zoom: 1,
+      wireframe: false,
+      autoplay: false,
+      color: '#7c8cff'
+    });
+
+    const scene = {
+      id,
+      title: String(title || file.name.replace(/\.stl$/i, '') || 'STL модель'),
+      sceneType: 'stl',
+      filename: file.name || (id + '.stl'),
+      imageData: stlPlaceholderDataUrl(),
+      object360: null,
+      stl,
+      pitch: 0,
+      yaw: 0,
+      hfov: 100,
+      hotspots: []
+    };
+
+    project.scenes.push(scene);
+    if (!project.firstScene) project.firstScene = scene.id;
+    currentSceneId = scene.id;
+    markDirty();
+    renderViewer();
+    return scene;
+  }
+
   function setNewSceneType(type) {
-    const next = type === 'object360' ? 'object360' : 'panorama';
+    const next = type === 'object360' ? 'object360' : (type === 'stl' ? 'stl' : 'panorama');
     els.newSceneType.value = next;
     [...els.sceneTypeControl.querySelectorAll('[data-scene-type]')].forEach((button) => {
       button.classList.toggle('active', button.dataset.sceneType === next);
     });
     const objectMode = next === 'object360';
-    els.panoramaUploadBox.hidden = objectMode;
+    const stlMode = next === 'stl';
+    els.panoramaUploadBox.hidden = objectMode || stlMode;
     els.object360UploadBox.hidden = !objectMode;
     els.object360ImportNote.hidden = !objectMode;
+    els.stlUploadBox.hidden = !stlMode;
+    els.stlImportNote.hidden = !stlMode;
   }
 
   function openSceneDialog() {
     els.sceneForm.reset();
     els.newSceneFileName.textContent = 'JPG, PNG или WEBP';
     els.newObject360FileName.textContent = 'ZIP из Android-приложения Object360Capture';
+    els.newStlFileName.textContent = 'Binary или ASCII STL';
     setNewSceneType('panorama');
     els.sceneDialog.showModal();
     setTimeout(() => els.newSceneTitle.focus(), 50);
@@ -1235,7 +1417,7 @@
 
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
-    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType !== 'object360');
+    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType === 'panorama');
     els.hotspotTarget.innerHTML = candidates.length
       ? candidates.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
       : '<option value="">Сначала добавьте вторую сцену</option>';
@@ -1410,6 +1592,24 @@
       markDirty();
       renderSceneSettings();
       showToast('Стартовый кадр объекта сохранён');
+      return;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!stlViewer) return;
+      const state = stlViewer.getState();
+      scene.stl = normalizeStlData({
+        ...scene.stl,
+        yaw: Number(state.yaw.toFixed(2)),
+        pitch: Number(state.pitch.toFixed(2)),
+        zoom: Number(state.zoom.toFixed(3)),
+        wireframe: state.wireframe,
+        autoplay: state.autoRotate,
+        color: state.color
+      });
+      markDirty();
+      renderSceneSettings();
+      showToast('Ракурс STL-модели сохранён');
       return;
     }
 
@@ -1895,11 +2095,16 @@
     };
   }
 
-  function buildPortableTourConfig(sceneFiles, multiresScenes = new Map(), objectSceneFiles = new Map()) {
-    const firstPanorama = project.scenes.find((scene) => scene.sceneType !== 'object360')?.id || null;
+  function buildPortableTourConfig(
+    sceneFiles,
+    multiresScenes = new Map(),
+    objectSceneFiles = new Map(),
+    stlSceneFiles = new Map()
+  ) {
+    const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
 
-    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
+    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
       const sceneConfig = config.scenes[scene.id];
       if (!sceneConfig) return;
 
@@ -1929,10 +2134,11 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: scene.sceneType === 'object360' ? 'object360' : 'panorama'
+        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama'
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
+    config.stlScenes = Object.fromEntries(stlSceneFiles);
     return config;
   }
 
@@ -1952,6 +2158,7 @@
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
+      '  <script src="assets/stl-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
       '</body>\n</html>\n';
   }
@@ -2019,7 +2226,8 @@
       '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\n' +
       'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n' +
       '#sceneMenuExport{position:fixed;z-index:50;left:12px;top:12px;max-width:min(320px,calc(100vw - 24px));border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui}\n' +
-      '.object360-host{position:relative;overflow:hidden}.object360-viewer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),#040812;outline:0;user-select:none;touch-action:none;cursor:grab}.object360-viewer.dragging{cursor:grabbing}.object360-image-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.object360-image{max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;transform-origin:center center;transition:transform .08s linear;filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none}.object360-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.78);color:#a9b4ca;font-size:10px}.object360-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.78);backdrop-filter:blur(12px)}.object360-counter,.object360-row-label{flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);font-size:9px}.object360-row-label{color:#75e7d6}.object360-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.object360-autoplay,.object360-reset{flex:none;width:34px;height:28px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer}\n';
+      '.object360-host{position:relative;overflow:hidden}.object360-viewer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),#040812;outline:0;user-select:none;touch-action:none;cursor:grab}.object360-viewer.dragging{cursor:grabbing}.object360-image-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.object360-image{max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;transform-origin:center center;transition:transform .08s linear;filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none}.object360-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.78);color:#a9b4ca;font-size:10px}.object360-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.78);backdrop-filter:blur(12px)}.object360-counter,.object360-row-label{flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);font-size:9px}.object360-row-label{color:#75e7d6}.object360-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.object360-autoplay,.object360-reset{flex:none;width:34px;height:28px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer}\n' +
+      '.stl-host{position:relative;overflow:hidden}.stl-viewer{position:absolute;inset:0;overflow:hidden;background:radial-gradient(circle at 50% 45%,rgba(124,140,255,.16),transparent 42%),linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),#040812;background-size:auto,40px 40px,40px 40px;outline:0;touch-action:none;cursor:grab}.stl-viewer.dragging{cursor:grabbing}.stl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}.stl-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.82);color:#a9b4ca;font-size:10px}.stl-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.8);backdrop-filter:blur(12px)}.stl-stats{flex:none;padding:4px 7px;border-radius:7px;background:rgba(124,140,255,.12);color:#c8ceff;font-size:9px}.stl-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.stl-mode,.stl-auto,.stl-reset{flex:none;min-width:34px;height:28px;padding:0 8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:800}.viewer-error{padding:30px;color:#fff;font:14px system-ui}\n';
 
     customIconFiles.forEach((filename, hotspotId) => {
       css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
@@ -2047,6 +2255,7 @@
   const config = ${json};
   let panoViewer = null;
   let objectViewer = null;
+  let stlViewer = null;
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
@@ -2064,6 +2273,10 @@
     if (objectViewer) {
       try { objectViewer.destroy(); } catch (_) {}
       objectViewer = null;
+    }
+    if (stlViewer) {
+      try { stlViewer.destroy(); } catch (_) {}
+      stlViewer = null;
     }
     host.innerHTML = '';
   };
@@ -2089,6 +2302,28 @@
       return;
     }
 
+    if (meta.sceneType === 'stl') {
+      const data = config.stlScenes?.[id];
+      if (!data || !window.StlViewer) {
+        host.innerHTML = '<div class="viewer-error">STL сцена недоступна</div>';
+        return;
+      }
+      stlViewer = new StlViewer(host, {
+        source: data.source,
+        yaw: data.yaw,
+        pitch: data.pitch,
+        zoom: data.zoom,
+        wireframe: data.wireframe,
+        autoRotate: data.autoplay,
+        color: data.color
+      });
+      stlViewer.ready.catch((error) => {
+        console.error(error);
+        host.innerHTML = '<div class="viewer-error">Ошибка загрузки STL</div>';
+      });
+      return;
+    }
+
     if (!window.pannellum) {
       host.innerHTML = '<div class="viewer-error">Pannellum не загрузился</div>';
       return;
@@ -2103,6 +2338,7 @@
     };
 
     delete panoConfig.object360Scenes;
+    delete panoConfig.stlScenes;
     delete panoConfig.sceneMeta;
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
@@ -2117,7 +2353,9 @@
     if (menu) {
       menu.innerHTML = order.map((id) => {
         const meta = config.sceneMeta?.[id] || {};
-        const icon = meta.sceneType === 'object360' ? '◉ ' : '◌ ';
+        const icon = meta.sceneType === 'object360'
+          ? '◉ '
+          : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
         return '<option value="' + escapeHtmlText(id) + '">' +
           icon + escapeHtmlText(meta.title || id) + '</option>';
       }).join('');
@@ -2184,6 +2422,7 @@
       "        '.ttf'  { return 'font/ttf' }",
       "        '.wasm' { return 'application/wasm' }",
       "        '.zip'  { return 'application/zip' }",
+      "        '.stl'  { return 'model/stl' }",
       "        default { return 'application/octet-stream' }",
       "    }",
       "}",
@@ -2570,8 +2809,10 @@
 
       const multiresScenes = new Map();
       const objectSceneFiles = new Map();
-      const panoramaScenes = project.scenes.filter((scene) => scene.sceneType !== 'object360');
+      const stlSceneFiles = new Map();
+      const panoramaScenes = project.scenes.filter((scene) => scene.sceneType === 'panorama');
       const objectScenes = project.scenes.filter((scene) => scene.sceneType === 'object360');
+      const stlScenes = project.scenes.filter((scene) => scene.sceneType === 'stl');
 
       if (project.settings.multiresEnabled) {
         for (let index = 0; index < panoramaScenes.length; index++) {
@@ -2633,13 +2874,45 @@
         });
       }
 
-      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles);
+      for (let sceneIndex = 0; sceneIndex < stlScenes.length; sceneIndex++) {
+        const scene = stlScenes[sceneIndex];
+        const data = normalizeStlData(scene.stl || {});
+        if (!data.data) throw new Error('STL данные отсутствуют: ' + scene.title);
+
+        const payload = dataUrlPayload(data.data);
+        const baseName = safeFilename(scene.title || scene.id, 'model-' + (sceneIndex + 1));
+        let filename = baseName + '.stl';
+        let suffix = 2;
+        while (usedNames.has(filename.toLowerCase())) {
+          filename = baseName + '-' + suffix++ + '.stl';
+        }
+        usedNames.add(filename.toLowerCase());
+
+        const modelPath = 'models/' + filename;
+        if (payload.base64) root.file(modelPath, payload.data, { base64: true });
+        else root.file(modelPath, decodeURIComponent(payload.data));
+
+        stlSceneFiles.set(scene.id, {
+          source: modelPath,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoplay: data.autoplay,
+          color: data.color,
+          triangleCount: data.triangleCount
+        });
+      }
+
+      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles, stlSceneFiles);
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
       const objectViewerAsset = await fetchRequiredAsset('assets/object360.js');
       root.file('assets/object360.js', await objectViewerAsset.text());
+      const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
+      root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       root.file('README.txt',
         'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
@@ -2649,6 +2922,7 @@
         '- assets/tour.css — оформление страницы\n' +
         '- images/ — исходные панорамы при обычном экспорте\n' +
         '- object360/ — кадры сцен «Объект 360°»\n' +
+        '- models/ — STL-модели 3D-сцен\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -2691,12 +2965,12 @@
       if (!imported.scenes.length) {
         throw new Error('В проекте нет сцен');
       }
-      if (imported.scenes.some((scene) =>
-        scene.sceneType === 'object360'
-          ? !countObjectFrames(scene.object360)
-          : !scene.imageData
-      )) {
-        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры');
+      if (imported.scenes.some((scene) => {
+        if (scene.sceneType === 'object360') return !countObjectFrames(scene.object360);
+        if (scene.sceneType === 'stl') return !scene.stl?.data;
+        return !scene.imageData;
+      })) {
+        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры / STL данные');
       }
 
       project = imported;
@@ -2726,6 +3000,10 @@
         try { previewObjectViewer.destroy(); } catch (_) {}
         previewObjectViewer = null;
       }
+      if (previewStlViewer) {
+        try { previewStlViewer.destroy(); } catch (_) {}
+        previewStlViewer = null;
+      }
       els.previewPanorama.innerHTML = '';
 
       if (scene.sceneType === 'object360') {
@@ -2739,6 +3017,22 @@
           startRow: data.startRow,
           autoplay: data.autoplay
         });
+        return;
+      }
+
+      if (scene.sceneType === 'stl') {
+        if (!window.StlViewer) return;
+        const data = normalizeStlData(scene.stl || {});
+        previewStlViewer = new StlViewer(els.previewPanorama, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: data.autoplay,
+          color: data.color
+        });
+        previewStlViewer.ready.catch(console.error);
         return;
       }
 
@@ -2758,6 +3052,10 @@
     if (previewObjectViewer) {
       try { previewObjectViewer.destroy(); } catch (_) {}
       previewObjectViewer = null;
+    }
+    if (previewStlViewer) {
+      try { previewStlViewer.destroy(); } catch (_) {}
+      previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
     if (els.previewDialog.open) els.previewDialog.close();
@@ -2792,6 +3090,15 @@
       data.startRow = Math.max(0, Math.min(data.rows - 1, Number(els.object360StartRow.value) || 0));
       data.autoplay = els.object360Autoplay.checked;
       scene.object360 = data;
+    } else if (scene.sceneType === 'stl') {
+      const data = normalizeStlData(scene.stl || {});
+      data.yaw = Number(els.stlYaw.value) || 0;
+      data.pitch = clampNumber(els.stlPitch.value, -89, 89, -15);
+      data.zoom = clampNumber(els.stlZoom.value, 0.35, 5, 1);
+      data.color = /^#[0-9a-f]{6}$/i.test(els.stlColor.value) ? els.stlColor.value.toLowerCase() : '#7c8cff';
+      data.wireframe = els.stlWireframe.checked;
+      data.autoplay = els.stlAutoplay.checked;
+      scene.stl = data;
     } else {
       scene.pitch = Number(els.scenePitch.value) || 0;
       scene.yaw = Number(els.sceneYaw.value) || 0;
@@ -2826,6 +3133,14 @@
       }
     });
 
+    els.newStlFile.addEventListener('change', () => {
+      const file = els.newStlFile.files?.[0];
+      els.newStlFileName.textContent = file ? file.name : 'Binary или ASCII STL';
+      if (file && !els.newSceneTitle.value.trim()) {
+        els.newSceneTitle.value = file.name.replace(/\.stl$/i, '');
+      }
+    });
+
     els.sceneForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
@@ -2834,12 +3149,15 @@
       const title = els.newSceneTitle.value.trim();
       const file = sceneType === 'object360'
         ? els.newObject360Zip.files?.[0]
-        : els.newSceneImage.files?.[0];
+        : (sceneType === 'stl' ? els.newStlFile.files?.[0] : els.newSceneImage.files?.[0]);
 
       if (!file || !title) {
-        showToast(sceneType === 'object360'
+        const message = sceneType === 'object360'
           ? 'Укажите название и выберите Object360 ZIP'
-          : 'Укажите название и выберите панораму');
+          : (sceneType === 'stl'
+            ? 'Укажите название и выберите STL-файл'
+            : 'Укажите название и выберите панораму');
+        showToast(message);
         return;
       }
 
@@ -2847,6 +3165,7 @@
       if (button) button.disabled = true;
       try {
         if (sceneType === 'object360') await createObject360SceneFromZip(file, title);
+        else if (sceneType === 'stl') await createStlSceneFromFile(file, title);
         else await createSceneFromFile(file, title);
         els.sceneDialog.close();
       } catch (error) {
@@ -3011,11 +3330,17 @@
     els.object360StartSector.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360StartRow.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360Autoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlPitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlZoom.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlColor.addEventListener('input', () => applySceneFieldChanges({ rerender: true }));
+    els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
 
     els.sceneImageReplace.addEventListener('change', async () => {
       const scene = getScene();
       const file = els.sceneImageReplace.files?.[0];
-      if (!scene || scene.sceneType === 'object360' || !file) return;
+      if (!scene || scene.sceneType !== 'panorama' || !file) return;
       try {
         scene.imageData = await fileToDataURL(file);
         scene.filename = file.name;
@@ -3101,6 +3426,39 @@
       }
     });
 
+    els.stlFileReplace.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.stlFileReplace.files?.[0];
+      if (!scene || scene.sceneType !== 'stl' || !file) return;
+
+      try {
+        if (!/\.stl$/i.test(file.name || '')) throw new Error('Нужен STL-файл');
+        if (!window.StlTools) throw new Error('STL parser не загрузился');
+
+        const buffer = await file.arrayBuffer();
+        const parsed = StlTools.parseStl(buffer);
+        const data = await fileToDataURL(file);
+        scene.filename = file.name;
+        scene.stl = normalizeStlData({
+          ...scene.stl,
+          data,
+          filename: file.name,
+          triangleCount: parsed.triangleCount,
+          size: parsed.originalSize
+        });
+        scene.imageData = stlPlaceholderDataUrl();
+
+        markDirty();
+        renderViewer();
+        showToast('STL-модель заменена');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось заменить STL: ' + (error?.message || 'ошибка'));
+      } finally {
+        els.stlFileReplace.value = '';
+      }
+    });
+
     els.btnExportProject.addEventListener('click', exportProject);
     els.btnExportTour.addEventListener('click', exportTourPackage);
     els.projectImport.addEventListener('change', () => importProjectFile(els.projectImport.files?.[0]));
@@ -3154,13 +3512,17 @@
       els.dropOverlay.classList.remove('visible');
       const files = [...event.dataTransfer?.files || []];
       const file = files.find((item) => item.type.startsWith('image/')) ||
-        files.find((item) => /\.zip$/i.test(item.name || ''));
+        files.find((item) => /\.zip$/i.test(item.name || '')) ||
+        files.find((item) => /\.stl$/i.test(item.name || ''));
       if (!file) return;
       event.preventDefault();
       try {
         if (/\.zip$/i.test(file.name || '')) {
           await createObject360SceneFromZip(file, file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
           showToast('Объект 360° добавлен');
+        } else if (/\.stl$/i.test(file.name || '')) {
+          await createStlSceneFromFile(file, file.name.replace(/\.stl$/i, ''));
+          showToast('STL-модель добавлена');
         } else {
           await createSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''));
           showToast('Панорама добавлена');
@@ -3182,8 +3544,10 @@
     window.addEventListener('resize', () => {
       try { viewer?.resize(); } catch (_) {}
       try { objectViewer?.resize(); } catch (_) {}
+      try { stlViewer?.resize(); } catch (_) {}
       try { previewViewer?.resize(); } catch (_) {}
       try { previewObjectViewer?.resize(); } catch (_) {}
+      try { previewStlViewer?.resize(); } catch (_) {}
     });
   }
 
