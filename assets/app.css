@@ -557,3 +557,5 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
   border-color:rgba(31,214,187,.65);box-shadow:0 0 0 3px rgba(31,214,187,.12);color:#75e7d6
 }
 .tour-audio-controls button[hidden]{display:none}
+
+.scene-text-inner{white-space:pre-line}
