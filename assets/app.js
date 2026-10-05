@@ -2255,6 +2255,7 @@
   const config = ${json};
   let panoViewer = null;
   let objectViewer = null;
+  let stlViewer = null;
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
@@ -2272,6 +2273,10 @@
     if (objectViewer) {
       try { objectViewer.destroy(); } catch (_) {}
       objectViewer = null;
+    }
+    if (stlViewer) {
+      try { stlViewer.destroy(); } catch (_) {}
+      stlViewer = null;
     }
     host.innerHTML = '';
   };
@@ -2297,6 +2302,28 @@
       return;
     }
 
+    if (meta.sceneType === 'stl') {
+      const data = config.stlScenes?.[id];
+      if (!data || !window.StlViewer) {
+        host.innerHTML = '<div class="viewer-error">STL сцена недоступна</div>';
+        return;
+      }
+      stlViewer = new StlViewer(host, {
+        source: data.source,
+        yaw: data.yaw,
+        pitch: data.pitch,
+        zoom: data.zoom,
+        wireframe: data.wireframe,
+        autoRotate: data.autoplay,
+        color: data.color
+      });
+      stlViewer.ready.catch((error) => {
+        console.error(error);
+        host.innerHTML = '<div class="viewer-error">Ошибка загрузки STL</div>';
+      });
+      return;
+    }
+
     if (!window.pannellum) {
       host.innerHTML = '<div class="viewer-error">Pannellum не загрузился</div>';
       return;
@@ -2311,6 +2338,7 @@
     };
 
     delete panoConfig.object360Scenes;
+    delete panoConfig.stlScenes;
     delete panoConfig.sceneMeta;
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
@@ -2325,7 +2353,9 @@
     if (menu) {
       menu.innerHTML = order.map((id) => {
         const meta = config.sceneMeta?.[id] || {};
-        const icon = meta.sceneType === 'object360' ? '◉ ' : '◌ ';
+        const icon = meta.sceneType === 'object360'
+          ? '◉ '
+          : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
         return '<option value="' + escapeHtmlText(id) + '">' +
           icon + escapeHtmlText(meta.title || id) + '</option>';
       }).join('');
