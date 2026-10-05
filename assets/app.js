@@ -110,6 +110,8 @@
   let pendingHotspotPreviewTargetId = '';
   let autoPreviewGenerationToken = 0;
   let pendingZipDownloadUrl = '';
+  let pendingZipBlob = null;
+  let pendingZipFilename = '';
 
   function createEmptyProject() {
     return {
@@ -1196,30 +1198,109 @@
     return (value / (1024 * 1024 * 1024)).toFixed(2) + ' ГБ';
   }
 
-  function closeZipDownloadDialog() {
-    if (els.downloadDialog.open) els.downloadDialog.close();
+  function clearPendingZipDownload() {
     if (pendingZipDownloadUrl) {
       URL.revokeObjectURL(pendingZipDownloadUrl);
       pendingZipDownloadUrl = '';
     }
-    els.downloadZipLink.removeAttribute('href');
+    pendingZipBlob = null;
+    pendingZipFilename = '';
+  }
+
+  function closeZipDownloadDialog() {
+    if (els.downloadDialog.open) els.downloadDialog.close();
+    clearPendingZipDownload();
   }
 
   function showZipDownloadDialog(blob, filename) {
-    if (pendingZipDownloadUrl) {
-      URL.revokeObjectURL(pendingZipDownloadUrl);
-    }
+    clearPendingZipDownload();
 
+    pendingZipBlob = blob;
+    pendingZipFilename = filename;
     pendingZipDownloadUrl = URL.createObjectURL(blob);
-    els.downloadZipLink.href = pendingZipDownloadUrl;
-    els.downloadZipLink.download = filename;
+
     els.downloadZipFilename.textContent = filename;
     els.downloadZipSize.textContent = formatFileSize(blob.size);
     els.downloadReadyInfo.textContent =
-      'ZIP-архив собран. Нажмите «Скачать ZIP», чтобы сохранить его на компьютер.';
+      'ZIP-архив собран. Нажмите «Скачать ZIP», чтобы выбрать папку и сохранить его на компьютер.';
 
     if (!els.downloadDialog.open) els.downloadDialog.showModal();
     els.downloadZipLink.focus();
+  }
+
+  async function savePendingZip() {
+    if (!pendingZipBlob || !pendingZipFilename) {
+      showToast('ZIP уже недоступен. Соберите архив ещё раз.');
+      return;
+    }
+
+    els.downloadZipLink.disabled = true;
+    const oldText = els.downloadZipLink.textContent;
+    els.downloadZipLink.textContent = 'Сохранение…';
+
+    try {
+      if (typeof window.showSaveFilePicker === 'function') {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: pendingZipFilename,
+          types: [{
+            description: 'ZIP-архив',
+            accept: { 'application/zip': ['.zip'] }
+          }]
+        });
+
+        const writable = await handle.createWritable();
+        await writable.write(pendingZipBlob);
+        await writable.close();
+
+        els.downloadReadyInfo.textContent =
+          'ZIP сохранён на компьютер: ' + pendingZipFilename;
+        showToast('ZIP успешно сохранён');
+        return;
+      }
+
+      const a = document.createElement('a');
+      a.href = pendingZipDownloadUrl || URL.createObjectURL(pendingZipBlob);
+      a.download = pendingZipFilename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      els.downloadReadyInfo.textContent =
+        'Скачивание запущено. Проверьте папку «Загрузки» браузера.';
+      showToast('Скачивание ZIP запущено');
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        els.downloadReadyInfo.textContent =
+          'Сохранение отменено. ZIP остаётся готовым — можно нажать кнопку ещё раз.';
+        return;
+      }
+
+      console.error(error);
+
+      try {
+        const fallbackUrl = pendingZipDownloadUrl || URL.createObjectURL(pendingZipBlob);
+        const a = document.createElement('a');
+        a.href = fallbackUrl;
+        a.download = pendingZipFilename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        els.downloadReadyInfo.textContent =
+          'Системное сохранение не сработало. Запущено обычное скачивание браузера.';
+        showToast('Запущено резервное скачивание ZIP');
+      } catch (fallbackError) {
+        console.error(fallbackError);
+        els.downloadReadyInfo.textContent =
+          'Не удалось сохранить ZIP. Откройте консоль браузера для просмотра ошибки.';
+        showToast('Ошибка сохранения ZIP: ' + (error?.message || 'неизвестная ошибка'), 5200);
+      }
+    } finally {
+      els.downloadZipLink.disabled = false;
+      els.downloadZipLink.textContent = oldText;
+    }
   }
 
   function safeFilename(value, fallback = 'tour') {
@@ -1784,11 +1865,7 @@
       event.preventDefault();
       closeZipDownloadDialog();
     });
-    els.downloadZipLink.addEventListener('click', () => {
-      els.downloadReadyInfo.textContent =
-        'Скачивание запущено. Если браузер спросит папку, выберите место сохранения.';
-      showToast('Скачивание ZIP запущено');
-    });
+    els.downloadZipLink.addEventListener('click', savePendingZip);
 
     els.btnPreview.addEventListener('click', openPreview);
     els.closePreview.addEventListener('click', closePreview);
@@ -1843,10 +1920,7 @@
     });
 
     window.addEventListener('beforeunload', () => {
-      if (pendingZipDownloadUrl) {
-        URL.revokeObjectURL(pendingZipDownloadUrl);
-        pendingZipDownloadUrl = '';
-      }
+      clearPendingZipDownload();
       if (saveTimer) {
         clearTimeout(saveTimer);
         persistProject();
