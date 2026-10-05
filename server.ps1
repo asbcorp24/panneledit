@@ -94,9 +94,10 @@ function Resolve-RequestPath {
         [System.IO.Path]::Combine($Root, $relative)
     )
 
-    $insideRoot =
+    $insideRoot = (
         $candidate.Equals($Root, [System.StringComparison]::OrdinalIgnoreCase) -or
         $candidate.StartsWith($RootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    )
 
     if (-not $insideRoot) {
         return $null
@@ -116,7 +117,7 @@ for ($tryPort = $Port; $tryPort -le ($Port + 20); $tryPort++) {
     $candidateListener = $null
 
     try {
-        $candidateListener = New-Object System.Net.Sockets.TcpListener(
+        $candidateListener = [System.Net.Sockets.TcpListener]::new(
             [System.Net.IPAddress]::Loopback,
             $tryPort
         )
@@ -180,7 +181,7 @@ try {
         try {
             $stream = $client.GetStream()
 
-            $reader = New-Object System.IO.StreamReader(
+            $reader = [System.IO.StreamReader]::new(
                 $stream,
                 [System.Text.Encoding]::ASCII,
                 $false,
@@ -248,7 +249,7 @@ try {
                 continue
             }
 
-            $fileInfo = New-Object System.IO.FileInfo($filePath)
+            $fileInfo = [System.IO.FileInfo]::new($filePath)
             $totalLength = [int64]$fileInfo.Length
             $start = [int64]0
             $end = [int64]($totalLength - 1)
