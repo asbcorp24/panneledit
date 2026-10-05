@@ -2663,6 +2663,11 @@
       '    <select id="sceneMenuExport" aria-label="Сцены тура"></select>\n' +
       '  </div>\n' +
       '  <div id="panorama"></div>\n' +
+      '  <div id="sceneTextOverlay" class="scene-text-overlay"></div>\n' +
+      '  <div id="tourAudioControls" class="tour-audio-controls">\n' +
+      '    <button id="tourMusicButton" type="button" title="Музыка">♪</button>\n' +
+      '    <button id="tourNarrationButton" type="button" title="Озвучка" hidden>🔊</button>\n' +
+      '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
