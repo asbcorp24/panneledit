@@ -3008,6 +3008,14 @@
       }
     });
 
+    els.newStlFile.addEventListener('change', () => {
+      const file = els.newStlFile.files?.[0];
+      els.newStlFileName.textContent = file ? file.name : 'Binary или ASCII STL';
+      if (file && !els.newSceneTitle.value.trim()) {
+        els.newSceneTitle.value = file.name.replace(/\.stl$/i, '');
+      }
+    });
+
     els.sceneForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
@@ -3016,12 +3024,15 @@
       const title = els.newSceneTitle.value.trim();
       const file = sceneType === 'object360'
         ? els.newObject360Zip.files?.[0]
-        : els.newSceneImage.files?.[0];
+        : (sceneType === 'stl' ? els.newStlFile.files?.[0] : els.newSceneImage.files?.[0]);
 
       if (!file || !title) {
-        showToast(sceneType === 'object360'
+        const message = sceneType === 'object360'
           ? 'Укажите название и выберите Object360 ZIP'
-          : 'Укажите название и выберите панораму');
+          : (sceneType === 'stl'
+            ? 'Укажите название и выберите STL-файл'
+            : 'Укажите название и выберите панораму');
+        showToast(message);
         return;
       }
 
@@ -3029,6 +3040,7 @@
       if (button) button.disabled = true;
       try {
         if (sceneType === 'object360') await createObject360SceneFromZip(file, title);
+        else if (sceneType === 'stl') await createStlSceneFromFile(file, title);
         else await createSceneFromFile(file, title);
         els.sceneDialog.close();
       } catch (error) {
@@ -3193,11 +3205,17 @@
     els.object360StartSector.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360StartRow.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360Autoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlPitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlZoom.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlColor.addEventListener('input', () => applySceneFieldChanges({ rerender: true }));
+    els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
 
     els.sceneImageReplace.addEventListener('change', async () => {
       const scene = getScene();
       const file = els.sceneImageReplace.files?.[0];
-      if (!scene || scene.sceneType === 'object360' || !file) return;
+      if (!scene || scene.sceneType !== 'panorama' || !file) return;
       try {
         scene.imageData = await fileToDataURL(file);
         scene.filename = file.name;
@@ -3280,6 +3298,39 @@
         showToast('Не удалось заменить Object360 ZIP: ' + (error?.message || 'ошибка'));
       } finally {
         els.object360ZipReplace.value = '';
+      }
+    });
+
+    els.stlFileReplace.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.stlFileReplace.files?.[0];
+      if (!scene || scene.sceneType !== 'stl' || !file) return;
+
+      try {
+        if (!/\.stl$/i.test(file.name || '')) throw new Error('Нужен STL-файл');
+        if (!window.StlTools) throw new Error('STL parser не загрузился');
+
+        const buffer = await file.arrayBuffer();
+        const parsed = StlTools.parseStl(buffer);
+        const data = await fileToDataURL(file);
+        scene.filename = file.name;
+        scene.stl = normalizeStlData({
+          ...scene.stl,
+          data,
+          filename: file.name,
+          triangleCount: parsed.triangleCount,
+          size: parsed.originalSize
+        });
+        scene.imageData = stlPlaceholderDataUrl();
+
+        markDirty();
+        renderViewer();
+        showToast('STL-модель заменена');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось заменить STL: ' + (error?.message || 'ошибка'));
+      } finally {
+        els.stlFileReplace.value = '';
       }
     });
 
