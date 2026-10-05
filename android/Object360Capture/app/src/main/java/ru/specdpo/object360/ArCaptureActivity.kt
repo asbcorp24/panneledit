@@ -21,7 +21,10 @@ import com.google.ar.core.ArCoreApk
 import com.google.ar.core.CameraConfig
 import com.google.ar.core.CameraConfigFilter
 import com.google.ar.core.Config
+import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
+import com.google.ar.core.Plane
+import com.google.ar.core.Point
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
@@ -401,12 +404,25 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val x = surfaceWidth / 2f
         val y = surfaceHeight / 2f
 
-        var hit = frame.hitTest(x, y).firstOrNull {
-            it.trackable.trackingState == TrackingState.TRACKING
+        val hits = frame.hitTest(x, y)
+
+        var hit = hits.firstOrNull {
+            it.trackable is DepthPoint &&
+                it.trackable.trackingState == TrackingState.TRACKING
+        } ?: hits.firstOrNull {
+            it.trackable is Point &&
+                it.trackable.trackingState == TrackingState.TRACKING
+        } ?: hits.firstOrNull {
+            val trackable = it.trackable
+            trackable is Plane &&
+                trackable.trackingState == TrackingState.TRACKING &&
+                trackable.isPoseInPolygon(it.hitPose)
         }
 
+        var approximateCenter = false
         if (hit == null) {
             hit = frame.hitTestInstantPlacement(x, y, 1.5f).firstOrNull()
+            approximateCenter = hit != null
         }
 
         if (hit == null) {
@@ -449,9 +465,14 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         lastAutoKey = ""
 
         runOnUiThread {
-            binding.arStatusText.text = "AR: центр зафиксирован"
+            binding.arStatusText.text =
+                if (approximateCenter) "AR: центр задан приблизительно"
+                else "AR: центр зафиксирован"
             binding.arGuideText.text =
-                "✓ Центр задан. Сохраняйте примерно тот же радиус и обходите объект."
+                if (approximateCenter)
+                    "⚠ Центр пока приблизительный. Сделайте несколько движений телефоном и при возможности задайте центр повторно."
+                else
+                    "✓ Центр задан. Сохраняйте примерно тот же радиус и обходите объект."
             updateStaticUi()
         }
     }
