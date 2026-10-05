@@ -63,6 +63,10 @@
     hotspotIconFile: $('hotspotIconFile'),
     hotspotIconPreview: $('hotspotIconPreview'),
     hotspotIconFilename: $('hotspotIconFilename'),
+    autoPreviewBox: $('autoPreviewBox'),
+    hotspotAutoPreviewImage: $('hotspotAutoPreviewImage'),
+    hotspotAutoPreviewStatus: $('hotspotAutoPreviewStatus'),
+    btnRefreshHotspotPreview: $('btnRefreshHotspotPreview'),
     hotspotUrl: $('hotspotUrl'),
     hotspotInfo: $('hotspotInfo'),
     hotspotPitch: $('hotspotPitch'),
@@ -85,6 +89,8 @@
   let isRenderingViewer = false;
   let pendingHotspotIconData = '';
   let pendingHotspotIconFilename = '';
+  let pendingHotspotPreviewTargetId = '';
+  let autoPreviewGenerationToken = 0;
 
   function createEmptyProject() {
     return {
@@ -278,7 +284,7 @@
         pitch: Number.isFinite(Number(hotspot.pitch)) ? Number(hotspot.pitch) : 0,
         yaw: Number.isFinite(Number(hotspot.yaw)) ? Number(hotspot.yaw) : 0,
         targetSceneId: hotspot.targetSceneId ? String(hotspot.targetSceneId) : '',
-        iconPreset: ['arrow', 'forward', 'door', 'stairs', 'custom'].includes(hotspot.iconPreset) ? hotspot.iconPreset : 'arrow',
+        iconPreset: ['arrow', 'forward', 'door', 'stairs', 'preview', 'custom'].includes(hotspot.iconPreset) ? hotspot.iconPreset : 'arrow',
         iconData: hotspot.iconData ? String(hotspot.iconData) : '',
         iconFilename: hotspot.iconFilename ? String(hotspot.iconFilename) : '',
         url: hotspot.url ? String(hotspot.url) : '',
@@ -406,13 +412,15 @@
   }
 
   function transitionIconClass(hotspot) {
-    const preset = ['arrow', 'forward', 'door', 'stairs', 'custom'].includes(hotspot.iconPreset)
+    const preset = ['arrow', 'forward', 'door', 'stairs', 'preview', 'custom'].includes(hotspot.iconPreset)
       ? hotspot.iconPreset
       : 'arrow';
-    if (preset === 'custom' && hotspot.iconData) {
-      return 'scene-image-hotspot hotspot-custom-' + hotspotCssToken(hotspot.id);
+    if ((preset === 'custom' || preset === 'preview') && hotspot.iconData) {
+      return 'scene-image-hotspot ' +
+        (preset === 'preview' ? 'scene-preview-hotspot ' : '') +
+        'hotspot-custom-' + hotspotCssToken(hotspot.id);
     }
-    return 'scene-image-hotspot scene-icon-' + (preset === 'custom' ? 'arrow' : preset);
+    return 'scene-image-hotspot scene-icon-' + ((preset === 'custom' || preset === 'preview') ? 'arrow' : preset);
   }
 
   function refreshCustomHotspotStyles() {
@@ -426,7 +434,7 @@
     const rules = [];
     project.scenes.forEach((scene) => {
       (scene.hotspots || []).forEach((hotspot) => {
-        if (hotspot.type === 'scene' && hotspot.iconPreset === 'custom' && hotspot.iconData) {
+        if (hotspot.type === 'scene' && ['custom', 'preview'].includes(hotspot.iconPreset) && hotspot.iconData) {
           const safeData = String(hotspot.iconData).replace(/["\\\n\r]/g, (ch) => {
             if (ch === '"') return '%22';
             if (ch === '\\') return '%5C';
@@ -440,18 +448,194 @@
     style.textContent = rules.join('\n');
   }
 
+  function updateAutoPreviewUi(message = '') {
+    const isPreview = els.hotspotIconPreset.value === 'preview';
+    els.autoPreviewBox.hidden = !isPreview;
+    if (!isPreview) return;
+
+    const ready = Boolean(pendingHotspotIconData);
+    els.autoPreviewBox.classList.toggle('ready', ready);
+    els.hotspotAutoPreviewImage.src = ready ? pendingHotspotIconData : '';
+    els.hotspotAutoPreviewImage.style.visibility = ready ? 'visible' : 'hidden';
+    els.hotspotAutoPreviewStatus.textContent = message || (ready
+      ? 'Авто-превью целевой сцены'
+      : 'Превью ещё не создано');
+  }
+
   function setHotspotIconPreset(preset) {
-    if (!['arrow', 'forward', 'door', 'stairs', 'custom'].includes(preset)) preset = 'arrow';
+    if (!['arrow', 'forward', 'door', 'stairs', 'preview', 'custom'].includes(preset)) preset = 'arrow';
     els.hotspotIconPreset.value = preset;
     [...els.hotspotIconPicker.querySelectorAll('[data-icon]')].forEach((button) => {
       button.classList.toggle('active', button.dataset.icon === preset);
     });
+
     els.customIconUpload.hidden = preset !== 'custom';
+    els.autoPreviewBox.hidden = preset !== 'preview';
+
     if (preset === 'custom') {
       els.hotspotIconPreview.src = pendingHotspotIconData || '';
       els.hotspotIconPreview.style.visibility = pendingHotspotIconData ? 'visible' : 'hidden';
       els.hotspotIconFilename.textContent = pendingHotspotIconFilename || 'Файл не выбран';
     }
+
+    if (preset === 'preview') updateAutoPreviewUi();
+  }
+
+  function radians(degrees) {
+    return Number(degrees || 0) * Math.PI / 180;
+  }
+
+  async function generateScenePreview(sceneId, width = 384, height = 240) {
+    const scene = getScene(sceneId);
+    if (!scene || !scene.imageData) throw new Error('Целевая сцена не найдена');
+    if (!window.pannellum) throw new Error('Pannellum не загружен');
+
+    const host = document.createElement('div');
+    host.style.cssText =
+      'position:fixed;left:-10000px;top:-10000px;width:' + width + 'px;height:' + height +
+      'px;overflow:hidden;pointer-events:none;opacity:0;';
+    document.body.appendChild(host);
+
+    let tempViewer = null;
+    let timeoutId = null;
+
+    try {
+      return await new Promise((resolve, reject) => {
+        let finished = false;
+
+        const cleanupAndReject = (error) => {
+          if (finished) return;
+          finished = true;
+          reject(error instanceof Error ? error : new Error(String(error || 'Ошибка создания превью')));
+        };
+
+        timeoutId = setTimeout(() => cleanupAndReject(new Error('Таймаут генерации превью')), 15000);
+
+        try {
+          tempViewer = pannellum.viewer(host, {
+            type: 'equirectangular',
+            panorama: scene.imageData,
+            autoLoad: true,
+            showControls: false,
+            keyboardZoom: false,
+            mouseZoom: false,
+            draggable: false,
+            pitch: Number(scene.pitch) || 0,
+            yaw: Number(scene.yaw) || 0,
+            hfov: Number(scene.hfov) || 100
+          });
+
+          tempViewer.on('load', () => {
+            if (finished) return;
+            try {
+              const renderer = tempViewer.getRenderer();
+              const rendered = renderer.render(
+                radians(scene.pitch),
+                radians(scene.yaw),
+                radians(scene.hfov || 100),
+                { returnImage: true }
+              );
+
+              let imageData = typeof rendered === 'string' ? rendered : '';
+              if (!imageData) {
+                const canvas = renderer.getCanvas();
+                if (canvas && typeof canvas.toDataURL === 'function') {
+                  imageData = canvas.toDataURL('image/png');
+                }
+              }
+
+              if (!imageData) throw new Error('Pannellum не вернул изображение');
+
+              finished = true;
+              clearTimeout(timeoutId);
+              resolve(imageData);
+            } catch (error) {
+              cleanupAndReject(error);
+            }
+          });
+
+          tempViewer.on('error', (message) => cleanupAndReject(new Error(String(message))));
+        } catch (error) {
+          cleanupAndReject(error);
+        }
+      });
+    } finally {
+      clearTimeout(timeoutId);
+      try { tempViewer?.destroy(); } catch (_) {}
+      host.remove();
+    }
+  }
+
+  async function generatePendingAutoPreview({ silent = false } = {}) {
+    const targetId = els.hotspotTarget.value;
+    if (!targetId) {
+      pendingHotspotIconData = '';
+      pendingHotspotIconFilename = '';
+      pendingHotspotPreviewTargetId = '';
+      updateAutoPreviewUi('Сначала выберите целевую сцену');
+      return '';
+    }
+
+    const targetScene = getScene(targetId);
+    if (!targetScene) throw new Error('Целевая сцена не найдена');
+
+    const token = ++autoPreviewGenerationToken;
+    els.autoPreviewBox.classList.add('generating');
+    els.btnRefreshHotspotPreview.disabled = true;
+    updateAutoPreviewUi('Создаю превью…');
+
+    try {
+      const imageData = await generateScenePreview(targetId);
+      if (token !== autoPreviewGenerationToken) return '';
+
+      pendingHotspotIconData = imageData;
+      pendingHotspotIconFilename = 'preview-' + safeFilename(targetScene.title || targetScene.id) + '.png';
+      pendingHotspotPreviewTargetId = targetId;
+      updateAutoPreviewUi('Ракурс: ' + formatNum(targetScene.yaw) + '° / ' + formatNum(targetScene.pitch) + '°');
+      if (!silent) showToast('Превью перехода обновлено');
+      return imageData;
+    } catch (error) {
+      if (token === autoPreviewGenerationToken) {
+        pendingHotspotIconData = '';
+        pendingHotspotIconFilename = '';
+        pendingHotspotPreviewTargetId = '';
+        updateAutoPreviewUi('Не удалось создать превью');
+      }
+      throw error;
+    } finally {
+      if (token === autoPreviewGenerationToken) {
+        els.autoPreviewBox.classList.remove('generating');
+        els.btnRefreshHotspotPreview.disabled = false;
+      }
+    }
+  }
+
+  async function regenerateIncomingPreviews(targetSceneId) {
+    const targetScene = getScene(targetSceneId);
+    if (!targetScene) return 0;
+
+    const affected = [];
+    project.scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        if (hotspot.type === 'scene' &&
+            hotspot.targetSceneId === targetSceneId &&
+            hotspot.iconPreset === 'preview') {
+          affected.push(hotspot);
+        }
+      });
+    });
+
+    if (!affected.length) return 0;
+
+    const imageData = await generateScenePreview(targetSceneId);
+    const filename = 'preview-' + safeFilename(targetScene.title || targetScene.id) + '.png';
+
+    affected.forEach((hotspot) => {
+      hotspot.iconData = imageData;
+      hotspot.iconFilename = filename;
+    });
+
+    return affected.length;
   }
 
   function hotspotToPannellum(hotspot) {
@@ -710,15 +894,26 @@
 
     pendingHotspotIconData = hotspot?.iconData || '';
     pendingHotspotIconFilename = hotspot?.iconFilename || '';
+    pendingHotspotPreviewTargetId = hotspot?.iconPreset === 'preview' ? (hotspot?.targetSceneId || '') : '';
     els.hotspotIconFile.value = '';
 
     populateHotspotTargets(hotspot?.targetSceneId || '');
-    setHotspotType(hotspot?.type || (project.scenes.length > 1 ? 'scene' : 'info'));
-    setHotspotIconPreset(hotspot?.iconPreset || 'arrow');
+    const activeType = hotspot?.type || (project.scenes.length > 1 ? 'scene' : 'info');
+    setHotspotType(activeType);
+    setHotspotIconPreset(hotspot?.iconPreset || (activeType === 'scene' ? 'preview' : 'arrow'));
     els.hotspotDialog.showModal();
+
+    if (!hotspot && activeType === 'scene' && els.hotspotTarget.value) {
+      setTimeout(() => {
+        generatePendingAutoPreview({ silent: true }).catch((error) => {
+          console.error(error);
+          showToast('Не удалось создать превью сцены');
+        });
+      }, 0);
+    }
   }
 
-  function saveHotspotFromDialog() {
+  async function saveHotspotFromDialog() {
     const scene = getScene();
     if (!scene) return;
 
@@ -743,6 +938,17 @@
       return;
     }
 
+    if (type === 'scene' && els.hotspotIconPreset.value === 'preview' &&
+        (!pendingHotspotIconData || pendingHotspotPreviewTargetId !== els.hotspotTarget.value)) {
+      try {
+        await generatePendingAutoPreview({ silent: true });
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось создать превью целевой сцены');
+        return;
+      }
+    }
+
     const existingId = els.hotspotEditId.value;
     let hotspot = existingId ? scene.hotspots.find((item) => item.id === existingId) : null;
     if (!hotspot) {
@@ -757,8 +963,8 @@
       yaw,
       targetSceneId: type === 'scene' ? els.hotspotTarget.value : '',
       iconPreset: type === 'scene' ? els.hotspotIconPreset.value : 'arrow',
-      iconData: type === 'scene' && els.hotspotIconPreset.value === 'custom' ? pendingHotspotIconData : '',
-      iconFilename: type === 'scene' && els.hotspotIconPreset.value === 'custom' ? pendingHotspotIconFilename : '',
+      iconData: type === 'scene' && ['custom', 'preview'].includes(els.hotspotIconPreset.value) ? pendingHotspotIconData : '',
+      iconFilename: type === 'scene' && ['custom', 'preview'].includes(els.hotspotIconPreset.value) ? pendingHotspotIconFilename : '',
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
       info: type === 'info' ? els.hotspotInfo.value.trim() : ''
     });
@@ -795,14 +1001,27 @@
     showToast('Сцена удалена');
   }
 
-  function saveCurrentView() {
+  async function saveCurrentView() {
     const scene = getScene();
     if (!scene || !viewer) return;
     scene.pitch = Number(viewer.getPitch().toFixed(2));
     scene.yaw = Number(viewer.getYaw().toFixed(2));
     scene.hfov = Number(viewer.getHfov().toFixed(1));
     markDirty();
-    showToast('Стартовый ракурс сохранён');
+
+    let updated = 0;
+    try {
+      updated = await regenerateIncomingPreviews(scene.id);
+      if (updated) markDirty({ rerenderViewer: true });
+    } catch (error) {
+      console.error(error);
+      showToast('Ракурс сохранён, но превью переходов обновить не удалось');
+      return;
+    }
+
+    showToast(updated
+      ? 'Стартовый ракурс сохранён · обновлено превью: ' + updated
+      : 'Стартовый ракурс сохранён');
   }
 
   function downloadBlob(blob, filename) {
@@ -909,10 +1128,10 @@
 
     project.scenes.forEach((scene) => {
       (scene.hotspots || []).forEach((hotspot) => {
-        if (hotspot.type !== 'scene' || hotspot.iconPreset !== 'custom' || !hotspot.iconData) return;
+        if (hotspot.type !== 'scene' || !['custom', 'preview'].includes(hotspot.iconPreset) || !hotspot.iconData) return;
 
         const ext = iconExtension(hotspot);
-        const base = 'custom-' + hotspotCssToken(hotspot.id);
+        const base = (hotspot.iconPreset === 'preview' ? 'preview-' : 'custom-') + hotspotCssToken(hotspot.id);
         let filename = base + '.' + ext;
         let n = 2;
         while (used.has(filename.toLowerCase())) filename = base + '-' + n++ + '.' + ext;
@@ -939,6 +1158,8 @@
       '.pnlm-scene:not(.scene-image-hotspot){border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\n' +
       '.scene-image-hotspot{width:52px!important;height:52px!important;margin-left:-26px!important;margin-top:-26px!important;background-color:transparent!important;background-repeat:no-repeat!important;background-position:center!important;background-size:contain!important;border-radius:0!important;box-shadow:none!important;filter:drop-shadow(0 8px 12px rgba(0,0,0,.35))}\n' +
       '.scene-image-hotspot:hover{transform:scale(1.14)!important;filter:drop-shadow(0 8px 14px rgba(0,0,0,.42)) brightness(1.08)!important}\n' +
+      '.scene-preview-hotspot{width:96px!important;height:62px!important;margin-left:-48px!important;margin-top:-31px!important;background-size:cover!important;border-radius:12px!important;border:3px solid rgba(255,255,255,.94)!important;box-shadow:0 8px 24px rgba(0,0,0,.35)!important;overflow:hidden}\n' +
+      '.scene-preview-hotspot:after{content:"→";position:absolute;right:5px;bottom:5px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(6,10,18,.78);color:#fff;font-size:14px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.35)}\n' +
       '.scene-icon-arrow{background-image:url("../images/icons/arrow.svg")!important}\n' +
       '.scene-icon-forward{background-image:url("../images/icons/forward.svg")!important}\n' +
       '.scene-icon-door{background-image:url("../images/icons/door.svg")!important}\n' +
@@ -1233,7 +1454,32 @@
 
     els.hotspotIconPicker.addEventListener('click', (event) => {
       const button = event.target.closest('[data-icon]');
-      if (button) setHotspotIconPreset(button.dataset.icon);
+      if (!button) return;
+      setHotspotIconPreset(button.dataset.icon);
+      if (button.dataset.icon === 'preview') {
+        generatePendingAutoPreview({ silent: true }).catch((error) => {
+          console.error(error);
+          showToast('Не удалось создать превью целевой сцены');
+        });
+      }
+    });
+
+    els.hotspotTarget.addEventListener('change', () => {
+      if (els.hotspotIconPreset.value !== 'preview') return;
+      pendingHotspotIconData = '';
+      pendingHotspotIconFilename = '';
+      pendingHotspotPreviewTargetId = '';
+      generatePendingAutoPreview({ silent: true }).catch((error) => {
+        console.error(error);
+        showToast('Не удалось создать превью целевой сцены');
+      });
+    });
+
+    els.btnRefreshHotspotPreview.addEventListener('click', () => {
+      generatePendingAutoPreview().catch((error) => {
+        console.error(error);
+        showToast('Не удалось обновить превью');
+      });
     });
 
     els.hotspotIconFile.addEventListener('change', async () => {
@@ -1247,6 +1493,7 @@
       try {
         pendingHotspotIconData = await fileToDataURL(file);
         pendingHotspotIconFilename = file.name;
+        pendingHotspotPreviewTargetId = '';
         setHotspotIconPreset('custom');
       } catch (error) {
         console.error(error);
@@ -1254,10 +1501,16 @@
       }
     });
 
-    els.hotspotForm.addEventListener('submit', (event) => {
+    els.hotspotForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
-      saveHotspotFromDialog();
+      const button = event.submitter;
+      if (button) button.disabled = true;
+      try {
+        await saveHotspotFromDialog();
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
 
     els.btnDeleteHotspot.addEventListener('click', () => {
@@ -1302,9 +1555,15 @@
       try {
         scene.imageData = await fileToDataURL(file);
         scene.filename = file.name;
+        let updated = 0;
+        try {
+          updated = await regenerateIncomingPreviews(scene.id);
+        } catch (previewError) {
+          console.error(previewError);
+        }
         markDirty();
         renderViewer();
-        showToast('Панорама заменена');
+        showToast(updated ? 'Панорама заменена · обновлено превью: ' + updated : 'Панорама заменена');
       } catch (error) {
         console.error(error);
         showToast('Не удалось заменить панораму');
