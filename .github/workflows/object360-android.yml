@@ -14,6 +14,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
     defaults:
       run:
         working-directory: android/Object360Capture
@@ -34,10 +38,10 @@ jobs:
           gradle-version: "9.6.0"
 
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses >/dev/null || true
+        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
       - name: Install Android API 37
-        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+        run: "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-37" "build-tools;37.0.0"
 
       - name: Build debug APK
         run: gradle clean assembleDebug --stacktrace
