@@ -182,6 +182,15 @@ class MainActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     session.register(row, sector, rel, file)
+                    runCatching {
+                        PublicStorage.publishPhoto(
+                            this@MainActivity,
+                            file,
+                            session.sessionId,
+                            row,
+                            sector
+                        )
+                    }
                     runOnUiThread {
                         captureBusy = false
                         updateUi()
@@ -339,10 +348,18 @@ class MainActivity : AppCompatActivity() {
                         zos.closeEntry()
                     }
                 }
+                val publicUri = PublicStorage.publishZip(
+                    this,
+                    zip,
+                    "${session.sessionId}.object360.zip"
+                )
                 runOnUiThread {
                     AlertDialog.Builder(this)
                         .setTitle("Экспорт готов")
-                        .setMessage("${zip.absolutePath}\n\nВ архиве фотографии и config.json.")
+                        .setMessage(
+                            "ZIP сохранён в Загрузки/Object360/\n\n" +
+                                "Фотографии доступны в Pictures/Object360/${session.sessionId}/"
+                        )
                         .setPositiveButton("OK", null)
                         .show()
                 }
