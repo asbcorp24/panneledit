@@ -87,6 +87,12 @@
     previewDialog: $('previewDialog'),
     previewPanorama: $('previewPanorama'),
     closePreview: $('closePreview'),
+    downloadDialog: $('downloadDialog'),
+    downloadReadyInfo: $('downloadReadyInfo'),
+    downloadZipFilename: $('downloadZipFilename'),
+    downloadZipSize: $('downloadZipSize'),
+    downloadZipLink: $('downloadZipLink'),
+    closeDownloadDialog: $('closeDownloadDialog'),
     dropOverlay: $('dropOverlay'),
     toast: $('toast')
   };
@@ -103,6 +109,7 @@
   let pendingHotspotIconFilename = '';
   let pendingHotspotPreviewTargetId = '';
   let autoPreviewGenerationToken = 0;
+  let pendingZipDownloadUrl = '';
 
   function createEmptyProject() {
     return {
@@ -1181,6 +1188,40 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function formatFileSize(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) return value + ' Б';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' КБ';
+    if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(1) + ' МБ';
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + ' ГБ';
+  }
+
+  function closeZipDownloadDialog() {
+    if (els.downloadDialog.open) els.downloadDialog.close();
+    if (pendingZipDownloadUrl) {
+      URL.revokeObjectURL(pendingZipDownloadUrl);
+      pendingZipDownloadUrl = '';
+    }
+    els.downloadZipLink.removeAttribute('href');
+  }
+
+  function showZipDownloadDialog(blob, filename) {
+    if (pendingZipDownloadUrl) {
+      URL.revokeObjectURL(pendingZipDownloadUrl);
+    }
+
+    pendingZipDownloadUrl = URL.createObjectURL(blob);
+    els.downloadZipLink.href = pendingZipDownloadUrl;
+    els.downloadZipLink.download = filename;
+    els.downloadZipFilename.textContent = filename;
+    els.downloadZipSize.textContent = formatFileSize(blob.size);
+    els.downloadReadyInfo.textContent =
+      'ZIP-архив собран. Нажмите «Скачать ZIP», чтобы сохранить его на компьютер.';
+
+    if (!els.downloadDialog.open) els.downloadDialog.showModal();
+    els.downloadZipLink.focus();
+  }
+
   function safeFilename(value, fallback = 'tour') {
     const normalized = slugify(value);
     return normalized || fallback;
@@ -1443,8 +1484,8 @@
         { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
         (meta) => { button.textContent = 'ZIP ' + Math.round(meta.percent) + '%'; }
       );
-      downloadBlob(blob, rootName + '.zip');
-      showToast('Готовый тур с панорамами упакован в ZIP', 3600);
+      showZipDownloadDialog(blob, rootName + '.zip');
+      showToast('ZIP готов — нажмите «Скачать ZIP»', 3600);
     } catch (error) {
       console.error(error);
       showToast('Не удалось собрать ZIP: ' + error.message, 5200);
@@ -1738,6 +1779,17 @@
     els.btnExportTour.addEventListener('click', exportTourPackage);
     els.projectImport.addEventListener('change', () => importProjectFile(els.projectImport.files?.[0]));
 
+    els.closeDownloadDialog.addEventListener('click', closeZipDownloadDialog);
+    els.downloadDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      closeZipDownloadDialog();
+    });
+    els.downloadZipLink.addEventListener('click', () => {
+      els.downloadReadyInfo.textContent =
+        'Скачивание запущено. Если браузер спросит папку, выберите место сохранения.';
+      showToast('Скачивание ZIP запущено');
+    });
+
     els.btnPreview.addEventListener('click', openPreview);
     els.closePreview.addEventListener('click', closePreview);
     els.previewDialog.addEventListener('cancel', (event) => {
@@ -1791,6 +1843,10 @@
     });
 
     window.addEventListener('beforeunload', () => {
+      if (pendingZipDownloadUrl) {
+        URL.revokeObjectURL(pendingZipDownloadUrl);
+        pendingZipDownloadUrl = '';
+      }
       if (saveTimer) {
         clearTimeout(saveTimer);
         persistProject();
