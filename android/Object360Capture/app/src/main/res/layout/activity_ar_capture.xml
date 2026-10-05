@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/arSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ru.specdpo.object360.CoverageOverlay
+        android:id="@+id/arCoverageOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_panel"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <Button
+                android:id="@+id/btnArBack"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button"
+                android:text="←"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/arStatusText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:text="AR: подготовка..."
+                android:textColor="#FFFFFF"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/arProgressText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 / 36"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/arMetricsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:background="@drawable/bg_panel"
+            android:gravity="center"
+            android:padding="7dp"
+            android:text="Угол —   Радиус —   Высота —"
+            android:textColor="#EFFFFFFF"
+            android:textSize="13sp" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnAr36"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_button"
+                    android:text="36"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnAr72"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="72"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnArRows"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="1 РЯД"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnArDepth"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="ГЛУБИНА 20 СМ"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnArAuto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="AUTO: ВЫКЛ"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnArSetCenter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="ЗАДАТЬ ЦЕНТР"
+                    android:textColor="#FFFFFF" />
+            </LinearLayout>
+        </HorizontalScrollView>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|end"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="7dp">
+
+        <Button
+            android:id="@+id/btnArRowUp"
+            android:layout_width="54dp"
+            android:layout_height="46dp"
+            android:background="@drawable/bg_button"
+            android:text="▲"
+            android:textColor="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/arRowText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginVertical="5dp"
+            android:gravity="center"
+            android:text="Ряд\n1 / 1"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnArRowDown"
+            android:layout_width="54dp"
+            android:layout_height="46dp"
+            android:background="@drawable/bg_button"
+            android:text="▼"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="14dp">
+
+        <TextView
+            android:id="@+id/arGuideText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_panel"
+            android:gravity="center"
+            android:maxWidth="340dp"
+            android:paddingHorizontal="13dp"
+            android:paddingVertical="8dp"
+            android:text="Наведите прицел на центр объекта и нажмите «ЗАДАТЬ ЦЕНТР»"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnArReview"
+                android:layout_width="88dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_button"
+                android:text="ОБЗОР"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btnArShutter"
+                android:layout_width="82dp"
+                android:layout_height="82dp"
+                android:layout_marginHorizontal="24dp"
+                android:background="@drawable/bg_shutter"
+                android:contentDescription="Снять AR кадр"
+                android:text="" />
+
+            <Button
+                android:id="@+id/btnArExport"
+                android:layout_width="88dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_button"
+                android:text="ZIP"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>
