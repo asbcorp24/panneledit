@@ -596,7 +596,11 @@
 
     els.hotspotList.className = 'hotspot-list';
     els.hotspotList.innerHTML = hotspots.map((hotspot) => {
-      const target = hotspot.type === 'scene' ? getScene(hotspot.targetSceneId)?.title || 'Сцена не найдена'
+      const targetScene = hotspot.type === 'scene' ? getScene(hotspot.targetSceneId) : null;
+      const target = hotspot.type === 'scene'
+        ? (targetScene
+          ? (sceneTypeMeta(targetScene).icon + ' ' + targetScene.title + ' · ' + sceneTypeMeta(targetScene).label)
+          : 'Сцена не найдена')
         : hotspot.type === 'url' ? hotspot.url || 'Ссылка'
         : hotspot.info || 'Информация';
       const icon = hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i';
