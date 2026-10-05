@@ -1026,7 +1026,7 @@
     return affected.length;
   }
 
-  function hotspotToPannellum(hotspot) {
+  function hotspotToPannellum(hotspot, universalSceneHandler = null) {
     const base = {
       pitch: Number(hotspot.pitch) || 0,
       yaw: Number(hotspot.yaw) || 0,
@@ -1051,7 +1051,13 @@
         type: 'info',
         cssClass,
         tourTargetSceneId: hotspot.targetSceneId,
-        clickHandlerFunc: () => selectScene(hotspot.targetSceneId)
+        clickHandlerFunc: () => {
+          if (typeof universalSceneHandler === 'function') {
+            universalSceneHandler(hotspot.targetSceneId);
+          } else {
+            selectScene(hotspot.targetSceneId);
+          }
+        }
       };
     }
 
@@ -1073,7 +1079,11 @@
     };
   }
 
-  function buildPannellumConfig({ useEmbeddedImages = true, firstSceneId = null } = {}) {
+  function buildPannellumConfig({
+    useEmbeddedImages = true,
+    firstSceneId = null,
+    universalSceneHandler = null
+  } = {}) {
     const scenes = {};
 
     project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
@@ -1086,7 +1096,7 @@
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
           .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
-          .map(hotspotToPannellum)
+          .map((hotspot) => hotspotToPannellum(hotspot, universalSceneHandler))
       };
     });
 
