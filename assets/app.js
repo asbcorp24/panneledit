@@ -3568,6 +3568,11 @@
   }
 
   function destroyPreviewViewers() {
+    stopPreviewAudio();
+    if (els.previewSceneOverlay) {
+      els.previewSceneOverlay.innerHTML = '';
+      els.previewSceneOverlay.hidden = true;
+    }
     if (previewViewer) {
       try { previewViewer.destroy(); } catch (_) {}
       previewViewer = null;
@@ -3588,6 +3593,8 @@
     if (!scene) return;
 
     destroyPreviewViewers();
+    renderSceneTextOverlay(scene, els.previewSceneOverlay, { editor: false });
+    configurePreviewAudio(scene);
 
     if (scene.sceneType === 'object360') {
       if (!window.Object360Viewer) return;
@@ -3627,6 +3634,12 @@
       firstSceneId: scene.id,
       universalSceneHandler: renderPreviewScene
     }));
+    previewViewer.on('scenechange', (nextSceneId) => {
+      const nextScene = getScene(nextSceneId);
+      if (!nextScene) return;
+      renderSceneTextOverlay(nextScene, els.previewSceneOverlay, { editor: false });
+      configurePreviewAudio(nextScene);
+    });
   }
 
   function openPreview() {
