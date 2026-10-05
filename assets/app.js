@@ -3513,7 +3513,30 @@
         });
       }
 
-      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles, stlSceneFiles);
+      const audioConfig = {
+        projectMusic: bundleAudioSlot(
+          root,
+          project.audio?.music,
+          'project-music'
+        ),
+        scenes: {}
+      };
+
+      project.scenes.forEach((scene, index) => {
+        const audio = normalizeSceneAudio(scene.audio || {});
+        audioConfig.scenes[scene.id] = {
+          music: bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
+          narration: bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
+        };
+      });
+
+      const config = buildPortableTourConfig(
+        sceneFiles,
+        multiresScenes,
+        objectSceneFiles,
+        stlSceneFiles,
+        audioConfig
+      );
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
@@ -3533,6 +3556,7 @@
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
+        '- audio/ — музыка тура, музыка сцен и озвучка\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
