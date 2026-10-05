@@ -410,7 +410,7 @@
         ...base,
         type: 'info',
         URL: hotspot.url || '#',
-        target: '_blank',
+        attributes: { target: '_blank', rel: 'noopener noreferrer' },
         cssClass: 'editor-url-hotspot'
       };
     }
