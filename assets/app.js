@@ -93,6 +93,7 @@
     hotspotTypeControl: $('hotspotTypeControl'),
     hotspotText: $('hotspotText'),
     hotspotTarget: $('hotspotTarget'),
+    hotspotTargetTypeHint: $('hotspotTargetTypeHint'),
     hotspotIconPicker: $('hotspotIconPicker'),
     hotspotIconPreset: $('hotspotIconPreset'),
     customIconUpload: $('customIconUpload'),
@@ -251,6 +252,16 @@
   function objectFrameAngle(data, sector) {
     const sectors = Math.max(1, Number(data?.sectors) || 1);
     return 360 * ((Number(sector) || 0) % sectors) / sectors;
+  }
+
+  function sceneTypeMeta(scene) {
+    if (scene?.sceneType === 'object360') {
+      return { icon: '◉', label: 'Object360', detail: 'вращаемый объект из фотографий' };
+    }
+    if (scene?.sceneType === 'stl') {
+      return { icon: '◆', label: 'STL 3D', detail: 'интерактивная 3D-модель' };
+    }
+    return { icon: '◌', label: 'Панорама 360°', detail: 'Pannellum-панорама' };
   }
 
   function normalizeStlData(input = {}) {
@@ -585,7 +596,11 @@
 
     els.hotspotList.className = 'hotspot-list';
     els.hotspotList.innerHTML = hotspots.map((hotspot) => {
-      const target = hotspot.type === 'scene' ? getScene(hotspot.targetSceneId)?.title || 'Сцена не найдена'
+      const targetScene = hotspot.type === 'scene' ? getScene(hotspot.targetSceneId) : null;
+      const target = hotspot.type === 'scene'
+        ? (targetScene
+          ? (sceneTypeMeta(targetScene).icon + ' ' + targetScene.title + ' · ' + sceneTypeMeta(targetScene).label)
+          : 'Сцена не найдена')
         : hotspot.type === 'url' ? hotspot.url || 'Ссылка'
         : hotspot.info || 'Информация';
       const icon = hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i';
@@ -816,7 +831,49 @@
 
   async function generateScenePreview(sceneId, width = 384, height = 240) {
     const scene = getScene(sceneId);
-    if (!scene || !scene.imageData) throw new Error('Целевая сцена не найдена');
+    if (!scene) throw new Error('Целевая сцена не найдена');
+
+    if (scene.sceneType === 'object360') {
+      const data = normalizeObject360Data(scene.object360 || {});
+      const imageData = data.coverData || data.frames.flat().find(Boolean) || scene.imageData || '';
+      if (!imageData) throw new Error('У Object360 нет кадра для превью');
+      return imageData;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) throw new Error('STL Viewer не загружен');
+      const data = normalizeStlData(scene.stl || {});
+      if (!data.data) throw new Error('STL данные отсутствуют');
+
+      const host = document.createElement('div');
+      host.style.cssText =
+        'position:fixed;left:-10000px;top:-10000px;width:' + width + 'px;height:' + height +
+        'px;overflow:hidden;pointer-events:none;opacity:0;';
+      document.body.appendChild(host);
+
+      let tempStl = null;
+      try {
+        tempStl = new StlViewer(host, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: false,
+          color: data.color
+        });
+        await tempStl.ready;
+        tempStl.render();
+        const imageData = tempStl.canvas?.toDataURL?.('image/png') || '';
+        if (!imageData) throw new Error('STL Viewer не вернул превью');
+        return imageData;
+      } finally {
+        try { tempStl?.destroy(); } catch (_) {}
+        host.remove();
+      }
+    }
+
+    if (!scene.imageData) throw new Error('У панорамы нет изображения');
     if (!window.pannellum) throw new Error('Pannellum не загружен');
 
     const host = document.createElement('div');
@@ -920,7 +977,13 @@
       pendingHotspotIconData = imageData;
       pendingHotspotIconFilename = 'preview-' + safeFilename(targetScene.title || targetScene.id) + '.png';
       pendingHotspotPreviewTargetId = targetId;
-      updateAutoPreviewUi('Ракурс: ' + formatNum(targetScene.yaw) + '° / ' + formatNum(targetScene.pitch) + '°');
+      const meta = sceneTypeMeta(targetScene);
+      if (targetScene.sceneType === 'panorama') {
+        updateAutoPreviewUi(meta.icon + ' ' + meta.label + ' · ракурс ' +
+          formatNum(targetScene.yaw) + '° / ' + formatNum(targetScene.pitch) + '°');
+      } else {
+        updateAutoPreviewUi(meta.icon + ' ' + meta.label + ' · превью готово');
+      }
       if (!silent) showToast('Превью перехода обновлено');
       return imageData;
     } catch (error) {
@@ -967,7 +1030,7 @@
     return affected.length;
   }
 
-  function hotspotToPannellum(hotspot) {
+  function hotspotToPannellum(hotspot, universalSceneHandler = null) {
     const base = {
       pitch: Number(hotspot.pitch) || 0,
       yaw: Number(hotspot.yaw) || 0,
@@ -975,11 +1038,30 @@
     };
 
     if (hotspot.type === 'scene') {
+      const targetScene = getScene(hotspot.targetSceneId);
+      const cssClass = transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot);
+
+      if (targetScene?.sceneType === 'panorama') {
+        return {
+          ...base,
+          type: 'scene',
+          sceneId: hotspot.targetSceneId,
+          cssClass
+        };
+      }
+
       return {
         ...base,
-        type: 'scene',
-        sceneId: hotspot.targetSceneId,
-        cssClass: transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot)
+        type: 'info',
+        cssClass,
+        tourTargetSceneId: hotspot.targetSceneId,
+        clickHandlerFunc: () => {
+          if (typeof universalSceneHandler === 'function') {
+            universalSceneHandler(hotspot.targetSceneId);
+          } else {
+            selectScene(hotspot.targetSceneId);
+          }
+        }
       };
     }
 
@@ -1001,7 +1083,11 @@
     };
   }
 
-  function buildPannellumConfig({ useEmbeddedImages = true, firstSceneId = null } = {}) {
+  function buildPannellumConfig({
+    useEmbeddedImages = true,
+    firstSceneId = null,
+    universalSceneHandler = null
+  } = {}) {
     const scenes = {};
 
     project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
@@ -1013,8 +1099,8 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType === 'panorama'))
-          .map(hotspotToPannellum)
+          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
+          .map((hotspot) => hotspotToPannellum(hotspot, universalSceneHandler))
       };
     });
 
@@ -1415,16 +1501,33 @@
     return scene;
   }
 
+  function updateHotspotTargetHint() {
+    const target = getScene(els.hotspotTarget.value);
+    if (!target) {
+      els.hotspotTargetTypeHint.textContent = 'Выберите целевую сцену';
+      els.hotspotTargetTypeHint.dataset.sceneType = '';
+      return;
+    }
+    const meta = sceneTypeMeta(target);
+    els.hotspotTargetTypeHint.textContent =
+      meta.icon + ' ' + meta.label + ' — ' + meta.detail;
+    els.hotspotTargetTypeHint.dataset.sceneType = target.sceneType || 'panorama';
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
-    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType === 'panorama');
+    const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
     els.hotspotTarget.innerHTML = candidates.length
-      ? candidates.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
+      ? candidates.map((scene) => {
+          const meta = sceneTypeMeta(scene);
+          return `<option value="${escapeHtml(scene.id)}">${meta.icon} ${escapeHtml(scene.title)} — ${meta.label}</option>`;
+        }).join('')
       : '<option value="">Сначала добавьте вторую сцену</option>';
     els.hotspotTarget.disabled = !candidates.length;
     if (selectedId && candidates.some((scene) => scene.id === selectedId)) {
       els.hotspotTarget.value = selectedId;
     }
+    updateHotspotTargetHint();
   }
 
   function setHotspotType(type) {
@@ -2153,7 +2256,10 @@
       '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
       '  <link rel="stylesheet" href="assets/tour.css">\n' +
       '</head>\n<body>\n' +
-      '  <select id="sceneMenuExport" aria-label="Сцены тура"></select>\n' +
+      '  <div id="tourNavBar">\n' +
+      '    <button id="tourBackButton" type="button" hidden>← Назад</button>\n' +
+      '    <select id="sceneMenuExport" aria-label="Сцены тура"></select>\n' +
+      '  </div>\n' +
       '  <div id="panorama"></div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
@@ -2225,7 +2331,10 @@
       '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\n' +
       '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\n' +
       'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n' +
-      '#sceneMenuExport{position:fixed;z-index:50;left:12px;top:12px;max-width:min(320px,calc(100vw - 24px));border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui}\n' +
+      '#tourNavBar{position:fixed;z-index:50;left:12px;top:12px;display:flex;align-items:center;gap:8px;max-width:min(520px,calc(100vw - 24px))}\n' +
+      '#tourBackButton,#sceneMenuExport{border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui}\n' +
+      '#tourBackButton{cursor:pointer;white-space:nowrap}#tourBackButton:hover{background:rgba(20,28,46,.92)}#tourBackButton[hidden]{display:none}\n' +
+      '#sceneMenuExport{min-width:190px;max-width:min(320px,calc(100vw - 110px))}\n' +
       '.object360-host{position:relative;overflow:hidden}.object360-viewer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),#040812;outline:0;user-select:none;touch-action:none;cursor:grab}.object360-viewer.dragging{cursor:grabbing}.object360-image-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.object360-image{max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;transform-origin:center center;transition:transform .08s linear;filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none}.object360-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.78);color:#a9b4ca;font-size:10px}.object360-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.78);backdrop-filter:blur(12px)}.object360-counter,.object360-row-label{flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);font-size:9px}.object360-row-label{color:#75e7d6}.object360-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.object360-autoplay,.object360-reset{flex:none;width:34px;height:28px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer}\n' +
       '.stl-host{position:relative;overflow:hidden}.stl-viewer{position:absolute;inset:0;overflow:hidden;background:radial-gradient(circle at 50% 45%,rgba(124,140,255,.16),transparent 42%),linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),#040812;background-size:auto,40px 40px,40px 40px;outline:0;touch-action:none;cursor:grab}.stl-viewer.dragging{cursor:grabbing}.stl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}.stl-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.82);color:#a9b4ca;font-size:10px}.stl-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.8);backdrop-filter:blur(12px)}.stl-stats{flex:none;padding:4px 7px;border-radius:7px;background:rgba(124,140,255,.12);color:#c8ceff;font-size:9px}.stl-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.stl-mode,.stl-auto,.stl-reset{flex:none;min-width:34px;height:28px;padding:0 8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:800}.viewer-error{padding:30px;color:#fff;font:14px system-ui}\n';
 
@@ -2253,12 +2362,16 @@
   'use strict';
 
   const config = ${json};
+
   let panoViewer = null;
   let objectViewer = null;
   let stlViewer = null;
+  let currentSceneId = '';
+  const historyStack = [];
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
+  const backButton = document.getElementById('tourBackButton');
 
   const escapeHtmlText = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -2285,12 +2398,52 @@
     if (menu) menu.value = id || '';
   };
 
-  const showScene = (id) => {
+  const updateBackButton = () => {
+    if (!backButton) return;
+    backButton.hidden = historyStack.length === 0;
+    if (!historyStack.length) return;
+
+    const previousId = historyStack[historyStack.length - 1];
+    const previous = config.sceneMeta?.[previousId];
+    backButton.textContent = previous?.title
+      ? '← ' + previous.title
+      : '← Назад';
+    backButton.title = previous?.title
+      ? 'Вернуться: ' + previous.title
+      : 'Вернуться назад';
+  };
+
+  const decorateUniversalHotspots = (panoConfig) => {
+    Object.values(panoConfig.scenes || {}).forEach((scene) => {
+      (scene.hotSpots || []).forEach((hotspot) => {
+        const target = hotspot.tourTargetSceneId;
+        if (!target) return;
+
+        hotspot.clickHandlerFunc = () => {
+          showScene(target, true);
+        };
+      });
+    });
+  };
+
+  const showScene = (id, pushHistory = true) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
 
+    if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
+      updateMenu(id);
+      updateBackButton();
+      return;
+    }
+
+    if (pushHistory && currentSceneId && currentSceneId !== id) {
+      historyStack.push(currentSceneId);
+    }
+
+    currentSceneId = id;
     destroy();
     updateMenu(id);
+    updateBackButton();
 
     if (meta.sceneType === 'object360') {
       const data = config.object360Scenes?.[id];
@@ -2343,8 +2496,26 @@
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
 
+    decorateUniversalHotspots(panoConfig);
+
     panoViewer = pannellum.viewer('panorama', panoConfig);
-    panoViewer.on('scenechange', (sceneId) => updateMenu(sceneId));
+    panoViewer.on('scenechange', (sceneId) => {
+      if (!sceneId) return;
+
+      if (currentSceneId && sceneId !== currentSceneId) {
+        historyStack.push(currentSceneId);
+      }
+
+      currentSceneId = sceneId;
+      updateMenu(sceneId);
+      updateBackButton();
+    });
+  };
+
+  const goBack = () => {
+    const previous = historyStack.pop();
+    updateBackButton();
+    if (previous) showScene(previous, false);
   };
 
   const start = () => {
@@ -2356,17 +2527,23 @@
         const icon = meta.sceneType === 'object360'
           ? '◉ '
           : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
+
         return '<option value="' + escapeHtmlText(id) + '">' +
           icon + escapeHtmlText(meta.title || id) + '</option>';
       }).join('');
 
-      menu.addEventListener('change', () => showScene(menu.value));
+      menu.addEventListener('change', () => showScene(menu.value, true));
     }
 
-    showScene(config.tourFirstScene || order[0]);
+    if (backButton) {
+      backButton.addEventListener('click', goBack);
+    }
+
+    showScene(config.tourFirstScene || order[0], false);
   };
 
-  window.showTourScene = showScene;
+  window.showTourScene = (id) => showScene(id, true);
+  window.tourBack = goBack;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
@@ -2986,65 +3163,7 @@
     }
   }
 
-  function openPreview() {
-    if (!project.scenes.length) return;
-    const scene = getScene(project.firstScene) || project.scenes[0];
-    els.previewDialog.showModal();
-
-    requestAnimationFrame(() => {
-      if (previewViewer) {
-        try { previewViewer.destroy(); } catch (_) {}
-        previewViewer = null;
-      }
-      if (previewObjectViewer) {
-        try { previewObjectViewer.destroy(); } catch (_) {}
-        previewObjectViewer = null;
-      }
-      if (previewStlViewer) {
-        try { previewStlViewer.destroy(); } catch (_) {}
-        previewStlViewer = null;
-      }
-      els.previewPanorama.innerHTML = '';
-
-      if (scene.sceneType === 'object360') {
-        if (!window.Object360Viewer) return;
-        const data = normalizeObject360Data(scene.object360 || {});
-        previewObjectViewer = new Object360Viewer(els.previewPanorama, {
-          sectors: data.sectors,
-          rows: data.rows,
-          frames: data.frames,
-          startSector: data.startSector,
-          startRow: data.startRow,
-          autoplay: data.autoplay
-        });
-        return;
-      }
-
-      if (scene.sceneType === 'stl') {
-        if (!window.StlViewer) return;
-        const data = normalizeStlData(scene.stl || {});
-        previewStlViewer = new StlViewer(els.previewPanorama, {
-          source: data.data,
-          yaw: data.yaw,
-          pitch: data.pitch,
-          zoom: data.zoom,
-          wireframe: data.wireframe,
-          autoRotate: data.autoplay,
-          color: data.color
-        });
-        previewStlViewer.ready.catch(console.error);
-        return;
-      }
-
-      if (!window.pannellum) return;
-      previewViewer = pannellum.viewer('previewPanorama', buildPannellumConfig({
-        useEmbeddedImages: true,
-        firstSceneId: scene.id
-      }));
-    });
-  }
-
-  function closePreview() {
+  function destroyPreviewViewers() {
     if (previewViewer) {
       try { previewViewer.destroy(); } catch (_) {}
       previewViewer = null;
@@ -3058,6 +3177,61 @@
       previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
+  }
+
+  function renderPreviewScene(sceneId) {
+    const scene = getScene(sceneId);
+    if (!scene) return;
+
+    destroyPreviewViewers();
+
+    if (scene.sceneType === 'object360') {
+      if (!window.Object360Viewer) return;
+      const data = normalizeObject360Data(scene.object360 || {});
+      previewObjectViewer = new Object360Viewer(els.previewPanorama, {
+        sectors: data.sectors,
+        rows: data.rows,
+        frames: data.frames,
+        startSector: data.startSector,
+        startRow: data.startRow,
+        autoplay: data.autoplay
+      });
+      return;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) return;
+      const data = normalizeStlData(scene.stl || {});
+      previewStlViewer = new StlViewer(els.previewPanorama, {
+        source: data.data,
+        yaw: data.yaw,
+        pitch: data.pitch,
+        zoom: data.zoom,
+        wireframe: data.wireframe,
+        autoRotate: data.autoplay,
+        color: data.color
+      });
+      previewStlViewer.ready.catch(console.error);
+      return;
+    }
+
+    if (!window.pannellum) return;
+    previewViewer = pannellum.viewer('previewPanorama', buildPannellumConfig({
+      useEmbeddedImages: true,
+      firstSceneId: scene.id,
+      universalSceneHandler: renderPreviewScene
+    }));
+  }
+
+  function openPreview() {
+    if (!project.scenes.length) return;
+    const scene = getScene(project.firstScene) || project.scenes[0];
+    els.previewDialog.showModal();
+    requestAnimationFrame(() => renderPreviewScene(scene.id));
+  }
+
+  function closePreview() {
+    destroyPreviewViewers();
     if (els.previewDialog.open) els.previewDialog.close();
   }
 
@@ -3234,6 +3408,7 @@
     });
 
     els.hotspotTarget.addEventListener('change', () => {
+      updateHotspotTargetHint();
       if (els.hotspotIconPreset.value !== 'preview') return;
       pendingHotspotIconData = '';
       pendingHotspotIconFilename = '';
