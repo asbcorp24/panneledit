@@ -754,16 +754,195 @@
     showToast('Проект экспортирован');
   }
 
-  function exportTourConfig() {
+
+  function extensionForScene(scene) {
+    const filenameMatch = String(scene.filename || '').toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+    if (filenameMatch && ['jpg', 'jpeg', 'png', 'webp'].includes(filenameMatch[1])) {
+      return filenameMatch[1] === 'jpeg' ? 'jpg' : filenameMatch[1];
+    }
+    const dataMatch = String(scene.imageData || '').match(/^data:image\/([a-zA-Z0-9.+-]+);/);
+    if (!dataMatch) return 'jpg';
+    const subtype = dataMatch[1].toLowerCase();
+    return subtype === 'jpeg' ? 'jpg' : (['jpg', 'png', 'webp'].includes(subtype) ? subtype : 'jpg');
+  }
+
+  function dataUrlPayload(dataUrl) {
+    const match = String(dataUrl || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (!match) throw new Error('Некорректные данные изображения');
+    return { mime: match[1] || 'application/octet-stream', base64: Boolean(match[2]), data: match[3] };
+  }
+
+  function normalizeZipPath(path) {
+    const parts = [];
+    String(path).replace(/\\/g, '/').split('/').forEach((part) => {
+      if (!part || part === '.') return;
+      if (part === '..') { parts.pop(); return; }
+      parts.push(part);
+    });
+    return parts.join('/');
+  }
+
+  function buildPortableTourConfig(sceneFiles) {
+    const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: project.firstScene });
+    project.scenes.forEach((scene) => {
+      if (config.scenes[scene.id]) config.scenes[scene.id].panorama = 'images/' + sceneFiles.get(scene.id);
+    });
+    return config;
+  }
+
+  function exportedViewerHtml() {
+    const title = escapeHtml(project.title || 'Виртуальная экскурсия');
+    return '<!doctype html>\\n' +
+      '<html lang="ru">\\n<head>\\n' +
+      '  <meta charset="utf-8">\\n' +
+      '  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\\n' +
+      '  <meta name="theme-color" content="#05070c">\\n' +
+      '  <title>' + title + '</title>\\n' +
+      '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\\n' +
+      '  <link rel="stylesheet" href="assets/tour.css">\\n' +
+      '</head>\\n<body>\\n' +
+      '  <div id="panorama"></div>\\n' +
+      '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\\n' +
+      '  <script src="vendor/pannellum/build/pannellum.js"><\\/script>\\n' +
+      '  <script src="assets/tour.js"><\\/script>\\n' +
+      '</body>\\n</html>\\n';
+  }
+
+  function exportedViewerCss() {
+    return ':root{color-scheme:dark}\\n' +
+      '*{box-sizing:border-box}\\n' +
+      'html,body,#panorama{width:100%;height:100%;margin:0}\\n' +
+      'html,body{overflow:hidden;background:#05070c}\\n' +
+      'body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}\\n' +
+      '.pnlm-container{background:#05070c}\\n' +
+      '.pnlm-title-box,.pnlm-author-box{background:rgba(5,7,12,.72)!important;backdrop-filter:blur(12px)}\\n' +
+      '.pnlm-scene{border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\\n' +
+      '.pnlm-info{border-radius:50%;box-shadow:0 0 0 4px rgba(31,214,187,.2)}\\n' +
+      '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\\n' +
+      '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\\n' +
+      'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\\n';
+  }
+
+  function exportedViewerJs(config) {
+    const json = JSON.stringify(config, null, 2).replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
+    return "(() => {\\n" +
+      "  'use strict';\\n" +
+      "  const config = " + json + ";\\n" +
+      "  const start = () => {\\n" +
+      "    if (!window.pannellum) {\\n" +
+      "      document.body.innerHTML = '<div style=\\\"padding:30px;color:white;background:#05070c;font-family:system-ui\\\">Не удалось загрузить Pannellum.</div>';\\n" +
+      "      return;\\n" +
+      "    }\\n" +
+      "    window.tourViewer = pannellum.viewer('panorama', config);\\n" +
+      "  };\\n" +
+      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });\\n" +
+      "  else start();\\n" +
+      "})();\\n";
+  }
+
+  async function fetchRequiredAsset(url) {
+    const response = await fetch(url, { mode: 'cors', cache: 'force-cache' });
+    if (!response.ok) throw new Error('HTTP ' + response.status + ' для ' + url);
+    return response;
+  }
+
+  async function bundlePannellum(zip) {
+    const base = 'https://cdn.jsdelivr.net/npm/pannellum@2.5.7/';
+    const cssUrl = base + 'build/pannellum.css';
+    const jsUrl = base + 'build/pannellum.js';
+    const responses = await Promise.all([fetchRequiredAsset(cssUrl), fetchRequiredAsset(jsUrl)]);
+    const cssText = await responses[0].text();
+    const jsBuffer = await responses[1].arrayBuffer();
+
+    zip.file('vendor/pannellum/build/pannellum.css', cssText);
+    zip.file('vendor/pannellum/build/pannellum.js', jsBuffer);
+
+    const refs = [...cssText.matchAll(/url\((['"]?)(?!data:|https?:|#)([^'")]+)\1\)/g)]
+      .map((match) => match[2].trim())
+      .filter(Boolean);
+    const uniqueRefs = [...new Set(refs)];
+
+    await Promise.all(uniqueRefs.map(async (relativeRef) => {
+      const sourceUrl = new URL(relativeRef, cssUrl).href;
+      const targetPath = normalizeZipPath('vendor/pannellum/build/' + relativeRef);
+      const response = await fetchRequiredAsset(sourceUrl);
+      zip.file(targetPath, await response.arrayBuffer());
+    }));
+  }
+
+  async function exportTourPackage() {
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
       return;
     }
+    if (!window.JSZip) {
+      showToast('JSZip не загрузился. Проверьте подключение к интернету.');
+      return;
+    }
 
-    const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: project.firstScene });
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json;charset=utf-8' });
-    downloadBlob(blob, safeFilename(project.title) + '.pannellum.json');
-    showToast('Конфигурация Pannellum экспортирована');
+    const button = els.btnExportTour;
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Упаковка…';
+
+    try {
+      const zip = new JSZip();
+      const rootName = safeFilename(project.title, 'tour');
+      const root = zip.folder(rootName);
+      const sceneFiles = new Map();
+      const usedNames = new Set();
+
+      project.scenes.forEach((scene, index) => {
+        const ext = extensionForScene(scene);
+        const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
+        let filename = baseName + '.' + ext;
+        let suffix = 2;
+        while (usedNames.has(filename.toLowerCase())) filename = baseName + '-' + suffix++ + '.' + ext;
+        usedNames.add(filename.toLowerCase());
+        sceneFiles.set(scene.id, filename);
+
+        const payload = dataUrlPayload(scene.imageData);
+        if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
+        else root.file('images/' + filename, decodeURIComponent(payload.data));
+      });
+
+      const config = buildPortableTourConfig(sceneFiles);
+      root.file('index.html', exportedViewerHtml());
+      root.file('assets/tour.css', exportedViewerCss());
+      root.file('assets/tour.js', exportedViewerJs(config));
+      root.file('tour.json', JSON.stringify(config, null, 2));
+      root.file('README.txt',
+        'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\\n\\n' +
+        'Содержимое:\\n' +
+        '- index.html — страница просмотра\\n' +
+        '- assets/tour.js — конфигурация и запуск тура\\n' +
+        '- assets/tour.css — оформление страницы\\n' +
+        '- images/ — все панорамы\\n' +
+        '- vendor/pannellum/ — локальная копия Pannellum\\n' +
+        '- tour.json — конфигурация тура\\n\\n' +
+        'Для сайта:\\n1. Распакуйте папку целиком.\\n2. Загрузите её на HTTP/HTTPS-сервер.\\n3. Откройте index.html.\\n\\n' +
+        'Для локального просмотра: python -m http.server 8080\\n' +
+        'Затем откройте http://localhost:8080/' + rootName + '/\\n\\n' +
+        'Интернет для просмотра экспортированного тура не требуется.\\n'
+      );
+
+      button.textContent = 'Pannellum…';
+      await bundlePannellum(root);
+
+      button.textContent = 'Создание ZIP…';
+      const blob = await zip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        (meta) => { button.textContent = 'ZIP ' + Math.round(meta.percent) + '%'; }
+      );
+      downloadBlob(blob, rootName + '.zip');
+      showToast('Готовый тур с панорамами упакован в ZIP', 3600);
+    } catch (error) {
+      console.error(error);
+      showToast('Не удалось собрать ZIP: ' + error.message, 5200);
+    } finally {
+      button.disabled = false;
+      button.textContent = oldText;
+    }
   }
 
   async function importProjectFile(file) {
@@ -979,7 +1158,7 @@
     });
 
     els.btnExportProject.addEventListener('click', exportProject);
-    els.btnExportTour.addEventListener('click', exportTourConfig);
+    els.btnExportTour.addEventListener('click', exportTourPackage);
     els.projectImport.addEventListener('change', () => importProjectFile(els.projectImport.files?.[0]));
 
     els.btnPreview.addEventListener('click', openPreview);
