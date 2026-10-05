@@ -69,6 +69,18 @@
     btnRefreshHotspotPreview: $('btnRefreshHotspotPreview'),
     hotspotUrl: $('hotspotUrl'),
     hotspotInfo: $('hotspotInfo'),
+    hotspotGlowEnabled: $('hotspotGlowEnabled'),
+    hotspotGlowControls: $('hotspotGlowControls'),
+    hotspotGlowColor: $('hotspotGlowColor'),
+    hotspotGlowDemo: $('hotspotGlowDemo'),
+    hotspotGlowBlur: $('hotspotGlowBlur'),
+    hotspotGlowBlurValue: $('hotspotGlowBlurValue'),
+    hotspotGlowStrength: $('hotspotGlowStrength'),
+    hotspotGlowStrengthValue: $('hotspotGlowStrengthValue'),
+    hotspotGlowPulse: $('hotspotGlowPulse'),
+    hotspotGlowPulseSpeedRow: $('hotspotGlowPulseSpeedRow'),
+    hotspotGlowPulseSpeed: $('hotspotGlowPulseSpeed'),
+    hotspotGlowPulseSpeedValue: $('hotspotGlowPulseSpeedValue'),
     hotspotPitch: $('hotspotPitch'),
     hotspotYaw: $('hotspotYaw'),
     btnDeleteHotspot: $('btnDeleteHotspot'),
@@ -287,6 +299,12 @@
         iconPreset: ['arrow', 'forward', 'door', 'stairs', 'preview', 'custom'].includes(hotspot.iconPreset) ? hotspot.iconPreset : 'arrow',
         iconData: hotspot.iconData ? String(hotspot.iconData) : '',
         iconFilename: hotspot.iconFilename ? String(hotspot.iconFilename) : '',
+        glowEnabled: Boolean(hotspot.glowEnabled),
+        glowColor: normalizeGlowColor(hotspot.glowColor),
+        glowBlur: clampNumber(hotspot.glowBlur, 0, 50, 18),
+        glowStrength: clampNumber(hotspot.glowStrength, 0, 100, 75),
+        glowPulse: Boolean(hotspot.glowPulse),
+        glowPulseSpeed: clampNumber(hotspot.glowPulseSpeed, 0.5, 4, 1.6),
         url: hotspot.url ? String(hotspot.url) : '',
         info: hotspot.info ? String(hotspot.info) : ''
       })) : []
@@ -410,6 +428,70 @@
     els.viewerPlaceholder.hidden = hasScene;
   }
 
+  function clampNumber(value, min, max, fallback) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, number));
+  }
+
+  function normalizeGlowColor(value) {
+    const color = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : '#6c7cff';
+  }
+
+  function hexToRgb(hex) {
+    const value = normalizeGlowColor(hex).slice(1);
+    return {
+      r: parseInt(value.slice(0, 2), 16),
+      g: parseInt(value.slice(2, 4), 16),
+      b: parseInt(value.slice(4, 6), 16)
+    };
+  }
+
+  function hotspotStyleClass(hotspot) {
+    return 'hotspot-style-' + hotspotCssToken(hotspot.id);
+  }
+
+  function normalizedGlow(hotspot) {
+    return {
+      enabled: Boolean(hotspot.glowEnabled),
+      color: normalizeGlowColor(hotspot.glowColor),
+      blur: clampNumber(hotspot.glowBlur, 0, 50, 18),
+      strength: clampNumber(hotspot.glowStrength, 0, 100, 75),
+      pulse: Boolean(hotspot.glowPulse),
+      pulseSpeed: clampNumber(hotspot.glowPulseSpeed, 0.5, 4, 1.6)
+    };
+  }
+
+  function glowFilterString(glow, multiplier = 1) {
+    const rgb = hexToRgb(glow.color);
+    const alpha = Math.min(1, Math.max(0, glow.strength / 100 * multiplier));
+    const outerAlpha = Math.min(1, alpha * 0.58);
+    const innerBlur = Math.max(1, Math.round(glow.blur * 0.45));
+    const outerBlur = Math.max(1, Math.round(glow.blur));
+    return 'drop-shadow(0 0 ' + innerBlur + 'px rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + alpha.toFixed(3) + ')) ' +
+      'drop-shadow(0 0 ' + outerBlur + 'px rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + outerAlpha.toFixed(3) + '))';
+  }
+
+  function buildHotspotGlowCss(hotspot) {
+    const glow = normalizedGlow(hotspot);
+    if (!glow.enabled) return '';
+
+    const token = hotspotCssToken(hotspot.id);
+    const selector = '.pnlm-hotspot-base.' + hotspotStyleClass(hotspot);
+
+    if (!glow.pulse) {
+      const filter = glowFilterString(glow, 1);
+      return selector + ',' + selector + ':hover{filter:' + filter + '!important;}';
+    }
+
+    const animationName = 'hotspotGlowPulse-' + token;
+    const low = glowFilterString(glow, 0.48);
+    const high = glowFilterString(glow, 1.12);
+    return '@keyframes ' + animationName + '{0%{filter:' + low + '}100%{filter:' + high + '}}\n' +
+      selector + '{animation:' + animationName + ' ' + glow.pulseSpeed.toFixed(1) + 's ease-in-out infinite alternate;}';
+  }
+
   function hotspotCssToken(id) {
     return String(id || 'hotspot').replace(/[^a-zA-Z0-9_-]/g, '');
   }
@@ -446,6 +528,9 @@
           rules.push('.hotspot-custom-' + hotspotCssToken(hotspot.id) +
             '{background-image:url("' + safeData + '")!important}');
         }
+
+        const glowCss = buildHotspotGlowCss(hotspot);
+        if (glowCss) rules.push(glowCss);
       });
     });
     style.textContent = rules.join('\n');
@@ -482,6 +567,56 @@
     }
 
     if (preset === 'preview') updateAutoPreviewUi();
+  }
+
+  function updateGlowControlsUi() {
+    const enabled = els.hotspotGlowEnabled.checked;
+    const pulse = els.hotspotGlowPulse.checked;
+
+    els.hotspotGlowControls.hidden = !enabled;
+    els.hotspotGlowPulseSpeedRow.hidden = !pulse;
+
+    const blur = clampNumber(els.hotspotGlowBlur.value, 0, 50, 18);
+    const strength = clampNumber(els.hotspotGlowStrength.value, 0, 100, 75);
+    const speed = clampNumber(els.hotspotGlowPulseSpeed.value, 0.5, 4, 1.6);
+    const color = normalizeGlowColor(els.hotspotGlowColor.value);
+
+    els.hotspotGlowBlurValue.textContent = Math.round(blur) + ' px';
+    els.hotspotGlowStrengthValue.textContent = Math.round(strength) + '%';
+    els.hotspotGlowPulseSpeedValue.textContent = speed.toFixed(1) + ' с';
+
+    if (!enabled) {
+      els.hotspotGlowDemo.style.setProperty('--demo-glow', 'none');
+      return;
+    }
+
+    const previewGlow = {
+      color,
+      blur,
+      strength,
+      pulse: false,
+      pulseSpeed: speed
+    };
+    els.hotspotGlowDemo.style.setProperty('--demo-glow', glowFilterString(previewGlow, 1));
+  }
+
+  function loadGlowControls(hotspot) {
+    const glow = hotspot ? normalizedGlow(hotspot) : {
+      enabled: false,
+      color: '#6c7cff',
+      blur: 18,
+      strength: 75,
+      pulse: false,
+      pulseSpeed: 1.6
+    };
+
+    els.hotspotGlowEnabled.checked = glow.enabled;
+    els.hotspotGlowColor.value = glow.color;
+    els.hotspotGlowBlur.value = String(glow.blur);
+    els.hotspotGlowStrength.value = String(glow.strength);
+    els.hotspotGlowPulse.checked = glow.pulse;
+    els.hotspotGlowPulseSpeed.value = String(glow.pulseSpeed);
+    updateGlowControlsUi();
   }
 
   function radians(degrees) {
@@ -653,7 +788,7 @@
         ...base,
         type: 'scene',
         sceneId: hotspot.targetSceneId,
-        cssClass: transitionIconClass(hotspot)
+        cssClass: transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot)
       };
     }
 
@@ -663,14 +798,15 @@
         type: 'info',
         URL: hotspot.url || '#',
         attributes: { target: '_blank', rel: 'noopener noreferrer' },
-        cssClass: 'editor-url-hotspot'
+        cssClass: 'editor-url-hotspot ' + hotspotStyleClass(hotspot)
       };
     }
 
     return {
       ...base,
       type: 'info',
-      text: hotspot.info ? ((hotspot.text ? hotspot.text + ': ' : '') + hotspot.info) : hotspot.text
+      text: hotspot.info ? ((hotspot.text ? hotspot.text + ': ' : '') + hotspot.info) : hotspot.text,
+      cssClass: hotspotStyleClass(hotspot)
     };
   }
 
@@ -893,6 +1029,7 @@
     els.hotspotText.value = hotspot?.text || '';
     els.hotspotUrl.value = hotspot?.url || '';
     els.hotspotInfo.value = hotspot?.info || '';
+    loadGlowControls(hotspot);
     els.btnDeleteHotspot.hidden = !hotspot;
 
     pendingHotspotIconData = hotspot?.iconData || '';
@@ -968,6 +1105,12 @@
       iconPreset: type === 'scene' ? els.hotspotIconPreset.value : 'arrow',
       iconData: type === 'scene' && ['custom', 'preview'].includes(els.hotspotIconPreset.value) ? pendingHotspotIconData : '',
       iconFilename: type === 'scene' && ['custom', 'preview'].includes(els.hotspotIconPreset.value) ? pendingHotspotIconFilename : '',
+      glowEnabled: els.hotspotGlowEnabled.checked,
+      glowColor: normalizeGlowColor(els.hotspotGlowColor.value),
+      glowBlur: clampNumber(els.hotspotGlowBlur.value, 0, 50, 18),
+      glowStrength: clampNumber(els.hotspotGlowStrength.value, 0, 100, 75),
+      glowPulse: els.hotspotGlowPulse.checked,
+      glowPulseSpeed: clampNumber(els.hotspotGlowPulseSpeed.value, 0.5, 4, 1.6),
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
       info: type === 'info' ? els.hotspotInfo.value.trim() : ''
     });
@@ -1160,7 +1303,7 @@
       '.pnlm-title-box,.pnlm-author-box{background:rgba(5,7,12,.72)!important;backdrop-filter:blur(12px)}\n' +
       '.pnlm-scene:not(.scene-image-hotspot){border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\n' +
       '.scene-image-hotspot{width:52px!important;height:52px!important;margin-left:-26px!important;margin-top:-26px!important;background-color:transparent!important;background-repeat:no-repeat!important;background-position:center!important;background-size:contain!important;border-radius:0!important;box-shadow:none!important;filter:drop-shadow(0 8px 12px rgba(0,0,0,.35));transition:filter .16s ease}\n' +
-      '.scene-image-hotspot:hover{filter:drop-shadow(0 8px 14px rgba(0,0,0,.42)) brightness(1.08)!important}\n' +
+      '.scene-image-hotspot:hover{filter:drop-shadow(0 8px 14px rgba(0,0,0,.42)) brightness(1.08)}\n' +
       '.scene-preview-hotspot{width:96px!important;height:62px!important;margin-left:-48px!important;margin-top:-31px!important;background-size:cover!important;border-radius:12px!important;border:3px solid rgba(255,255,255,.94)!important;box-shadow:0 8px 24px rgba(0,0,0,.35)!important;overflow:hidden}\n' +
       '.scene-preview-hotspot:after{content:"→";position:absolute;right:5px;bottom:5px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(6,10,18,.78);color:#fff;font-size:14px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.35)}\n' +
       '.scene-icon-arrow{background-image:url("../images/icons/arrow.svg")!important}\n' +
@@ -1176,6 +1319,14 @@
       css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
         '{background-image:url("../images/icons/' + filename.replace(/"/g, '%22') + '")!important}\n';
     });
+
+    project.scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        const glowCss = buildHotspotGlowCss(hotspot);
+        if (glowCss) css += glowCss + '\n';
+      });
+    });
+
     return css;
   }
 
@@ -1504,6 +1655,13 @@
         showToast('Не удалось прочитать иконку');
       }
     });
+
+    els.hotspotGlowEnabled.addEventListener('change', updateGlowControlsUi);
+    els.hotspotGlowColor.addEventListener('input', updateGlowControlsUi);
+    els.hotspotGlowBlur.addEventListener('input', updateGlowControlsUi);
+    els.hotspotGlowStrength.addEventListener('input', updateGlowControlsUi);
+    els.hotspotGlowPulse.addEventListener('change', updateGlowControlsUi);
+    els.hotspotGlowPulseSpeed.addEventListener('input', updateGlowControlsUi);
 
     els.hotspotForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
