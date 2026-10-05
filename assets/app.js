@@ -253,6 +253,36 @@
     return 360 * ((Number(sector) || 0) % sectors) / sectors;
   }
 
+  function normalizeStlData(input = {}) {
+    return {
+      data: String(input.data || ''),
+      filename: String(input.filename || 'model.stl'),
+      triangleCount: Math.max(0, Number(input.triangleCount) || 0),
+      yaw: Number(input.yaw) || 0,
+      pitch: clampNumber(input.pitch, -89, 89, -15),
+      zoom: clampNumber(input.zoom, 0.35, 5, 1),
+      wireframe: Boolean(input.wireframe),
+      autoplay: Boolean(input.autoplay),
+      color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#7c8cff',
+      size: {
+        x: Math.max(0, Number(input.size?.x) || 0),
+        y: Math.max(0, Number(input.size?.y) || 0),
+        z: Math.max(0, Number(input.size?.z) || 0)
+      }
+    };
+  }
+
+  function stlPlaceholderDataUrl() {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240">' +
+      '<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#101a33"/><stop offset="1" stop-color="#07101b"/></linearGradient></defs>' +
+      '<rect width="320" height="240" fill="url(#g)"/>' +
+      '<g fill="none" stroke="#7c8cff" stroke-width="3" opacity=".9">' +
+      '<path d="M160 48 236 92 236 164 160 208 84 164 84 92Z"/>' +
+      '<path d="M160 48 160 124 236 164M160 124 84 164M84 92 160 124 236 92"/>' +
+      '</g><text x="160" y="224" text-anchor="middle" fill="#b9c2ff" font-family="Arial" font-size="18" font-weight="700">STL 3D</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
   function showToast(message, timeout = 2400) {
     clearTimeout(toastTimer);
     els.toast.textContent = message;
