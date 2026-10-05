@@ -1492,7 +1492,7 @@
       '  else if(u_face==4) d=vec3(-1.0,sy,-sx);',
       '  else d=vec3(1.0,sy,sx);',
       '  d=normalize(d);',
-      '  float lon=atan(-d.x,-d.z);',
+      '  float lon=atan(d.x,-d.z);',
       '  float lat=asin(clamp(d.y,-1.0,1.0));',
       '  vec2 uv=vec2(lon/(2.0*PI)+0.5,0.5-lat/PI);',
       '  gl_FragColor=texture2D(u_image,uv);',
