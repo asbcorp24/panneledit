@@ -2785,18 +2785,21 @@
   let objectViewer = null;
   let stlViewer = null;
   let currentSceneId = '';
+  let musicAudio = null;
+  let musicKey = '';
+  let narrationAudio = null;
+  let musicEnabled = true;
+  let userInteracted = false;
   const historyStack = [];
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
   const backButton = document.getElementById('tourBackButton');
+  const overlay = document.getElementById('sceneTextOverlay');
+  const musicButton = document.getElementById('tourMusicButton');
+  const narrationButton = document.getElementById('tourNarrationButton');
 
-  const escapeHtmlText = (value) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/"/g, '&quot;');
-
-  const destroy = () => {
+  const destroyViewer = () => {
     if (panoViewer) {
       try { panoViewer.destroy(); } catch (_) {}
       panoViewer = null;
@@ -2820,15 +2823,130 @@
     if (!backButton) return;
     backButton.hidden = historyStack.length === 0;
     if (!historyStack.length) return;
-
     const previousId = historyStack[historyStack.length - 1];
     const previous = config.sceneMeta?.[previousId];
-    backButton.textContent = previous?.title
-      ? '← ' + previous.title
-      : '← Назад';
-    backButton.title = previous?.title
-      ? 'Вернуться: ' + previous.title
-      : 'Вернуться назад';
+    backButton.textContent = previous?.title ? '← ' + previous.title : '← Назад';
+    backButton.title = previous?.title ? 'Вернуться: ' + previous.title : 'Вернуться назад';
+  };
+
+  const renderTextOverlay = (id) => {
+    if (!overlay) return;
+    overlay.innerHTML = '';
+    const items = config.sceneMeta?.[id]?.textObjects || [];
+
+    items.forEach((item) => {
+      const el = document.createElement('div');
+      el.className = [
+        'scene-text-object',
+        'scene-text-' + (item.type || 'description'),
+        'scene-text-bg-' + (item.background || 'none'),
+        'scene-text-anim-' + (item.animation || 'fade')
+      ].join(' ');
+
+      el.style.left = Number(item.x || 0) + '%';
+      el.style.top = Number(item.y || 0) + '%';
+      el.style.width = Number(item.width || 40) + '%';
+      el.style.fontSize = Number(item.fontSize || 20) + 'px';
+      el.style.color = item.color || '#ffffff';
+      el.style.textAlign = item.align || 'left';
+
+      const inner = document.createElement('div');
+      inner.className = 'scene-text-inner';
+      inner.textContent = item.text || '';
+      el.appendChild(inner);
+      overlay.appendChild(el);
+    });
+  };
+
+  const desiredMusic = (id) => {
+    const sceneMusic = config.sceneMeta?.[id]?.audio?.music;
+    return sceneMusic?.src ? sceneMusic : config.projectAudio?.music;
+  };
+
+  const stopNarration = () => {
+    if (narrationAudio) {
+      try {
+        narrationAudio.pause();
+        narrationAudio.currentTime = 0;
+      } catch (_) {}
+    }
+    narrationAudio = null;
+    if (narrationButton) narrationButton.classList.remove('active');
+    if (musicAudio) {
+      const desired = desiredMusic(currentSceneId);
+      musicAudio.volume = Math.max(0, Math.min(1, Number(desired?.volume ?? 50) / 100));
+    }
+  };
+
+  const tryPlayMusic = async () => {
+    if (!musicAudio || !musicEnabled || !userInteracted) return;
+    try {
+      await musicAudio.play();
+      musicButton?.classList.add('active');
+    } catch (_) {}
+  };
+
+  const configureAudio = (id) => {
+    stopNarration();
+
+    const music = desiredMusic(id);
+    if (musicButton) musicButton.hidden = !music?.src;
+
+    const nextKey = music?.src || '';
+    if (nextKey !== musicKey) {
+      if (musicAudio) {
+        try { musicAudio.pause(); } catch (_) {}
+      }
+      musicAudio = null;
+      musicKey = nextKey;
+
+      if (music?.src) {
+        musicAudio = new Audio(music.src);
+        musicAudio.loop = Boolean(music.loop);
+      }
+    }
+
+    if (musicAudio && music) {
+      musicAudio.volume = Math.max(0, Math.min(1, Number(music.volume ?? 50) / 100));
+      tryPlayMusic();
+    }
+
+    const narration = config.sceneMeta?.[id]?.audio?.narration;
+    if (narrationButton) narrationButton.hidden = !narration?.src;
+  };
+
+  const playNarration = async () => {
+    const narration = config.sceneMeta?.[currentSceneId]?.audio?.narration;
+    if (!narration?.src) return;
+
+    if (narrationAudio && !narrationAudio.paused) {
+      stopNarration();
+      return;
+    }
+
+    stopNarration();
+    narrationAudio = new Audio(narration.src);
+    narrationAudio.volume = Math.max(0, Math.min(1, Number(narration.volume ?? 80) / 100));
+
+    if (musicAudio && !musicAudio.paused) {
+      musicAudio.volume *= 0.28;
+    }
+
+    narrationAudio.addEventListener('ended', stopNarration, { once: true });
+
+    try {
+      await narrationAudio.play();
+      narrationButton?.classList.add('active');
+    } catch (_) {
+      stopNarration();
+    }
+  };
+
+  const applySceneUi = (id) => {
+    renderTextOverlay(id);
+    configureAudio(id);
+    updateMenu(id);
+    updateBackButton();
   };
 
   const decorateUniversalHotspots = (panoConfig) => {
@@ -2836,10 +2954,7 @@
       (scene.hotSpots || []).forEach((hotspot) => {
         const target = hotspot.tourTargetSceneId;
         if (!target) return;
-
-        hotspot.clickHandlerFunc = () => {
-          showScene(target, true);
-        };
+        hotspot.clickHandlerFunc = () => showScene(target, true);
       });
     });
   };
@@ -2849,8 +2964,7 @@
     if (!meta) return;
 
     if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
-      updateMenu(id);
-      updateBackButton();
+      applySceneUi(id);
       return;
     }
 
@@ -2859,9 +2973,8 @@
     }
 
     currentSceneId = id;
-    destroy();
-    updateMenu(id);
-    updateBackButton();
+    destroyViewer();
+    applySceneUi(id);
 
     if (meta.sceneType === 'object360') {
       const data = config.object360Scenes?.[id];
@@ -2915,6 +3028,7 @@
     delete panoConfig.sceneMeta;
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
+    delete panoConfig.projectAudio;
 
     decorateUniversalHotspots(panoConfig);
 
@@ -2927,8 +3041,7 @@
       }
 
       currentSceneId = sceneId;
-      updateMenu(sceneId);
-      updateBackButton();
+      applySceneUi(sceneId);
     });
   };
 
@@ -2947,17 +3060,38 @@
         const icon = meta.sceneType === 'object360'
           ? '◉ '
           : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
-
-        return '<option value="' + escapeHtmlText(id) + '">' +
-          icon + escapeHtmlText(meta.title || id) + '</option>';
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = icon + (meta.title || id);
+        return option.outerHTML;
       }).join('');
-
       menu.addEventListener('change', () => showScene(menu.value, true));
     }
 
-    if (backButton) {
-      backButton.addEventListener('click', goBack);
-    }
+    backButton?.addEventListener('click', goBack);
+
+    musicButton?.addEventListener('click', async () => {
+      userInteracted = true;
+      musicEnabled = !musicEnabled;
+      if (!musicEnabled) {
+        musicAudio?.pause();
+        musicButton.classList.remove('active');
+      } else {
+        await tryPlayMusic();
+      }
+    });
+
+    narrationButton?.addEventListener('click', async () => {
+      userInteracted = true;
+      await playNarration();
+    });
+
+    const unlockAudio = () => {
+      userInteracted = true;
+      tryPlayMusic();
+    };
+    document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
+    document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
 
     showScene(config.tourFirstScene || order[0], false);
   };
