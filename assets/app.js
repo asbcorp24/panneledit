@@ -591,6 +591,7 @@
     renderSceneList();
     renderProjectSettings();
     renderSceneSettings();
+    renderTextObjectList();
     renderHotspotList();
     updateToolbarState();
     renderViewer();
