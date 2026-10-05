@@ -109,6 +109,15 @@
                     android:textColor="#FFFFFF" />
 
                 <Button
+                    android:id="@+id/btnArDepth"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="ГЛУБИНА 20 СМ"
+                    android:textColor="#FFFFFF" />
+
+                <Button
                     android:id="@+id/btnArAuto"
                     android:layout_width="wrap_content"
                     android:layout_height="44dp"
