@@ -2808,8 +2808,10 @@
 
       const multiresScenes = new Map();
       const objectSceneFiles = new Map();
-      const panoramaScenes = project.scenes.filter((scene) => scene.sceneType !== 'object360');
+      const stlSceneFiles = new Map();
+      const panoramaScenes = project.scenes.filter((scene) => scene.sceneType === 'panorama');
       const objectScenes = project.scenes.filter((scene) => scene.sceneType === 'object360');
+      const stlScenes = project.scenes.filter((scene) => scene.sceneType === 'stl');
 
       if (project.settings.multiresEnabled) {
         for (let index = 0; index < panoramaScenes.length; index++) {
@@ -2871,13 +2873,45 @@
         });
       }
 
-      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles);
+      for (let sceneIndex = 0; sceneIndex < stlScenes.length; sceneIndex++) {
+        const scene = stlScenes[sceneIndex];
+        const data = normalizeStlData(scene.stl || {});
+        if (!data.data) throw new Error('STL данные отсутствуют: ' + scene.title);
+
+        const payload = dataUrlPayload(data.data);
+        const baseName = safeFilename(scene.title || scene.id, 'model-' + (sceneIndex + 1));
+        let filename = baseName + '.stl';
+        let suffix = 2;
+        while (usedNames.has(filename.toLowerCase())) {
+          filename = baseName + '-' + suffix++ + '.stl';
+        }
+        usedNames.add(filename.toLowerCase());
+
+        const modelPath = 'models/' + filename;
+        if (payload.base64) root.file(modelPath, payload.data, { base64: true });
+        else root.file(modelPath, decodeURIComponent(payload.data));
+
+        stlSceneFiles.set(scene.id, {
+          source: modelPath,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoplay: data.autoplay,
+          color: data.color,
+          triangleCount: data.triangleCount
+        });
+      }
+
+      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles, stlSceneFiles);
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
       const objectViewerAsset = await fetchRequiredAsset('assets/object360.js');
       root.file('assets/object360.js', await objectViewerAsset.text());
+      const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
+      root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       root.file('README.txt',
         'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
@@ -2887,6 +2921,7 @@
         '- assets/tour.css — оформление страницы\n' +
         '- images/ — исходные панорамы при обычном экспорте\n' +
         '- object360/ — кадры сцен «Объект 360°»\n' +
+        '- models/ — STL-модели 3D-сцен\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -2929,12 +2964,12 @@
       if (!imported.scenes.length) {
         throw new Error('В проекте нет сцен');
       }
-      if (imported.scenes.some((scene) =>
-        scene.sceneType === 'object360'
-          ? !countObjectFrames(scene.object360)
-          : !scene.imageData
-      )) {
-        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры');
+      if (imported.scenes.some((scene) => {
+        if (scene.sceneType === 'object360') return !countObjectFrames(scene.object360);
+        if (scene.sceneType === 'stl') return !scene.stl?.data;
+        return !scene.imageData;
+      })) {
+        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры / STL данные');
       }
 
       project = imported;
