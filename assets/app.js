@@ -2037,48 +2037,106 @@
   }
 
   function exportedViewerJs(config) {
-    const json = JSON.stringify(config, null, 2).replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
-    return "(() => {\n" +
-      "  'use strict';\n" +
-      "  const config = " + json + ";\n" +
-      "  let panoViewer = null;\n" +
-      "  let objectViewer = null;\n" +
-      "  const host = document.getElementById('panorama');\n" +
-      "  const menu = document.getElementById('sceneMenuExport');\n" +
-      "  const destroy = () => {\n" +
-      "    if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }\n" +
-      "    if (objectViewer) { try { objectViewer.destroy(); } catch (_) {} objectViewer = null; }\n" +
-      "    host.innerHTML = '';\n" +
-      "  };\n" +
-      "  const updateMenu = (id) => { if (menu) menu.value = id || ''; };\n" +
-      "  const showScene = (id) => {\n" +
-      "    const meta = config.sceneMeta?.[id];\n" +
-      "    if (!meta) return;\n" +
-      "    destroy();\n" +
-      "    updateMenu(id);\n" +
-      "    if (meta.sceneType === 'object360') {\n" +
-      "      const data = config.object360Scenes?.[id];\n" +
-      "      if (!data || !window.Object360Viewer) { host.innerHTML = '<div style=\\"padding:30px;color:white\\">Object360 сцена недоступна</div>'; return; }\n" +
-      "      objectViewer = new Object360Viewer(host, data);\n" +
-      "      return;\n" +
-      "    }\n" +
-      "    if (!window.pannellum) { host.innerHTML = '<div style=\\"padding:30px;color:white\\">Pannellum не загрузился</div>'; return; }\n" +
-      "    const panoConfig = { ...config, default: { ...(config.default || {}), firstScene: id } };\n" +
-      "    delete panoConfig.object360Scenes; delete panoConfig.sceneMeta; delete panoConfig.sceneOrder; delete panoConfig.tourFirstScene;\n" +
-      "    panoViewer = pannellum.viewer('panorama', panoConfig);\n" +
-      "    panoViewer.on('scenechange', (sceneId) => updateMenu(sceneId));\n" +
-      "  };\n" +
-      "  const start = () => {\n" +
-      "    const order = config.sceneOrder || Object.keys(config.sceneMeta || {});\n" +
-      "    if (menu) {\n" +
-      "      menu.innerHTML = order.map((id) => { const m = config.sceneMeta[id] || {}; return '<option value=\\"' + id.replace(/&/g,'&amp;').replace(/\\"/g,'&quot;') + '\\">' + (m.sceneType === 'object360' ? '◉ ' : '◌ ') + String(m.title || id).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</option>'; }).join('');\n" +
-      "      menu.addEventListener('change', () => showScene(menu.value));\n" +
-      "    }\n" +
-      "    showScene(config.tourFirstScene || order[0]);\n" +
-      "  };\n" +
-      "  window.showTourScene = showScene;\n" +
-      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();\n" +
-      "})();\n";
+    const json = JSON.stringify(config, null, 2)
+      .replace(/<\/script/gi, '<\\/script')
+      .replace(/<!--/g, '<\\!--');
+
+    return `(() => {
+  'use strict';
+
+  const config = ${json};
+  let panoViewer = null;
+  let objectViewer = null;
+
+  const host = document.getElementById('panorama');
+  const menu = document.getElementById('sceneMenuExport');
+
+  const escapeHtmlText = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+
+  const destroy = () => {
+    if (panoViewer) {
+      try { panoViewer.destroy(); } catch (_) {}
+      panoViewer = null;
+    }
+    if (objectViewer) {
+      try { objectViewer.destroy(); } catch (_) {}
+      objectViewer = null;
+    }
+    host.innerHTML = '';
+  };
+
+  const updateMenu = (id) => {
+    if (menu) menu.value = id || '';
+  };
+
+  const showScene = (id) => {
+    const meta = config.sceneMeta?.[id];
+    if (!meta) return;
+
+    destroy();
+    updateMenu(id);
+
+    if (meta.sceneType === 'object360') {
+      const data = config.object360Scenes?.[id];
+      if (!data || !window.Object360Viewer) {
+        host.innerHTML = '<div class="viewer-error">Object360 сцена недоступна</div>';
+        return;
+      }
+      objectViewer = new Object360Viewer(host, data);
+      return;
+    }
+
+    if (!window.pannellum) {
+      host.innerHTML = '<div class="viewer-error">Pannellum не загрузился</div>';
+      return;
+    }
+
+    const panoConfig = {
+      ...config,
+      default: {
+        ...(config.default || {}),
+        firstScene: id
+      }
+    };
+
+    delete panoConfig.object360Scenes;
+    delete panoConfig.sceneMeta;
+    delete panoConfig.sceneOrder;
+    delete panoConfig.tourFirstScene;
+
+    panoViewer = pannellum.viewer('panorama', panoConfig);
+    panoViewer.on('scenechange', (sceneId) => updateMenu(sceneId));
+  };
+
+  const start = () => {
+    const order = config.sceneOrder || Object.keys(config.sceneMeta || {});
+
+    if (menu) {
+      menu.innerHTML = order.map((id) => {
+        const meta = config.sceneMeta?.[id] || {};
+        const icon = meta.sceneType === 'object360' ? '◉ ' : '◌ ';
+        return '<option value="' + escapeHtmlText(id) + '">' +
+          icon + escapeHtmlText(meta.title || id) + '</option>';
+      }).join('');
+
+      menu.addEventListener('change', () => showScene(menu.value));
+    }
+
+    showScene(config.tourFirstScene || order[0]);
+  };
+
+  window.showTourScene = showScene;
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
+})();
+`;
   }
 
   async function fetchRequiredAsset(url) {
