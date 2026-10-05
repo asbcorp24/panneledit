@@ -354,6 +354,27 @@
     <div id="previewPanorama"></div>
   </dialog>
 
+  <dialog id="downloadDialog" class="modal download-modal">
+    <div class="download-ready">
+      <div class="download-ready-icon">ZIP</div>
+      <div class="download-ready-copy">
+        <h2>Тур готов</h2>
+        <p id="downloadReadyInfo">ZIP-архив собран. Нажмите кнопку ниже, чтобы сохранить его на компьютер.</p>
+      </div>
+    </div>
+    <div class="download-file-card">
+      <div>
+        <b id="downloadZipFilename">tour.zip</b>
+        <span id="downloadZipSize">—</span>
+      </div>
+      <span class="download-file-badge">.ZIP</span>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="closeDownloadDialog">Закрыть</button>
+      <a class="btn btn-accent download-main-btn" id="downloadZipLink" href="#" download>Скачать ZIP</a>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
