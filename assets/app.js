@@ -3159,65 +3159,7 @@
     }
   }
 
-  function openPreview() {
-    if (!project.scenes.length) return;
-    const scene = getScene(project.firstScene) || project.scenes[0];
-    els.previewDialog.showModal();
-
-    requestAnimationFrame(() => {
-      if (previewViewer) {
-        try { previewViewer.destroy(); } catch (_) {}
-        previewViewer = null;
-      }
-      if (previewObjectViewer) {
-        try { previewObjectViewer.destroy(); } catch (_) {}
-        previewObjectViewer = null;
-      }
-      if (previewStlViewer) {
-        try { previewStlViewer.destroy(); } catch (_) {}
-        previewStlViewer = null;
-      }
-      els.previewPanorama.innerHTML = '';
-
-      if (scene.sceneType === 'object360') {
-        if (!window.Object360Viewer) return;
-        const data = normalizeObject360Data(scene.object360 || {});
-        previewObjectViewer = new Object360Viewer(els.previewPanorama, {
-          sectors: data.sectors,
-          rows: data.rows,
-          frames: data.frames,
-          startSector: data.startSector,
-          startRow: data.startRow,
-          autoplay: data.autoplay
-        });
-        return;
-      }
-
-      if (scene.sceneType === 'stl') {
-        if (!window.StlViewer) return;
-        const data = normalizeStlData(scene.stl || {});
-        previewStlViewer = new StlViewer(els.previewPanorama, {
-          source: data.data,
-          yaw: data.yaw,
-          pitch: data.pitch,
-          zoom: data.zoom,
-          wireframe: data.wireframe,
-          autoRotate: data.autoplay,
-          color: data.color
-        });
-        previewStlViewer.ready.catch(console.error);
-        return;
-      }
-
-      if (!window.pannellum) return;
-      previewViewer = pannellum.viewer('previewPanorama', buildPannellumConfig({
-        useEmbeddedImages: true,
-        firstSceneId: scene.id
-      }));
-    });
-  }
-
-  function closePreview() {
+  function destroyPreviewViewers() {
     if (previewViewer) {
       try { previewViewer.destroy(); } catch (_) {}
       previewViewer = null;
@@ -3231,6 +3173,61 @@
       previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
+  }
+
+  function renderPreviewScene(sceneId) {
+    const scene = getScene(sceneId);
+    if (!scene) return;
+
+    destroyPreviewViewers();
+
+    if (scene.sceneType === 'object360') {
+      if (!window.Object360Viewer) return;
+      const data = normalizeObject360Data(scene.object360 || {});
+      previewObjectViewer = new Object360Viewer(els.previewPanorama, {
+        sectors: data.sectors,
+        rows: data.rows,
+        frames: data.frames,
+        startSector: data.startSector,
+        startRow: data.startRow,
+        autoplay: data.autoplay
+      });
+      return;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) return;
+      const data = normalizeStlData(scene.stl || {});
+      previewStlViewer = new StlViewer(els.previewPanorama, {
+        source: data.data,
+        yaw: data.yaw,
+        pitch: data.pitch,
+        zoom: data.zoom,
+        wireframe: data.wireframe,
+        autoRotate: data.autoplay,
+        color: data.color
+      });
+      previewStlViewer.ready.catch(console.error);
+      return;
+    }
+
+    if (!window.pannellum) return;
+    previewViewer = pannellum.viewer('previewPanorama', buildPannellumConfig({
+      useEmbeddedImages: true,
+      firstSceneId: scene.id,
+      universalSceneHandler: renderPreviewScene
+    }));
+  }
+
+  function openPreview() {
+    if (!project.scenes.length) return;
+    const scene = getScene(project.firstScene) || project.scenes[0];
+    els.previewDialog.showModal();
+    requestAnimationFrame(() => renderPreviewScene(scene.id));
+  }
+
+  function closePreview() {
+    destroyPreviewViewers();
     if (els.previewDialog.open) els.previewDialog.close();
   }
 
