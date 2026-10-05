@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 4;
+  const PROJECT_VERSION = 5;
 
   const $ = (id) => document.getElementById(id);
 
@@ -19,6 +19,12 @@
     saveState: $('saveState'),
     projectTitle: $('projectTitle'),
     firstScene: $('firstScene'),
+    projectMusicName: $('projectMusicName'),
+    projectMusicFile: $('projectMusicFile'),
+    projectMusicVolume: $('projectMusicVolume'),
+    projectMusicVolumeValue: $('projectMusicVolumeValue'),
+    projectMusicLoop: $('projectMusicLoop'),
+    btnRemoveProjectMusic: $('btnRemoveProjectMusic'),
     sceneFadeEnabled: $('sceneFadeEnabled'),
     sceneFadeDuration: $('sceneFadeDuration'),
     autoRotateEnabled: $('autoRotateEnabled'),
@@ -89,7 +95,36 @@
     stlAutoplay: $('stlAutoplay'),
     stlFilename: $('stlFilename'),
     stlFileReplace: $('stlFileReplace'),
+    sceneMusicName: $('sceneMusicName'),
+    sceneMusicFile: $('sceneMusicFile'),
+    sceneMusicVolume: $('sceneMusicVolume'),
+    sceneMusicVolumeValue: $('sceneMusicVolumeValue'),
+    sceneMusicLoop: $('sceneMusicLoop'),
+    btnRemoveSceneMusic: $('btnRemoveSceneMusic'),
+    sceneNarrationName: $('sceneNarrationName'),
+    sceneNarrationFile: $('sceneNarrationFile'),
+    sceneNarrationVolume: $('sceneNarrationVolume'),
+    sceneNarrationVolumeValue: $('sceneNarrationVolumeValue'),
+    btnRemoveSceneNarration: $('btnRemoveSceneNarration'),
     btnDeleteScene: $('btnDeleteScene'),
+    sceneOverlay: $('sceneOverlay'),
+    textObjectList: $('textObjectList'),
+    btnAddTextObject: $('btnAddTextObject'),
+    textObjectDialog: $('textObjectDialog'),
+    textObjectForm: $('textObjectForm'),
+    textObjectDialogTitle: $('textObjectDialogTitle'),
+    textObjectEditId: $('textObjectEditId'),
+    textObjectType: $('textObjectType'),
+    textObjectText: $('textObjectText'),
+    textObjectX: $('textObjectX'),
+    textObjectY: $('textObjectY'),
+    textObjectWidth: $('textObjectWidth'),
+    textObjectFontSize: $('textObjectFontSize'),
+    textObjectColor: $('textObjectColor'),
+    textObjectAlign: $('textObjectAlign'),
+    textObjectBackground: $('textObjectBackground'),
+    textObjectAnimation: $('textObjectAnimation'),
+    btnDeleteTextObject: $('btnDeleteTextObject'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
     hotspotDialogTitle: $('hotspotDialogTitle'),
@@ -129,6 +164,10 @@
     btnDeleteHotspot: $('btnDeleteHotspot'),
     previewDialog: $('previewDialog'),
     previewPanorama: $('previewPanorama'),
+    previewSceneOverlay: $('previewSceneOverlay'),
+    previewAudioControls: $('previewAudioControls'),
+    previewMusicButton: $('previewMusicButton'),
+    previewNarrationButton: $('previewNarrationButton'),
     closePreview: $('closePreview'),
     downloadDialog: $('downloadDialog'),
     downloadReadyInfo: $('downloadReadyInfo'),
@@ -148,6 +187,8 @@
   let previewViewer = null;
   let previewObjectViewer = null;
   let previewStlViewer = null;
+  let previewMusicAudio = null;
+  let previewNarrationAudio = null;
   let dbPromise = null;
   let saveTimer = null;
   let toastTimer = null;
@@ -165,6 +206,9 @@
       version: PROJECT_VERSION,
       title: 'Виртуальная экскурсия',
       firstScene: null,
+      audio: {
+        music: { data: '', filename: '', volume: 35, loop: true }
+      },
       settings: {
         fadeEnabled: true,
         fadeDuration: 900,
@@ -449,11 +493,47 @@
     }
   }
 
+  function normalizeAudioSlot(input = {}, defaults = {}) {
+    return {
+      data: String(input.data || ''),
+      filename: String(input.filename || ''),
+      volume: clampNumber(input.volume, 0, 100, defaults.volume ?? 50),
+      loop: input.loop === undefined ? Boolean(defaults.loop) : Boolean(input.loop)
+    };
+  }
+
+  function normalizeSceneAudio(input = {}) {
+    return {
+      music: normalizeAudioSlot(input.music || {}, { volume: 45, loop: true }),
+      narration: normalizeAudioSlot(input.narration || {}, { volume: 80, loop: false })
+    };
+  }
+
+  function normalizeTextObject(input = {}) {
+    const type = ['title','description'].includes(input.type) ? input.type : 'description';
+    return {
+      id: String(input.id || uid('text')),
+      type,
+      text: String(input.text || ''),
+      x: clampNumber(input.x, 0, 100, 5),
+      y: clampNumber(input.y, 0, 100, type === 'title' ? 8 : 70),
+      width: clampNumber(input.width, 10, 90, type === 'title' ? 55 : 42),
+      fontSize: clampNumber(input.fontSize, 12, 96, type === 'title' ? 42 : 20),
+      color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#ffffff',
+      align: ['left','center','right'].includes(input.align) ? input.align : 'left',
+      background: ['none','dark','light'].includes(input.background) ? input.background : (type === 'description' ? 'dark' : 'none'),
+      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade'
+    };
+  }
+
   function normalizeProject(input) {
     if (!input || typeof input !== 'object') throw new Error('Некорректный JSON проекта');
 
     const next = createEmptyProject();
     next.title = String(input.title || next.title);
+    next.audio = {
+      music: normalizeAudioSlot(input.audio?.music || {}, { volume: 35, loop: true })
+    };
     next.settings = { ...next.settings, ...(input.settings || {}) };
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
@@ -477,6 +557,8 @@
       pitch: Number.isFinite(Number(scene.pitch)) ? Number(scene.pitch) : 0,
       yaw: Number.isFinite(Number(scene.yaw)) ? Number(scene.yaw) : 0,
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
+      audio: normalizeSceneAudio(scene.audio || {}),
+      textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
       hotspots: Array.isArray(scene.hotspots) ? scene.hotspots.map((hotspot) => ({
         id: String(hotspot.id || uid('hotspot')),
         type: ['scene', 'info', 'url'].includes(hotspot.type) ? hotspot.type : 'info',
