@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>Pannellum Tour Editor</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">360°</div>
+        <div>
+          <strong>Pannellum Tour Editor</strong>
+          <span>Редактор виртуальных туров</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" id="btnNew">Новый</button>
+        <label class="btn btn-ghost file-btn">Импорт проекта<input id="projectImport" type="file" accept=".json,application/json"></label>
+        <button class="btn btn-primary" id="btnExportProject">Экспорт проекта</button>
+        <button class="btn btn-accent" id="btnExportTour">Экспорт тура</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar sidebar-left">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Сцены</h2>
+              <p>Панорамы виртуального тура</p>
+            </div>
+            <button class="icon-btn" id="btnAddScene" title="Добавить сцену">＋</button>
+          </div>
+          <div id="sceneList" class="scene-list empty">
+            <div class="empty-state">Добавьте первую панораму</div>
+          </div>
+        </section>
+
+        <section class="panel compact">
+          <div class="panel-head">
+            <div>
+              <h2>Проект</h2>
+              <p>Общие настройки</p>
+            </div>
+          </div>
+          <label class="field">
+            <span>Название тура</span>
+            <input id="projectTitle" type="text" placeholder="Виртуальная экскурсия">
+          </label>
+          <label class="field">
+            <span>Стартовая сцена</span>
+            <select id="firstScene"></select>
+          </label>
+          <label class="switch-row">
+            <span>
+              <b>Плавный переход</b>
+              <small>Анимация между сценами</small>
+            </span>
+            <input id="sceneFadeEnabled" type="checkbox" checked>
+          </label>
+          <label class="field inline-field">
+            <span>Длительность, мс</span>
+            <input id="sceneFadeDuration" type="number" value="900" min="0" max="5000" step="100">
+          </label>
+          <label class="switch-row">
+            <span>
+              <b>Автовращение</b>
+              <small>Для публичного просмотра</small>
+            </span>
+            <input id="autoRotateEnabled" type="checkbox">
+          </label>
+          <label class="field inline-field">
+            <span>Скорость</span>
+            <input id="autoRotate" type="number" value="-2" min="-20" max="20" step="0.5">
+          </label>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div class="stage-toolbar">
+          <div class="toolbar-group">
+            <button class="btn btn-small btn-primary" id="btnAddHotspot" disabled>＋ Точка</button>
+            <button class="btn btn-small" id="btnSetInitialView" disabled>Сохранить текущий вид</button>
+            <button class="btn btn-small" id="btnPreview" disabled>Просмотр</button>
+          </div>
+          <div class="toolbar-status">
+            <span id="coords">pitch 0.00° · yaw 0.00°</span>
+            <span class="save-state" id="saveState">Сохранено</span>
+          </div>
+        </div>
+
+        <div class="viewer-wrap">
+          <div id="panorama"></div>
+          <div id="viewerPlaceholder" class="viewer-placeholder">
+            <div class="placeholder-orbit">
+              <span></span><span></span><span></span>
+              <b>360°</b>
+            </div>
+            <h1>Добавьте панораму</h1>
+            <p>Поддерживается equirectangular JPG / PNG / WEBP с соотношением сторон около 2:1.</p>
+            <button class="btn btn-primary" id="btnAddSceneCenter">Выбрать изображение</button>
+          </div>
+          <div class="drop-overlay" id="dropOverlay">Отпустите панораму здесь</div>
+        </div>
+
+        <div class="hintbar">
+          <span><kbd>Двойной клик</kbd> добавить точку в выбранное место</span>
+          <span><kbd>Drag</kbd> вращать панораму</span>
+          <span><kbd>Колесо</kbd> масштаб</span>
+        </div>
+      </section>
+
+      <aside class="sidebar sidebar-right">
+        <section class="panel" id="sceneSettingsPanel">
+          <div class="panel-head">
+            <div>
+              <h2>Сцена</h2>
+              <p id="sceneSettingsSubtitle">Не выбрана</p>
+            </div>
+          </div>
+          <div id="noSceneSettings" class="empty-state tall">Выберите сцену</div>
+          <div id="sceneSettings" hidden>
+            <label class="field">
+              <span>Название</span>
+              <input id="sceneTitle" type="text">
+            </label>
+            <label class="field">
+              <span>ID сцены</span>
+              <input id="sceneId" type="text" readonly>
+            </label>
+            <div class="field-grid">
+              <label class="field">
+                <span>Pitch</span>
+                <input id="scenePitch" type="number" step="0.1">
+              </label>
+              <label class="field">
+                <span>Yaw</span>
+                <input id="sceneYaw" type="number" step="0.1">
+              </label>
+              <label class="field">
+                <span>HFOV</span>
+                <input id="sceneHfov" type="number" step="1" min="30" max="120">
+              </label>
+            </div>
+            <label class="field">
+              <span>Панорама</span>
+              <div class="file-line">
+                <span id="sceneFilename">—</span>
+                <label class="btn btn-small file-btn">Заменить<input id="sceneImageReplace" type="file" accept="image/jpeg,image/png,image/webp"></label>
+              </div>
+            </label>
+            <button class="btn btn-danger btn-full" id="btnDeleteScene">Удалить сцену</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Точки</h2>
+              <p>Переходы и информация</p>
+            </div>
+            <span class="badge" id="hotspotCount">0</span>
+          </div>
+          <div id="hotspotList" class="hotspot-list empty">
+            <div class="empty-state">Нет точек</div>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="sceneDialog" class="modal">
+    <form method="dialog" id="sceneForm">
+      <div class="modal-head">
+        <div>
+          <h2>Добавить панораму</h2>
+          <p>Изображение будет храниться локально в браузере.</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Закрыть">×</button>
+      </div>
+      <label class="field">
+        <span>Название сцены</span>
+        <input id="newSceneTitle" type="text" placeholder="Например: Главный холл" required>
+      </label>
+      <label class="upload-box">
+        <input id="newSceneImage" type="file" accept="image/jpeg,image/png,image/webp" required>
+        <b>Выбрать панораму</b>
+        <span id="newSceneFileName">JPG, PNG или WEBP</span>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn btn-primary" id="confirmAddScene" value="default">Добавить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hotspotDialog" class="modal">
+    <form method="dialog" id="hotspotForm">
+      <input id="hotspotEditId" type="hidden">
+      <div class="modal-head">
+        <div>
+          <h2 id="hotspotDialogTitle">Новая точка</h2>
+          <p id="hotspotCoordsLabel">pitch 0 · yaw 0</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Закрыть">×</button>
+      </div>
+
+      <div class="segmented" id="hotspotTypeControl">
+        <button type="button" data-type="scene" class="active">Переход</button>
+        <button type="button" data-type="info">Инфо</button>
+        <button type="button" data-type="url">Ссылка</button>
+      </div>
+      <input id="hotspotType" type="hidden" value="scene">
+
+      <label class="field">
+        <span>Подпись</span>
+        <input id="hotspotText" type="text" placeholder="Куда ведёт эта точка?">
+      </label>
+
+      <label class="field hotspot-scene-field">
+        <span>Перейти в сцену</span>
+        <select id="hotspotTarget"></select>
+      </label>
+
+      <label class="field hotspot-url-field" hidden>
+        <span>URL</span>
+        <input id="hotspotUrl" type="url" placeholder="https://example.com">
+      </label>
+
+      <label class="field hotspot-info-field" hidden>
+        <span>Текст</span>
+        <textarea id="hotspotInfo" rows="4" placeholder="Описание объекта"></textarea>
+      </label>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>Pitch</span>
+          <input id="hotspotPitch" type="number" step="0.01">
+        </label>
+        <label class="field">
+          <span>Yaw</span>
+          <input id="hotspotYaw" type="number" step="0.01">
+        </label>
+      </div>
+
+      <div class="modal-actions split">
+        <button type="button" class="btn btn-danger" id="btnDeleteHotspot" hidden>Удалить</button>
+        <span></span>
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn btn-primary" id="confirmHotspot" value="default">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="previewDialog" class="preview-modal">
+    <div class="preview-head">
+      <strong>Предпросмотр тура</strong>
+      <button class="icon-btn" id="closePreview">×</button>
+    </div>
+    <div id="previewPanorama"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
