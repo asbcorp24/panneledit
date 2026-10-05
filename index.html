@@ -238,6 +238,36 @@
                 <span>Цвет модели</span>
                 <input id="stlColor" type="color" value="#7c8cff">
               </label>
+
+              <label class="field">
+                <span>Фон сцены</span>
+                <select id="stlBackgroundMode">
+                  <option value="hitech">Hi-Tech</option>
+                  <option value="black">Чёрный</option>
+                  <option value="light">Светлый</option>
+                  <option value="gradient">Градиент</option>
+                  <option value="transparent">Прозрачный</option>
+                  <option value="image">Своя картинка</option>
+                  <option value="panorama">Панорама 360° из проекта</option>
+                </select>
+              </label>
+
+              <div id="stlBackgroundImageRow" class="field" hidden>
+                <span>Фоновая картинка</span>
+                <div class="file-line">
+                  <span id="stlBackgroundImageName">Файл не выбран</span>
+                  <label class="btn btn-small file-btn">
+                    Выбрать
+                    <input id="stlBackgroundImage" type="file" accept="image/jpeg,image/png,image/webp">
+                  </label>
+                </div>
+              </div>
+
+              <label id="stlBackgroundSceneRow" class="field" hidden>
+                <span>Панорама для фона</span>
+                <select id="stlBackgroundScene"></select>
+                <small class="scene-target-hint">Фон будет синхронизирован с yaw модели как псевдо-360° окружение.</small>
+              </label>
               <label class="switch-row">
                 <span><b>Wireframe</b><small>Показывать сетку треугольников</small></span>
                 <input id="stlWireframe" type="checkbox">
@@ -510,7 +540,7 @@
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="assets/object360.js?v=20261005-1"></script>
-  <script src="assets/stl-viewer.js?v=20261005-1"></script>
-  <script src="assets/app.js?v=20261005-7"></script>
+  <script src="assets/stl-viewer.js?v=20261005-2"></script>
+  <script src="assets/app.js?v=20261005-8"></script>
 </body>
 </html>

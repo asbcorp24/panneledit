@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 3;
+  const PROJECT_VERSION = 4;
 
   const $ = (id) => document.getElementById(id);
 
@@ -79,6 +79,12 @@
     stlPitch: $('stlPitch'),
     stlZoom: $('stlZoom'),
     stlColor: $('stlColor'),
+    stlBackgroundMode: $('stlBackgroundMode'),
+    stlBackgroundImageRow: $('stlBackgroundImageRow'),
+    stlBackgroundImage: $('stlBackgroundImage'),
+    stlBackgroundImageName: $('stlBackgroundImageName'),
+    stlBackgroundSceneRow: $('stlBackgroundSceneRow'),
+    stlBackgroundScene: $('stlBackgroundScene'),
     stlWireframe: $('stlWireframe'),
     stlAutoplay: $('stlAutoplay'),
     stlFilename: $('stlFilename'),
@@ -275,12 +281,50 @@
       wireframe: Boolean(input.wireframe),
       autoplay: Boolean(input.autoplay),
       color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#7c8cff',
+      backgroundMode: ['hitech','black','light','gradient','transparent','image','panorama'].includes(String(input.backgroundMode))
+        ? String(input.backgroundMode)
+        : 'hitech',
+      backgroundImageData: String(input.backgroundImageData || ''),
+      backgroundImageName: String(input.backgroundImageName || ''),
+      backgroundSceneId: String(input.backgroundSceneId || ''),
       size: {
         x: Math.max(0, Number(input.size?.x) || 0),
         y: Math.max(0, Number(input.size?.y) || 0),
         z: Math.max(0, Number(input.size?.z) || 0)
       }
     };
+  }
+
+  function stlBackgroundImageForData(data) {
+    if (!data) return '';
+    if (data.backgroundMode === 'image') {
+      return data.backgroundImageData || '';
+    }
+    if (data.backgroundMode === 'panorama') {
+      const target = getScene(data.backgroundSceneId);
+      return target?.sceneType === 'panorama' ? (target.imageData || '') : '';
+    }
+    return '';
+  }
+
+  function populateStlBackgroundScenes(selectedId = '') {
+    const panoramas = project.scenes.filter((scene) => scene.sceneType === 'panorama');
+    els.stlBackgroundScene.innerHTML = panoramas.length
+      ? panoramas.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
+      : '<option value="">Нет панорам в проекте</option>';
+    els.stlBackgroundScene.disabled = !panoramas.length;
+    if (selectedId && panoramas.some((scene) => scene.id === selectedId)) {
+      els.stlBackgroundScene.value = selectedId;
+    }
+  }
+
+  function updateStlBackgroundControls() {
+    const mode = els.stlBackgroundMode.value || 'hitech';
+    els.stlBackgroundImageRow.hidden = mode !== 'image';
+    els.stlBackgroundSceneRow.hidden = mode !== 'panorama';
+    if (mode === 'panorama') {
+      populateStlBackgroundScenes(els.stlBackgroundScene.value);
+    }
   }
 
   function stlPlaceholderDataUrl() {
@@ -572,6 +616,13 @@
       els.stlPitch.value = String(data.pitch);
       els.stlZoom.value = String(data.zoom);
       els.stlColor.value = data.color;
+      els.stlBackgroundMode.value = data.backgroundMode;
+      els.stlBackgroundImageName.textContent = data.backgroundImageName || 'Файл не выбран';
+      populateStlBackgroundScenes(data.backgroundSceneId);
+      if (data.backgroundSceneId && !els.stlBackgroundScene.disabled) {
+        els.stlBackgroundScene.value = data.backgroundSceneId;
+      }
+      updateStlBackgroundControls();
       els.stlWireframe.checked = Boolean(data.wireframe);
       els.stlAutoplay.checked = Boolean(data.autoplay);
       els.stlFilename.textContent = scene.filename || data.filename || 'model.stl';
@@ -860,7 +911,9 @@
           zoom: data.zoom,
           wireframe: data.wireframe,
           autoRotate: false,
-          color: data.color
+          color: data.color,
+          backgroundMode: data.backgroundMode,
+          backgroundImage: stlBackgroundImageForData(data)
         });
         await tempStl.ready;
         tempStl.render();
@@ -1196,6 +1249,8 @@
           wireframe: data.wireframe,
           autoRotate: data.autoplay,
           color: data.color,
+          backgroundMode: data.backgroundMode,
+          backgroundImage: stlBackgroundImageForData(data),
           onChange: (state) => {
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
@@ -1361,7 +1416,11 @@
       zoom: 1,
       wireframe: false,
       autoplay: false,
-      color: '#7c8cff'
+      color: '#7c8cff',
+      backgroundMode: 'hitech',
+      backgroundImageData: '',
+      backgroundImageName: '',
+      backgroundSceneId: ''
     });
 
     const scene = {
@@ -1668,6 +1727,13 @@
     project.scenes = project.scenes.filter((item) => item.id !== scene.id);
     project.scenes.forEach((item) => {
       item.hotspots = (item.hotspots || []).filter((hotspot) => hotspot.targetSceneId !== scene.id);
+      if (item.sceneType === 'stl' && item.stl?.backgroundSceneId === scene.id) {
+        item.stl = normalizeStlData({
+          ...item.stl,
+          backgroundMode: 'hitech',
+          backgroundSceneId: ''
+        });
+      }
     });
 
     if (project.firstScene === scene.id) {
@@ -2468,7 +2534,9 @@
         zoom: data.zoom,
         wireframe: data.wireframe,
         autoRotate: data.autoplay,
-        color: data.color
+        color: data.color,
+        backgroundMode: data.backgroundMode,
+        backgroundImage: data.backgroundImage || ''
       });
       stlViewer.ready.catch((error) => {
         console.error(error);
@@ -3069,6 +3137,32 @@
         if (payload.base64) root.file(modelPath, payload.data, { base64: true });
         else root.file(modelPath, decodeURIComponent(payload.data));
 
+        let backgroundImage = '';
+        let backgroundMode = data.backgroundMode || 'hitech';
+
+        if (backgroundMode === 'image' && data.backgroundImageData) {
+          const bgPayload = dataUrlPayload(data.backgroundImageData);
+          const bgMime = String(bgPayload.mime || '').toLowerCase();
+          const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
+          const bgName = 'stl-bg-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
+          backgroundImage = 'backgrounds/' + bgName;
+          if (bgPayload.base64) root.file(backgroundImage, bgPayload.data, { base64: true });
+          else root.file(backgroundImage, decodeURIComponent(bgPayload.data));
+        } else if (backgroundMode === 'panorama' && data.backgroundSceneId) {
+          const bgScene = getScene(data.backgroundSceneId);
+          if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
+            const bgPayload = dataUrlPayload(bgScene.imageData);
+            const bgMime = String(bgPayload.mime || '').toLowerCase();
+            const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
+            const bgName = 'stl-panorama-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
+            backgroundImage = 'backgrounds/' + bgName;
+            if (bgPayload.base64) root.file(backgroundImage, bgPayload.data, { base64: true });
+            else root.file(backgroundImage, decodeURIComponent(bgPayload.data));
+          } else {
+            backgroundMode = 'hitech';
+          }
+        }
+
         stlSceneFiles.set(scene.id, {
           source: modelPath,
           yaw: data.yaw,
@@ -3077,7 +3171,9 @@
           wireframe: data.wireframe,
           autoplay: data.autoplay,
           color: data.color,
-          triangleCount: data.triangleCount
+          triangleCount: data.triangleCount,
+          backgroundMode,
+          backgroundImage
         });
       }
 
@@ -3100,6 +3196,7 @@
         '- images/ — исходные панорамы при обычном экспорте\n' +
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
+        '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -3209,7 +3306,9 @@
         zoom: data.zoom,
         wireframe: data.wireframe,
         autoRotate: data.autoplay,
-        color: data.color
+        color: data.color,
+        backgroundMode: data.backgroundMode,
+        backgroundImage: stlBackgroundImageForData(data)
       });
       previewStlViewer.ready.catch(console.error);
       return;
@@ -3270,6 +3369,8 @@
       data.pitch = clampNumber(els.stlPitch.value, -89, 89, -15);
       data.zoom = clampNumber(els.stlZoom.value, 0.35, 5, 1);
       data.color = /^#[0-9a-f]{6}$/i.test(els.stlColor.value) ? els.stlColor.value.toLowerCase() : '#7c8cff';
+      data.backgroundMode = els.stlBackgroundMode.value || 'hitech';
+      data.backgroundSceneId = data.backgroundMode === 'panorama' ? (els.stlBackgroundScene.value || '') : data.backgroundSceneId;
       data.wireframe = els.stlWireframe.checked;
       data.autoplay = els.stlAutoplay.checked;
       scene.stl = data;
@@ -3509,6 +3610,34 @@
     els.stlPitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlZoom.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlColor.addEventListener('input', () => applySceneFieldChanges({ rerender: true }));
+    els.stlBackgroundMode.addEventListener('change', () => {
+      updateStlBackgroundControls();
+      applySceneFieldChanges({ rerender: true });
+    });
+    els.stlBackgroundScene.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.stlBackgroundImage.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.stlBackgroundImage.files?.[0];
+      if (!scene || scene.sceneType !== 'stl' || !file) return;
+      try {
+        scene.stl = normalizeStlData({
+          ...scene.stl,
+          backgroundMode: 'image',
+          backgroundImageData: await fileToDataURL(file),
+          backgroundImageName: file.name
+        });
+        els.stlBackgroundMode.value = 'image';
+        els.stlBackgroundImageName.textContent = file.name;
+        updateStlBackgroundControls();
+        markDirty();
+        renderViewer();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить фоновую картинку');
+      } finally {
+        els.stlBackgroundImage.value = '';
+      }
+    });
     els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
 
