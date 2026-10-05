@@ -57,6 +57,12 @@
     hotspotTypeControl: $('hotspotTypeControl'),
     hotspotText: $('hotspotText'),
     hotspotTarget: $('hotspotTarget'),
+    hotspotIconPicker: $('hotspotIconPicker'),
+    hotspotIconPreset: $('hotspotIconPreset'),
+    customIconUpload: $('customIconUpload'),
+    hotspotIconFile: $('hotspotIconFile'),
+    hotspotIconPreview: $('hotspotIconPreview'),
+    hotspotIconFilename: $('hotspotIconFilename'),
     hotspotUrl: $('hotspotUrl'),
     hotspotInfo: $('hotspotInfo'),
     hotspotPitch: $('hotspotPitch'),
@@ -77,6 +83,8 @@
   let saveTimer = null;
   let toastTimer = null;
   let isRenderingViewer = false;
+  let pendingHotspotIconData = '';
+  let pendingHotspotIconFilename = '';
 
   function createEmptyProject() {
     return {
@@ -270,6 +278,9 @@
         pitch: Number.isFinite(Number(hotspot.pitch)) ? Number(hotspot.pitch) : 0,
         yaw: Number.isFinite(Number(hotspot.yaw)) ? Number(hotspot.yaw) : 0,
         targetSceneId: hotspot.targetSceneId ? String(hotspot.targetSceneId) : '',
+        iconPreset: ['arrow', 'forward', 'door', 'stairs', 'custom'].includes(hotspot.iconPreset) ? hotspot.iconPreset : 'arrow',
+        iconData: hotspot.iconData ? String(hotspot.iconData) : '',
+        iconFilename: hotspot.iconFilename ? String(hotspot.iconFilename) : '',
         url: hotspot.url ? String(hotspot.url) : '',
         info: hotspot.info ? String(hotspot.info) : ''
       })) : []
@@ -390,6 +401,59 @@
     els.viewerPlaceholder.hidden = hasScene;
   }
 
+  function hotspotCssToken(id) {
+    return String(id || 'hotspot').replace(/[^a-zA-Z0-9_-]/g, '');
+  }
+
+  function transitionIconClass(hotspot) {
+    const preset = ['arrow', 'forward', 'door', 'stairs', 'custom'].includes(hotspot.iconPreset)
+      ? hotspot.iconPreset
+      : 'arrow';
+    if (preset === 'custom' && hotspot.iconData) {
+      return 'scene-image-hotspot hotspot-custom-' + hotspotCssToken(hotspot.id);
+    }
+    return 'scene-image-hotspot scene-icon-' + (preset === 'custom' ? 'arrow' : preset);
+  }
+
+  function refreshCustomHotspotStyles() {
+    let style = document.getElementById('customHotspotIconStyles');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'customHotspotIconStyles';
+      document.head.appendChild(style);
+    }
+
+    const rules = [];
+    project.scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        if (hotspot.type === 'scene' && hotspot.iconPreset === 'custom' && hotspot.iconData) {
+          const safeData = String(hotspot.iconData).replace(/["\\\n\r]/g, (ch) => {
+            if (ch === '"') return '%22';
+            if (ch === '\\') return '%5C';
+            return '';
+          });
+          rules.push('.hotspot-custom-' + hotspotCssToken(hotspot.id) +
+            '{background-image:url("' + safeData + '")!important}');
+        }
+      });
+    });
+    style.textContent = rules.join('\n');
+  }
+
+  function setHotspotIconPreset(preset) {
+    if (!['arrow', 'forward', 'door', 'stairs', 'custom'].includes(preset)) preset = 'arrow';
+    els.hotspotIconPreset.value = preset;
+    [...els.hotspotIconPicker.querySelectorAll('[data-icon]')].forEach((button) => {
+      button.classList.toggle('active', button.dataset.icon === preset);
+    });
+    els.customIconUpload.hidden = preset !== 'custom';
+    if (preset === 'custom') {
+      els.hotspotIconPreview.src = pendingHotspotIconData || '';
+      els.hotspotIconPreview.style.visibility = pendingHotspotIconData ? 'visible' : 'hidden';
+      els.hotspotIconFilename.textContent = pendingHotspotIconFilename || 'Файл не выбран';
+    }
+  }
+
   function hotspotToPannellum(hotspot) {
     const base = {
       pitch: Number(hotspot.pitch) || 0,
@@ -401,7 +465,8 @@
       return {
         ...base,
         type: 'scene',
-        sceneId: hotspot.targetSceneId
+        sceneId: hotspot.targetSceneId,
+        cssClass: transitionIconClass(hotspot)
       };
     }
 
@@ -478,6 +543,7 @@
     }
 
     destroyViewer();
+    refreshCustomHotspotStyles();
     isRenderingViewer = true;
 
     try {
@@ -617,6 +683,7 @@
     });
 
     document.querySelector('.hotspot-scene-field').hidden = type !== 'scene';
+    document.querySelector('.hotspot-icon-field').hidden = type !== 'scene';
     document.querySelector('.hotspot-info-field').hidden = type !== 'info';
     document.querySelector('.hotspot-url-field').hidden = type !== 'url';
   }
@@ -641,8 +708,13 @@
     els.hotspotInfo.value = hotspot?.info || '';
     els.btnDeleteHotspot.hidden = !hotspot;
 
+    pendingHotspotIconData = hotspot?.iconData || '';
+    pendingHotspotIconFilename = hotspot?.iconFilename || '';
+    els.hotspotIconFile.value = '';
+
     populateHotspotTargets(hotspot?.targetSceneId || '');
     setHotspotType(hotspot?.type || (project.scenes.length > 1 ? 'scene' : 'info'));
+    setHotspotIconPreset(hotspot?.iconPreset || 'arrow');
     els.hotspotDialog.showModal();
   }
 
@@ -666,6 +738,10 @@
       showToast('Укажите URL');
       return;
     }
+    if (type === 'scene' && els.hotspotIconPreset.value === 'custom' && !pendingHotspotIconData) {
+      showToast('Выберите свою картинку для точки');
+      return;
+    }
 
     const existingId = els.hotspotEditId.value;
     let hotspot = existingId ? scene.hotspots.find((item) => item.id === existingId) : null;
@@ -680,6 +756,9 @@
       pitch,
       yaw,
       targetSceneId: type === 'scene' ? els.hotspotTarget.value : '',
+      iconPreset: type === 'scene' ? els.hotspotIconPreset.value : 'arrow',
+      iconData: type === 'scene' && els.hotspotIconPreset.value === 'custom' ? pendingHotspotIconData : '',
+      iconFilename: type === 'scene' && els.hotspotIconPreset.value === 'custom' ? pendingHotspotIconFilename : '',
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
       info: type === 'info' ? els.hotspotInfo.value.trim() : ''
     });
@@ -808,19 +887,72 @@
       '</body>\n</html>\n';
   }
 
-  function exportedViewerCss() {
-    return ':root{color-scheme:dark}\n' +
+  function iconExtension(hotspot) {
+    const match = String(hotspot.iconFilename || '').toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+    if (match && ['png', 'webp', 'svg'].includes(match[1])) return match[1];
+    const dataMatch = String(hotspot.iconData || '').match(/^data:image\/([a-zA-Z0-9.+-]+);/);
+    if (!dataMatch) return 'png';
+    const subtype = dataMatch[1].toLowerCase();
+    if (subtype === 'svg+xml') return 'svg';
+    return ['png', 'webp'].includes(subtype) ? subtype : 'png';
+  }
+
+  async function bundleTransitionIcons(root) {
+    const builtin = ['arrow', 'forward', 'door', 'stairs'];
+    await Promise.all(builtin.map(async (name) => {
+      const response = await fetchRequiredAsset('assets/icons/' + name + '.svg');
+      root.file('images/icons/' + name + '.svg', await response.arrayBuffer());
+    }));
+
+    const customFiles = new Map();
+    const used = new Set();
+
+    project.scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        if (hotspot.type !== 'scene' || hotspot.iconPreset !== 'custom' || !hotspot.iconData) return;
+
+        const ext = iconExtension(hotspot);
+        const base = 'custom-' + hotspotCssToken(hotspot.id);
+        let filename = base + '.' + ext;
+        let n = 2;
+        while (used.has(filename.toLowerCase())) filename = base + '-' + n++ + '.' + ext;
+        used.add(filename.toLowerCase());
+
+        const payload = dataUrlPayload(hotspot.iconData);
+        if (payload.base64) root.file('images/icons/' + filename, payload.data, { base64: true });
+        else root.file('images/icons/' + filename, decodeURIComponent(payload.data));
+        customFiles.set(hotspot.id, filename);
+      });
+    });
+
+    return customFiles;
+  }
+
+  function exportedViewerCss(customIconFiles = new Map()) {
+    let css = ':root{color-scheme:dark}\n' +
       '*{box-sizing:border-box}\n' +
       'html,body,#panorama{width:100%;height:100%;margin:0}\n' +
       'html,body{overflow:hidden;background:#05070c}\n' +
       'body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}\n' +
       '.pnlm-container{background:#05070c}\n' +
       '.pnlm-title-box,.pnlm-author-box{background:rgba(5,7,12,.72)!important;backdrop-filter:blur(12px)}\n' +
-      '.pnlm-scene{border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\n' +
+      '.pnlm-scene:not(.scene-image-hotspot){border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\n' +
+      '.scene-image-hotspot{width:52px!important;height:52px!important;margin-left:-26px!important;margin-top:-26px!important;background-color:transparent!important;background-repeat:no-repeat!important;background-position:center!important;background-size:contain!important;border-radius:0!important;box-shadow:none!important;filter:drop-shadow(0 8px 12px rgba(0,0,0,.35))}\n' +
+      '.scene-image-hotspot:hover{transform:scale(1.14)!important;filter:drop-shadow(0 8px 14px rgba(0,0,0,.42)) brightness(1.08)!important}\n' +
+      '.scene-icon-arrow{background-image:url("../images/icons/arrow.svg")!important}\n' +
+      '.scene-icon-forward{background-image:url("../images/icons/forward.svg")!important}\n' +
+      '.scene-icon-door{background-image:url("../images/icons/door.svg")!important}\n' +
+      '.scene-icon-stairs{background-image:url("../images/icons/stairs.svg")!important}\n' +
       '.pnlm-info{border-radius:50%;box-shadow:0 0 0 4px rgba(31,214,187,.2)}\n' +
       '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\n' +
       '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\n' +
       'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n';
+
+    customIconFiles.forEach((filename, hotspotId) => {
+      css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
+        '{background-image:url("../images/icons/' + filename.replace(/"/g, '%22') + '")!important}\n';
+    });
+    return css;
   }
 
   function exportedViewerJs(config) {
@@ -907,8 +1039,9 @@
       });
 
       const config = buildPortableTourConfig(sceneFiles);
+      const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
-      root.file('assets/tour.css', exportedViewerCss());
+      root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
       root.file('tour.json', JSON.stringify(config, null, 2));
       root.file('README.txt',
@@ -1096,6 +1229,29 @@
     els.hotspotTypeControl.addEventListener('click', (event) => {
       const button = event.target.closest('button[data-type]');
       if (button) setHotspotType(button.dataset.type);
+    });
+
+    els.hotspotIconPicker.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-icon]');
+      if (button) setHotspotIconPreset(button.dataset.icon);
+    });
+
+    els.hotspotIconFile.addEventListener('change', async () => {
+      const file = els.hotspotIconFile.files?.[0];
+      if (!file) return;
+      if (!['image/png', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+        showToast('Для иконки используйте PNG, WEBP или SVG');
+        els.hotspotIconFile.value = '';
+        return;
+      }
+      try {
+        pendingHotspotIconData = await fileToDataURL(file);
+        pendingHotspotIconFilename = file.name;
+        setHotspotIconPreset('custom');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось прочитать иконку');
+      }
     });
 
     els.hotspotForm.addEventListener('submit', (event) => {
