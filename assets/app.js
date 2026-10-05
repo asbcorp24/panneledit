@@ -93,6 +93,7 @@
     hotspotTypeControl: $('hotspotTypeControl'),
     hotspotText: $('hotspotText'),
     hotspotTarget: $('hotspotTarget'),
+    hotspotTargetTypeHint: $('hotspotTargetTypeHint'),
     hotspotIconPicker: $('hotspotIconPicker'),
     hotspotIconPreset: $('hotspotIconPreset'),
     customIconUpload: $('customIconUpload'),
@@ -251,6 +252,16 @@
   function objectFrameAngle(data, sector) {
     const sectors = Math.max(1, Number(data?.sectors) || 1);
     return 360 * ((Number(sector) || 0) % sectors) / sectors;
+  }
+
+  function sceneTypeMeta(scene) {
+    if (scene?.sceneType === 'object360') {
+      return { icon: '◉', label: 'Object360', detail: 'вращаемый объект из фотографий' };
+    }
+    if (scene?.sceneType === 'stl') {
+      return { icon: '◆', label: 'STL 3D', detail: 'интерактивная 3D-модель' };
+    }
+    return { icon: '◌', label: 'Панорама 360°', detail: 'Pannellum-панорама' };
   }
 
   function normalizeStlData(input = {}) {
