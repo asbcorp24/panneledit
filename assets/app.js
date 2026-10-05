@@ -79,6 +79,12 @@
     stlPitch: $('stlPitch'),
     stlZoom: $('stlZoom'),
     stlColor: $('stlColor'),
+    stlBackgroundMode: $('stlBackgroundMode'),
+    stlBackgroundImageRow: $('stlBackgroundImageRow'),
+    stlBackgroundImage: $('stlBackgroundImage'),
+    stlBackgroundImageName: $('stlBackgroundImageName'),
+    stlBackgroundSceneRow: $('stlBackgroundSceneRow'),
+    stlBackgroundScene: $('stlBackgroundScene'),
     stlWireframe: $('stlWireframe'),
     stlAutoplay: $('stlAutoplay'),
     stlFilename: $('stlFilename'),
@@ -275,12 +281,50 @@
       wireframe: Boolean(input.wireframe),
       autoplay: Boolean(input.autoplay),
       color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#7c8cff',
+      backgroundMode: ['hitech','black','light','gradient','transparent','image','panorama'].includes(String(input.backgroundMode))
+        ? String(input.backgroundMode)
+        : 'hitech',
+      backgroundImageData: String(input.backgroundImageData || ''),
+      backgroundImageName: String(input.backgroundImageName || ''),
+      backgroundSceneId: String(input.backgroundSceneId || ''),
       size: {
         x: Math.max(0, Number(input.size?.x) || 0),
         y: Math.max(0, Number(input.size?.y) || 0),
         z: Math.max(0, Number(input.size?.z) || 0)
       }
     };
+  }
+
+  function stlBackgroundImageForData(data) {
+    if (!data) return '';
+    if (data.backgroundMode === 'image') {
+      return data.backgroundImageData || '';
+    }
+    if (data.backgroundMode === 'panorama') {
+      const target = getScene(data.backgroundSceneId);
+      return target?.sceneType === 'panorama' ? (target.imageData || '') : '';
+    }
+    return '';
+  }
+
+  function populateStlBackgroundScenes(selectedId = '') {
+    const panoramas = project.scenes.filter((scene) => scene.sceneType === 'panorama');
+    els.stlBackgroundScene.innerHTML = panoramas.length
+      ? panoramas.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
+      : '<option value="">Нет панорам в проекте</option>';
+    els.stlBackgroundScene.disabled = !panoramas.length;
+    if (selectedId && panoramas.some((scene) => scene.id === selectedId)) {
+      els.stlBackgroundScene.value = selectedId;
+    }
+  }
+
+  function updateStlBackgroundControls() {
+    const mode = els.stlBackgroundMode.value || 'hitech';
+    els.stlBackgroundImageRow.hidden = mode !== 'image';
+    els.stlBackgroundSceneRow.hidden = mode !== 'panorama';
+    if (mode === 'panorama') {
+      populateStlBackgroundScenes(els.stlBackgroundScene.value);
+    }
   }
 
   function stlPlaceholderDataUrl() {
