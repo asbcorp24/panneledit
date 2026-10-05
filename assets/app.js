@@ -462,7 +462,7 @@
   function renderSceneList() {
     if (!project.scenes.length) {
       els.sceneList.className = 'scene-list empty';
-      els.sceneList.innerHTML = '<div class="empty-state">Добавьте первую панораму</div>';
+      els.sceneList.innerHTML = '<div class="empty-state">Добавьте первую сцену</div>';
       return;
     }
 
@@ -470,14 +470,24 @@
     els.sceneList.innerHTML = project.scenes.map((scene, index) => {
       const count = scene.hotspots?.length || 0;
       const isObject = scene.sceneType === 'object360';
-      const thumb = scene.imageData || scene.object360?.coverData || '';
+      const isStl = scene.sceneType === 'stl';
+      const thumb = scene.imageData || scene.object360?.coverData || (isStl ? stlPlaceholderDataUrl() : '');
+      const kind = isObject
+        ? '<span class="scene-kind">ОБЪЕКТ 360</span>'
+        : (isStl ? '<span class="scene-kind stl-kind">STL 3D</span>' : '');
+      const info = isObject
+        ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.')
+        : (isStl
+          ? ((scene.stl?.triangleCount || 0).toLocaleString('ru-RU') + ' треуг.')
+          : (count + ' ' + (count === 1 ? 'точка' : 'точек')));
+
       return `
-        <article class="scene-card ${isObject ? 'object360' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
+        <article class="scene-card ${isObject ? 'object360' : ''} ${isStl ? 'stl-scene' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
           <div class="scene-card-main">
             <img class="scene-thumb" src="${escapeHtml(thumb)}" alt="">
             <div class="scene-meta">
-              <b>${escapeHtml(scene.title)}${isObject ? '<span class="scene-kind">ОБЪЕКТ 360</span>' : ''}</b>
-              <span>${isObject ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.') : (count + ' ' + (count === 1 ? 'точка' : 'точек'))}${project.firstScene === scene.id ? ' · старт' : ''}</span>
+              <b>${escapeHtml(scene.title)}${kind}</b>
+              <span>${info}${project.firstScene === scene.id ? ' · старт' : ''}</span>
             </div>
             <span class="scene-index">${index + 1}</span>
           </div>
@@ -525,8 +535,10 @@
     els.sceneId.value = scene.id;
 
     const isObject = scene.sceneType === 'object360';
-    els.panoramaSceneSettings.hidden = isObject;
+    const isStl = scene.sceneType === 'stl';
+    els.panoramaSceneSettings.hidden = isObject || isStl;
     els.object360SceneSettings.hidden = !isObject;
+    els.stlSceneSettings.hidden = !isStl;
 
     if (isObject) {
       const data = scene.object360 || normalizeObject360Data({});
@@ -538,6 +550,20 @@
       els.object360StartRow.value = String(Math.min(Math.max(0, Number(data.startRow) || 0), Math.max(0, (data.rows || 1) - 1)));
       els.object360Autoplay.checked = Boolean(data.autoplay);
       els.object360Filename.textContent = scene.filename || 'object360.zip';
+    } else if (isStl) {
+      const data = normalizeStlData(scene.stl || {});
+      const sx = data.size.x ? data.size.x.toFixed(1) : '—';
+      const sy = data.size.y ? data.size.y.toFixed(1) : '—';
+      const sz = data.size.z ? data.size.z.toFixed(1) : '—';
+      els.stlSceneStats.textContent = data.triangleCount.toLocaleString('ru-RU') + ' треугольников';
+      els.stlSceneFile.textContent = 'Размер STL: ' + sx + ' × ' + sy + ' × ' + sz;
+      els.stlYaw.value = String(data.yaw);
+      els.stlPitch.value = String(data.pitch);
+      els.stlZoom.value = String(data.zoom);
+      els.stlColor.value = data.color;
+      els.stlWireframe.checked = Boolean(data.wireframe);
+      els.stlAutoplay.checked = Boolean(data.autoplay);
+      els.stlFilename.textContent = scene.filename || data.filename || 'model.stl';
     } else {
       els.scenePitch.value = formatNum(scene.pitch);
       els.sceneYaw.value = formatNum(scene.yaw);
@@ -583,9 +609,12 @@
     const scene = getScene();
     const hasScene = Boolean(scene);
     const isObject = scene?.sceneType === 'object360';
-    els.btnAddHotspot.disabled = !hasScene || isObject;
+    const isStl = scene?.sceneType === 'stl';
+    els.btnAddHotspot.disabled = !hasScene || isObject || isStl;
     els.btnSetInitialView.disabled = !hasScene;
-    els.btnSetInitialView.textContent = isObject ? 'Сохранить текущий кадр' : 'Сохранить текущий вид';
+    els.btnSetInitialView.textContent = isObject
+      ? 'Сохранить текущий кадр'
+      : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
     els.viewerPlaceholder.hidden = hasScene;
   }
