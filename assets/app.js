@@ -1533,6 +1533,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
@@ -1587,6 +1589,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
@@ -1702,6 +1706,8 @@
       pitch: 0,
       yaw: 0,
       hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
       hotspots: []
     };
 
