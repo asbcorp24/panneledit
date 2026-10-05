@@ -228,6 +228,38 @@
         <select id="hotspotTarget"></select>
       </label>
 
+      <div class="field hotspot-icon-field">
+        <span>Иконка перехода</span>
+        <div class="transition-icon-picker" id="hotspotIconPicker">
+          <button type="button" class="transition-icon-option active" data-icon="arrow" title="Стрелка">
+            <img src="assets/icons/arrow.svg" alt=""><small>Стрелка</small>
+          </button>
+          <button type="button" class="transition-icon-option" data-icon="forward" title="Вперёд">
+            <img src="assets/icons/forward.svg" alt=""><small>Вперёд</small>
+          </button>
+          <button type="button" class="transition-icon-option" data-icon="door" title="Дверь">
+            <img src="assets/icons/door.svg" alt=""><small>Дверь</small>
+          </button>
+          <button type="button" class="transition-icon-option" data-icon="stairs" title="Лестница">
+            <img src="assets/icons/stairs.svg" alt=""><small>Лестница</small>
+          </button>
+          <button type="button" class="transition-icon-option" data-icon="custom" title="Своя картинка">
+            <span class="custom-icon-plus">＋</span><small>Своя</small>
+          </button>
+        </div>
+        <input id="hotspotIconPreset" type="hidden" value="arrow">
+        <div class="custom-icon-upload" id="customIconUpload" hidden>
+          <label class="btn btn-small file-btn">
+            Выбрать PNG / WEBP / SVG
+            <input id="hotspotIconFile" type="file" accept="image/png,image/webp,image/svg+xml">
+          </label>
+          <div class="custom-icon-preview">
+            <img id="hotspotIconPreview" alt="">
+            <span id="hotspotIconFilename">Файл не выбран</span>
+          </div>
+        </div>
+      </div>
+
       <label class="field hotspot-url-field" hidden>
         <span>URL</span>
         <input id="hotspotUrl" type="url" placeholder="https://example.com">
@@ -268,7 +300,8 @@
 
   <div id="toast" class="toast" role="status"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>\n  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
