@@ -1250,22 +1250,76 @@
     return scene;
   }
 
+  async function createStlSceneFromFile(file, title) {
+    if (!file || !/\.stl$/i.test(file.name || '')) {
+      throw new Error('Выберите STL-файл');
+    }
+    if (!window.StlTools) throw new Error('STL parser не загрузился');
+
+    const buffer = await file.arrayBuffer();
+    const parsed = StlTools.parseStl(buffer);
+    const stlDataUrl = await fileToDataURL(file);
+
+    const baseId = slugify(title || file.name.replace(/\.stl$/i, ''));
+    let id = baseId;
+    let n = 2;
+    while (project.scenes.some((scene) => scene.id === id)) id = baseId + '-' + n++;
+
+    const stl = normalizeStlData({
+      data: stlDataUrl,
+      filename: file.name,
+      triangleCount: parsed.triangleCount,
+      size: parsed.originalSize,
+      yaw: 0,
+      pitch: -15,
+      zoom: 1,
+      wireframe: false,
+      autoplay: false,
+      color: '#7c8cff'
+    });
+
+    const scene = {
+      id,
+      title: String(title || file.name.replace(/\.stl$/i, '') || 'STL модель'),
+      sceneType: 'stl',
+      filename: file.name || (id + '.stl'),
+      imageData: stlPlaceholderDataUrl(),
+      object360: null,
+      stl,
+      pitch: 0,
+      yaw: 0,
+      hfov: 100,
+      hotspots: []
+    };
+
+    project.scenes.push(scene);
+    if (!project.firstScene) project.firstScene = scene.id;
+    currentSceneId = scene.id;
+    markDirty();
+    renderViewer();
+    return scene;
+  }
+
   function setNewSceneType(type) {
-    const next = type === 'object360' ? 'object360' : 'panorama';
+    const next = type === 'object360' ? 'object360' : (type === 'stl' ? 'stl' : 'panorama');
     els.newSceneType.value = next;
     [...els.sceneTypeControl.querySelectorAll('[data-scene-type]')].forEach((button) => {
       button.classList.toggle('active', button.dataset.sceneType === next);
     });
     const objectMode = next === 'object360';
-    els.panoramaUploadBox.hidden = objectMode;
+    const stlMode = next === 'stl';
+    els.panoramaUploadBox.hidden = objectMode || stlMode;
     els.object360UploadBox.hidden = !objectMode;
     els.object360ImportNote.hidden = !objectMode;
+    els.stlUploadBox.hidden = !stlMode;
+    els.stlImportNote.hidden = !stlMode;
   }
 
   function openSceneDialog() {
     els.sceneForm.reset();
     els.newSceneFileName.textContent = 'JPG, PNG или WEBP';
     els.newObject360FileName.textContent = 'ZIP из Android-приложения Object360Capture';
+    els.newStlFileName.textContent = 'Binary или ASCII STL';
     setNewSceneType('panorama');
     els.sceneDialog.showModal();
     setTimeout(() => els.newSceneTitle.focus(), 50);
@@ -1363,7 +1417,7 @@
 
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
-    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType !== 'object360');
+    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType === 'panorama');
     els.hotspotTarget.innerHTML = candidates.length
       ? candidates.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
       : '<option value="">Сначала добавьте вторую сцену</option>';
