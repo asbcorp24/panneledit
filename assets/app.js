@@ -200,6 +200,42 @@
     return Number.isFinite(n) ? n.toFixed(2) : '0.00';
   }
 
+  function normalizeObject360Data(input = {}) {
+    const sectors = Math.max(1, Math.min(720, Number(input.sectors) || 36));
+    const rows = Math.max(1, Math.min(20, Number(input.rows) || 1));
+    const sourceFrames = Array.isArray(input.frames) ? input.frames : [];
+    const frames = Array.from({ length: rows }, (_, row) => {
+      const sourceRow = Array.isArray(sourceFrames[row]) ? sourceFrames[row] : [];
+      return Array.from({ length: sectors }, (_, sector) => String(sourceRow[sector] || ''));
+    });
+    const coverData = String(input.coverData || frames.flat().find(Boolean) || '');
+    return {
+      sectors,
+      rows,
+      frames,
+      coverData,
+      frameCount: Number(input.frameCount) || frames.flat().filter(Boolean).length,
+      startSector: Math.max(0, Math.min(sectors - 1, Number(input.startSector) || 0)),
+      startRow: Math.max(0, Math.min(rows - 1, Number(input.startRow) || (rows === 3 ? 1 : 0))),
+      autoplay: Boolean(input.autoplay),
+      captureMode: String(input.captureMode || ''),
+      baseRadiusMeters: Number(input.baseRadiusMeters) || 0,
+      rowSpacingMeters: Number(input.rowSpacingMeters) || 0,
+      objectDepthMeters: Number(input.objectDepthMeters) || 0
+    };
+  }
+
+  function countObjectFrames(data) {
+    return Array.isArray(data?.frames)
+      ? data.frames.reduce((sum, row) => sum + (Array.isArray(row) ? row.filter(Boolean).length : 0), 0)
+      : 0;
+  }
+
+  function objectFrameAngle(data, sector) {
+    const sectors = Math.max(1, Number(data?.sectors) || 1);
+    return 360 * ((Number(sector) || 0) % sectors) / sectors;
+  }
+
   function showToast(message, timeout = 2400) {
     clearTimeout(toastTimer);
     els.toast.textContent = message;
@@ -880,7 +916,7 @@
   function buildPannellumConfig({ useEmbeddedImages = true, firstSceneId = null } = {}) {
     const scenes = {};
 
-    project.scenes.forEach((scene) => {
+    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
       scenes[scene.id] = {
         type: 'equirectangular',
         panorama: useEmbeddedImages ? scene.imageData : scene.filename,
@@ -889,13 +925,17 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
+          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType !== 'object360'))
           .map(hotspotToPannellum)
       };
     });
 
     const defaultConfig = {
-      firstScene: firstSceneId || project.firstScene || project.scenes[0]?.id,
+      firstScene: (() => {
+        const requested = firstSceneId || project.firstScene;
+        if (requested && scenes[requested]) return requested;
+        return Object.keys(scenes)[0] || null;
+      })(),
       sceneFadeDuration: project.settings.fadeEnabled ? Number(project.settings.fadeDuration || 0) : 0,
       autoLoad: true,
       showControls: true,
@@ -912,18 +952,53 @@
   }
 
   function destroyViewer() {
-    if (!viewer) return;
-    try { viewer.destroy(); } catch (error) { console.warn(error); }
-    viewer = null;
+    if (viewer) {
+      try { viewer.destroy(); } catch (error) { console.warn(error); }
+      viewer = null;
+    }
+    if (objectViewer) {
+      try { objectViewer.destroy(); } catch (error) { console.warn(error); }
+      objectViewer = null;
+    }
   }
 
   function renderViewer() {
     updateToolbarState();
     const scene = getScene();
 
-    if (!scene) {
-      destroyViewer();
-      els.panorama.innerHTML = '';
+    destroyViewer();
+    els.panorama.innerHTML = '';
+
+    if (!scene) return;
+
+    if (scene.sceneType === 'object360') {
+      if (!window.Object360Viewer) {
+        showToast('Object360Viewer не загрузился');
+        return;
+      }
+      const data = normalizeObject360Data(scene.object360 || {});
+      scene.object360 = data;
+      try {
+        objectViewer = new Object360Viewer(els.panorama, {
+          sectors: data.sectors,
+          rows: data.rows,
+          frames: data.frames,
+          startSector: data.startSector,
+          startRow: data.startRow,
+          autoplay: data.autoplay,
+          onFrameChange: (state) => {
+            els.coords.textContent =
+              'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
+              '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
+          }
+        });
+        els.coords.textContent =
+          'угол ' + formatNum(objectFrameAngle(data, data.startSector)) + '° · кадр ' +
+          (data.startSector + 1) + '/' + data.sectors;
+      } catch (error) {
+        console.error(error);
+        showToast('Ошибка запуска Object 360°');
+      }
       return;
     }
 
@@ -932,7 +1007,6 @@
       return;
     }
 
-    destroyViewer();
     refreshCustomHotspotStyles();
     isRenderingViewer = true;
 
@@ -979,7 +1053,8 @@
     renderHotspotList();
     updateToolbarState();
 
-    if (viewer) {
+    const target = getScene(sceneId);
+    if (viewer && target?.sceneType !== 'object360') {
       try {
         viewer.loadScene(sceneId);
         return;
@@ -1029,8 +1104,10 @@
     const scene = {
       id,
       title: String(title || file.name.replace(/\.[^.]+$/, '') || 'Новая сцена'),
+      sceneType: 'panorama',
       filename: file.name || (id + '.jpg'),
       imageData,
+      object360: null,
       pitch: 0,
       yaw: 0,
       hfov: 100,
@@ -1045,16 +1122,120 @@
     return scene;
   }
 
+  function setNewSceneType(type) {
+    const next = type === 'object360' ? 'object360' : 'panorama';
+    els.newSceneType.value = next;
+    [...els.sceneTypeControl.querySelectorAll('[data-scene-type]')].forEach((button) => {
+      button.classList.toggle('active', button.dataset.sceneType === next);
+    });
+    const objectMode = next === 'object360';
+    els.panoramaUploadBox.hidden = objectMode;
+    els.object360UploadBox.hidden = !objectMode;
+    els.object360ImportNote.hidden = !objectMode;
+  }
+
   function openSceneDialog() {
     els.sceneForm.reset();
     els.newSceneFileName.textContent = 'JPG, PNG или WEBP';
+    els.newObject360FileName.textContent = 'ZIP из Android-приложения Object360Capture';
+    setNewSceneType('panorama');
     els.sceneDialog.showModal();
     setTimeout(() => els.newSceneTitle.focus(), 50);
   }
 
+  function dataUrlForBase64(mime, base64) {
+    return 'data:' + mime + ';base64,' + base64;
+  }
+
+  async function createObject360SceneFromZip(file, title) {
+    if (!file || !/\.zip$/i.test(file.name || '')) {
+      throw new Error('Выберите ZIP-архив Object360');
+    }
+    if (!window.JSZip) throw new Error('JSZip не загрузился');
+
+    const zip = await JSZip.loadAsync(file);
+    const names = Object.keys(zip.files);
+    const configName = names.find((name) => /(^|\/)config\.json$/i.test(name));
+    let config = {};
+    if (configName) {
+      try { config = JSON.parse(await zip.file(configName).async('text')); }
+      catch (_) { config = {}; }
+    }
+
+    const frameEntries = [];
+    names.forEach((name) => {
+      const match = String(name).replace(/\\/g, '/').match(/(?:^|\/)row_(\d+)\/frame_(\d+)\.(jpe?g|png|webp)$/i);
+      if (!match || zip.files[name].dir) return;
+      frameEntries.push({
+        name,
+        row: Math.max(0, Number(match[1]) - 1),
+        sector: Math.max(0, Number(match[2])),
+        ext: match[3].toLowerCase()
+      });
+    });
+
+    if (!frameEntries.length) {
+      throw new Error('В ZIP не найдены row_N/frame_XXX.jpg');
+    }
+
+    const inferredRows = Math.max(...frameEntries.map((item) => item.row)) + 1;
+    const inferredSectors = Math.max(...frameEntries.map((item) => item.sector)) + 1;
+    const rows = Math.max(inferredRows, Number(config.rows) || 1);
+    const sectors = Math.max(inferredSectors, Number(config.sectors) || 1);
+    const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
+
+    for (let i = 0; i < frameEntries.length; i++) {
+      const entry = frameEntries[i];
+      const base64 = await zip.file(entry.name).async('base64');
+      const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+    }
+
+    const coverData = frames.flat().find(Boolean) || '';
+    const baseId = slugify(title || file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
+    let id = baseId;
+    let n = 2;
+    while (project.scenes.some((scene) => scene.id === id)) id = baseId + '-' + n++;
+
+    const object360 = normalizeObject360Data({
+      sectors,
+      rows,
+      frames,
+      coverData,
+      frameCount: frameEntries.length,
+      startSector: 0,
+      startRow: rows === 3 ? 1 : 0,
+      autoplay: false,
+      captureMode: config.captureMode || '',
+      baseRadiusMeters: config.baseRadiusMeters,
+      rowSpacingMeters: config.rowSpacingMeters,
+      objectDepthMeters: config.objectDepthMeters
+    });
+
+    const scene = {
+      id,
+      title: String(title || file.name.replace(/\.object360\.zip$|\.zip$/i, '') || 'Объект 360°'),
+      sceneType: 'object360',
+      filename: file.name || (id + '.object360.zip'),
+      imageData: coverData,
+      object360,
+      pitch: 0,
+      yaw: 0,
+      hfov: 100,
+      hotspots: []
+    };
+
+    project.scenes.push(scene);
+    if (!project.firstScene) project.firstScene = scene.id;
+    currentSceneId = scene.id;
+    markDirty();
+    renderViewer();
+    return scene;
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
-    const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
+    const candidates = project.scenes.filter((scene) => scene.id !== current?.id && scene.sceneType !== 'object360');
     els.hotspotTarget.innerHTML = candidates.length
       ? candidates.map((scene) => `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`).join('')
       : '<option value="">Сначала добавьте вторую сцену</option>';
