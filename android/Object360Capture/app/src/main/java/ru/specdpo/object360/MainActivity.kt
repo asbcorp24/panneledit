@@ -76,6 +76,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUi() {
+        binding.btnArMode.setOnClickListener {
+            startActivity(Intent(this, ArCaptureActivity::class.java))
+        }
         binding.btn36.setOnClickListener { changeSectors(36) }
         binding.btn72.setOnClickListener { changeSectors(72) }
         binding.btnCalibrate.setOnClickListener {
