@@ -462,3 +462,11 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
   border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:800
 }
 .stl-mode:hover,.stl-auto:hover,.stl-reset:hover{border-color:var(--line-strong);background:#18243b}
+
+
+.scene-target-hint{
+  display:block;margin-top:6px;color:var(--muted);font-size:9px;line-height:1.45
+}
+.scene-target-hint[data-scene-type="object360"]{color:#75e7d6}
+.scene-target-hint[data-scene-type="stl"]{color:#c2c9ff}
+.scene-target-hint[data-scene-type="panorama"]{color:#aab7ff}
