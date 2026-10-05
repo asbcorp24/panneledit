@@ -449,6 +449,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         lastAutoKey = ""
 
         runOnUiThread {
+            binding.arTrajectoryOverlay.reset()
             binding.arStatusText.text = "AR: центр зафиксирован"
             binding.arGuideText.text =
                 "✓ Центр задан. Сохраняйте примерно тот же радиус и обходите объект."
@@ -675,6 +676,14 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                         metrics.heightM - metrics.targetHeightM
                     )
 
+                val radiusRatio =
+                    if (baseRadiusM > 0.001f) metrics.radiusM / baseRadiusM else 1f
+                binding.arTrajectoryOverlay.updatePosition(
+                    metrics.angleDeg,
+                    radiusRatio,
+                    metrics.radiusGood && metrics.heightGood && metrics.alignmentGood
+                )
+
                 binding.arGuideText.text = metrics.guide
                 binding.arGuideText.setTextColor(
                     if (
@@ -865,6 +874,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         centerAnchor?.detach()
         centerAnchor = null
+        binding.arTrajectoryOverlay.reset()
         currentSector = 0
         currentRow = if (captureSession.rows == 3) 1 else 0
         stableSince = 0L

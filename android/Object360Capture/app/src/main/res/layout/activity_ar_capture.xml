@@ -139,6 +139,31 @@
     </LinearLayout>
 
     <LinearLayout
+        android:layout_width="138dp"
+        android:layout_height="166dp"
+        android:layout_gravity="center_vertical|start"
+        android:layout_marginStart="10dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="7dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ТРАЕКТОРИЯ"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <ru.specdpo.object360.TrajectoryOverlay
+            android:id="@+id/arTrajectoryOverlay"
+            android:layout_width="124dp"
+            android:layout_height="124dp"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical|end"
