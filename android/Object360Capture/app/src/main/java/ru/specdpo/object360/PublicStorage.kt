@@ -3,6 +3,7 @@ package ru.specdpo.object360
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaScannerConnection
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -133,6 +134,14 @@ object PublicStorage {
         displayName: String,
         mimeType: String
     ): Uri? {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return null
+        }
+
         val dir = File(root, subDir).apply { mkdirs() }
         val target = File(dir, displayName)
         source.copyTo(target, overwrite = true)
