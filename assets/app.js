@@ -40,8 +40,15 @@
     sceneDialog: $('sceneDialog'),
     sceneForm: $('sceneForm'),
     newSceneTitle: $('newSceneTitle'),
+    sceneTypeControl: $('sceneTypeControl'),
+    newSceneType: $('newSceneType'),
+    panoramaUploadBox: $('panoramaUploadBox'),
+    object360UploadBox: $('object360UploadBox'),
+    object360ImportNote: $('object360ImportNote'),
     newSceneImage: $('newSceneImage'),
     newSceneFileName: $('newSceneFileName'),
+    newObject360Zip: $('newObject360Zip'),
+    newObject360FileName: $('newObject360FileName'),
     sceneSettings: $('sceneSettings'),
     noSceneSettings: $('noSceneSettings'),
     sceneSettingsSubtitle: $('sceneSettingsSubtitle'),
@@ -52,6 +59,15 @@
     sceneHfov: $('sceneHfov'),
     sceneFilename: $('sceneFilename'),
     sceneImageReplace: $('sceneImageReplace'),
+    panoramaSceneSettings: $('panoramaSceneSettings'),
+    object360SceneSettings: $('object360SceneSettings'),
+    object360SceneStats: $('object360SceneStats'),
+    object360SceneFile: $('object360SceneFile'),
+    object360StartSector: $('object360StartSector'),
+    object360StartRow: $('object360StartRow'),
+    object360Autoplay: $('object360Autoplay'),
+    object360Filename: $('object360Filename'),
+    object360ZipReplace: $('object360ZipReplace'),
     btnDeleteScene: $('btnDeleteScene'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
@@ -105,7 +121,9 @@
   let project = createEmptyProject();
   let currentSceneId = null;
   let viewer = null;
+  let objectViewer = null;
   let previewViewer = null;
+  let previewObjectViewer = null;
   let dbPromise = null;
   let saveTimer = null;
   let toastTimer = null;
@@ -302,8 +320,10 @@
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
+      sceneType: scene.sceneType === 'object360' ? 'object360' : 'panorama',
       filename: String(scene.filename || ('panorama-' + (index + 1) + '.jpg')),
-      imageData: String(scene.imageData || scene.panorama || ''),
+      imageData: String(scene.imageData || scene.panorama || scene.object360?.coverData || ''),
+      object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
       pitch: Number.isFinite(Number(scene.pitch)) ? Number(scene.pitch) : 0,
       yaw: Number.isFinite(Number(scene.yaw)) ? Number(scene.yaw) : 0,
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
@@ -354,13 +374,15 @@
     els.sceneList.className = 'scene-list';
     els.sceneList.innerHTML = project.scenes.map((scene, index) => {
       const count = scene.hotspots?.length || 0;
+      const isObject = scene.sceneType === 'object360';
+      const thumb = scene.imageData || scene.object360?.coverData || '';
       return `
-        <article class="scene-card ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
+        <article class="scene-card ${isObject ? 'object360' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
           <div class="scene-card-main">
-            <img class="scene-thumb" src="${escapeHtml(scene.imageData)}" alt="">
+            <img class="scene-thumb" src="${escapeHtml(thumb)}" alt="">
             <div class="scene-meta">
-              <b>${escapeHtml(scene.title)}</b>
-              <span>${count} ${count === 1 ? 'точка' : 'точек'}${project.firstScene === scene.id ? ' · старт' : ''}</span>
+              <b>${escapeHtml(scene.title)}${isObject ? '<span class="scene-kind">ОБЪЕКТ 360</span>' : ''}</b>
+              <span>${isObject ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.') : (count + ' ' + (count === 1 ? 'точка' : 'точек'))}${project.firstScene === scene.id ? ' · старт' : ''}</span>
             </div>
             <span class="scene-index">${index + 1}</span>
           </div>
@@ -406,10 +428,27 @@
     els.sceneSettingsSubtitle.textContent = scene.title;
     els.sceneTitle.value = scene.title;
     els.sceneId.value = scene.id;
-    els.scenePitch.value = formatNum(scene.pitch);
-    els.sceneYaw.value = formatNum(scene.yaw);
-    els.sceneHfov.value = Number(scene.hfov);
-    els.sceneFilename.textContent = scene.filename || 'panorama.jpg';
+
+    const isObject = scene.sceneType === 'object360';
+    els.panoramaSceneSettings.hidden = isObject;
+    els.object360SceneSettings.hidden = !isObject;
+
+    if (isObject) {
+      const data = scene.object360 || normalizeObject360Data({});
+      els.object360SceneStats.textContent = (data.sectors || 0) + ' секторов × ' + (data.rows || 1) + ' ряд.';
+      els.object360SceneFile.textContent = (data.frameCount || countObjectFrames(data)) + ' кадров';
+      els.object360StartSector.max = String(Math.max(0, (data.sectors || 1) - 1));
+      els.object360StartSector.value = String(Math.min(Math.max(0, Number(data.startSector) || 0), Math.max(0, (data.sectors || 1) - 1)));
+      els.object360StartRow.max = String(Math.max(0, (data.rows || 1) - 1));
+      els.object360StartRow.value = String(Math.min(Math.max(0, Number(data.startRow) || 0), Math.max(0, (data.rows || 1) - 1)));
+      els.object360Autoplay.checked = Boolean(data.autoplay);
+      els.object360Filename.textContent = scene.filename || 'object360.zip';
+    } else {
+      els.scenePitch.value = formatNum(scene.pitch);
+      els.sceneYaw.value = formatNum(scene.yaw);
+      els.sceneHfov.value = Number(scene.hfov);
+      els.sceneFilename.textContent = scene.filename || 'panorama.jpg';
+    }
   }
 
   function renderHotspotList() {
@@ -446,9 +485,12 @@
   }
 
   function updateToolbarState() {
-    const hasScene = Boolean(getScene());
-    els.btnAddHotspot.disabled = !hasScene;
+    const scene = getScene();
+    const hasScene = Boolean(scene);
+    const isObject = scene?.sceneType === 'object360';
+    els.btnAddHotspot.disabled = !hasScene || isObject;
     els.btnSetInitialView.disabled = !hasScene;
+    els.btnSetInitialView.textContent = isObject ? 'Сохранить текущий кадр' : 'Сохранить текущий вид';
     els.btnPreview.disabled = !project.scenes.length;
     els.viewerPlaceholder.hidden = hasScene;
   }
