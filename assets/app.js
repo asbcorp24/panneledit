@@ -827,7 +827,49 @@
 
   async function generateScenePreview(sceneId, width = 384, height = 240) {
     const scene = getScene(sceneId);
-    if (!scene || !scene.imageData) throw new Error('Целевая сцена не найдена');
+    if (!scene) throw new Error('Целевая сцена не найдена');
+
+    if (scene.sceneType === 'object360') {
+      const data = normalizeObject360Data(scene.object360 || {});
+      const imageData = data.coverData || data.frames.flat().find(Boolean) || scene.imageData || '';
+      if (!imageData) throw new Error('У Object360 нет кадра для превью');
+      return imageData;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) throw new Error('STL Viewer не загружен');
+      const data = normalizeStlData(scene.stl || {});
+      if (!data.data) throw new Error('STL данные отсутствуют');
+
+      const host = document.createElement('div');
+      host.style.cssText =
+        'position:fixed;left:-10000px;top:-10000px;width:' + width + 'px;height:' + height +
+        'px;overflow:hidden;pointer-events:none;opacity:0;';
+      document.body.appendChild(host);
+
+      let tempStl = null;
+      try {
+        tempStl = new StlViewer(host, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: false,
+          color: data.color
+        });
+        await tempStl.ready;
+        tempStl.render();
+        const imageData = tempStl.canvas?.toDataURL?.('image/png') || '';
+        if (!imageData) throw new Error('STL Viewer не вернул превью');
+        return imageData;
+      } finally {
+        try { tempStl?.destroy(); } catch (_) {}
+        host.remove();
+      }
+    }
+
+    if (!scene.imageData) throw new Error('У панорамы нет изображения');
     if (!window.pannellum) throw new Error('Pannellum не загружен');
 
     const host = document.createElement('div');
@@ -931,7 +973,13 @@
       pendingHotspotIconData = imageData;
       pendingHotspotIconFilename = 'preview-' + safeFilename(targetScene.title || targetScene.id) + '.png';
       pendingHotspotPreviewTargetId = targetId;
-      updateAutoPreviewUi('Ракурс: ' + formatNum(targetScene.yaw) + '° / ' + formatNum(targetScene.pitch) + '°');
+      const meta = sceneTypeMeta(targetScene);
+      if (targetScene.sceneType === 'panorama') {
+        updateAutoPreviewUi(meta.icon + ' ' + meta.label + ' · ракурс ' +
+          formatNum(targetScene.yaw) + '° / ' + formatNum(targetScene.pitch) + '°');
+      } else {
+        updateAutoPreviewUi(meta.icon + ' ' + meta.label + ' · превью готово');
+      }
       if (!silent) showToast('Превью перехода обновлено');
       return imageData;
     } catch (error) {
