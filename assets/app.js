@@ -23,6 +23,11 @@
     sceneFadeDuration: $('sceneFadeDuration'),
     autoRotateEnabled: $('autoRotateEnabled'),
     autoRotate: $('autoRotate'),
+    multiresEnabled: $('multiresEnabled'),
+    multiresOptions: $('multiresOptions'),
+    multiresTileSize: $('multiresTileSize'),
+    multiresQuality: $('multiresQuality'),
+    multiresMaxCubeSize: $('multiresMaxCubeSize'),
     btnNew: $('btnNew'),
     btnAddScene: $('btnAddScene'),
     btnAddSceneCenter: $('btnAddSceneCenter'),
@@ -122,7 +127,11 @@
         fadeEnabled: true,
         fadeDuration: 900,
         autoRotateEnabled: false,
-        autoRotate: -2
+        autoRotate: -2,
+        multiresEnabled: false,
+        multiresTileSize: 512,
+        multiresQuality: 85,
+        multiresMaxCubeSize: 4096
       },
       scenes: []
     };
@@ -366,6 +375,13 @@
     els.sceneFadeDuration.value = Number(project.settings.fadeDuration ?? 900);
     els.autoRotateEnabled.checked = Boolean(project.settings.autoRotateEnabled);
     els.autoRotate.value = Number(project.settings.autoRotate ?? -2);
+    els.multiresEnabled.checked = Boolean(project.settings.multiresEnabled);
+    els.multiresTileSize.value = String([512, 1024].includes(Number(project.settings.multiresTileSize))
+      ? Number(project.settings.multiresTileSize) : 512);
+    els.multiresQuality.value = String(clampNumber(project.settings.multiresQuality, 50, 100, 85));
+    els.multiresMaxCubeSize.value = String([2048, 4096, 8192].includes(Number(project.settings.multiresMaxCubeSize))
+      ? Number(project.settings.multiresMaxCubeSize) : 4096);
+    els.multiresOptions.hidden = !els.multiresEnabled.checked;
 
     const options = project.scenes.map((scene) =>
       `<option value="${escapeHtml(scene.id)}">${escapeHtml(scene.title)}</option>`
@@ -1348,10 +1364,322 @@
     return parts.join('/');
   }
 
-  function buildPortableTourConfig(sceneFiles) {
+  function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Не удалось загрузить панораму для Multires'));
+      image.src = src;
+    });
+  }
+
+  function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.85) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Не удалось закодировать тайл Multires'));
+      }, type, quality);
+    });
+  }
+
+  function yieldToBrowser() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  function getMultiresWebGLLimits() {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl', { alpha: false, antialias: false }) ||
+      canvas.getContext('experimental-webgl', { alpha: false, antialias: false });
+    if (!gl) throw new Error('Для Multires требуется WebGL');
+
+    const viewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+    const result = {
+      maxTextureSize: Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096,
+      maxRenderSize: Math.min(
+        Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) || 4096,
+        Number(viewport?.[0]) || 4096,
+        Number(viewport?.[1]) || 4096
+      )
+    };
+
+    const ext = gl.getExtension('WEBGL_lose_context');
+    if (ext) ext.loseContext();
+    return result;
+  }
+
+  function calculateMultiresSpec(image, limits) {
+    const requestedTile = [512, 1024].includes(Number(project.settings.multiresTileSize))
+      ? Number(project.settings.multiresTileSize) : 512;
+    const requestedMax = [2048, 4096, 8192].includes(Number(project.settings.multiresMaxCubeSize))
+      ? Number(project.settings.multiresMaxCubeSize) : 4096;
+
+    let cubeResolution = 8 * Math.floor((image.naturalWidth / Math.PI) / 8);
+    cubeResolution = Math.max(256, cubeResolution);
+    cubeResolution = Math.min(cubeResolution, requestedMax, limits.maxRenderSize);
+
+    const tileResolution = Math.min(requestedTile, cubeResolution);
+    let maxLevel = Math.ceil(Math.log2(cubeResolution / tileResolution)) + 1;
+    if (maxLevel > 1 &&
+        Math.floor(cubeResolution / Math.pow(2, maxLevel - 2)) === tileResolution) {
+      maxLevel -= 1;
+    }
+
+    return {
+      cubeResolution,
+      tileResolution,
+      maxLevel: Math.max(1, maxLevel),
+      quality: clampNumber(project.settings.multiresQuality, 50, 100, 85) / 100
+    };
+  }
+
+  function prepareMultiresSource(image, maxTextureSize) {
+    if (image.naturalWidth <= maxTextureSize && image.naturalHeight <= maxTextureSize) {
+      return image;
+    }
+
+    const scale = Math.min(
+      maxTextureSize / image.naturalWidth,
+      maxTextureSize / image.naturalHeight
+    );
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.floor(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.floor(image.naturalHeight * scale));
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function createCubemapProjector(source, size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+
+    const gl = canvas.getContext('webgl', {
+      alpha: false,
+      antialias: false,
+      preserveDrawingBuffer: true
+    }) || canvas.getContext('experimental-webgl', {
+      alpha: false,
+      antialias: false,
+      preserveDrawingBuffer: true
+    });
+
+    if (!gl) throw new Error('WebGL недоступен для генерации Multires');
+
+    const vertexSource = [
+      'attribute vec2 a_pos;',
+      'varying vec2 v_uv;',
+      'void main(){',
+      '  gl_Position=vec4(a_pos,0.0,1.0);',
+      '  v_uv=vec2((a_pos.x+1.0)*0.5,(1.0-a_pos.y)*0.5);',
+      '}'
+    ].join('\n');
+
+    const fragmentSource = [
+      'precision highp float;',
+      'varying vec2 v_uv;',
+      'uniform sampler2D u_image;',
+      'uniform int u_face;',
+      'const float PI=3.14159265358979323846264;',
+      'void main(){',
+      '  float sx=v_uv.x*2.0-1.0;',
+      '  float sy=1.0-v_uv.y*2.0;',
+      '  vec3 d;',
+      '  if(u_face==0) d=vec3(sx,sy,-1.0);',
+      '  else if(u_face==1) d=vec3(-sx,sy,1.0);',
+      '  else if(u_face==2) d=vec3(sx,1.0,sy);',
+      '  else if(u_face==3) d=vec3(sx,-1.0,-sy);',
+      '  else if(u_face==4) d=vec3(-1.0,sy,-sx);',
+      '  else d=vec3(1.0,sy,sx);',
+      '  d=normalize(d);',
+      '  float lon=atan(-d.x,-d.z);',
+      '  float lat=asin(clamp(d.y,-1.0,1.0));',
+      '  vec2 uv=vec2(lon/(2.0*PI)+0.5,0.5-lat/PI);',
+      '  gl_FragColor=texture2D(u_image,uv);',
+      '}'
+    ].join('\n');
+
+    const compile = (type, sourceCode) => {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, sourceCode);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const log = gl.getShaderInfoLog(shader) || 'shader error';
+        gl.deleteShader(shader);
+        throw new Error('Multires shader: ' + log);
+      }
+      return shader;
+    };
+
+    const vertexShader = compile(gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = compile(gl.FRAGMENT_SHADER, fragmentSource);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error('Multires WebGL: ' + (gl.getProgramInfoLog(program) || 'link error'));
+    }
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1,-1, 1,-1, -1,1,
+      -1,1, 1,-1, 1,1
+    ]), gl.STATIC_DRAW);
+
+    gl.useProgram(program);
+    const pos = gl.getAttribLocation(program, 'a_pos');
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+    const texture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+
+    gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+    const faceLocation = gl.getUniformLocation(program, 'u_face');
+    gl.viewport(0, 0, size, size);
+
+    return {
+      canvas,
+      renderFace(faceIndex) {
+        gl.useProgram(program);
+        gl.uniform1i(faceLocation, faceIndex);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+      },
+      destroy() {
+        gl.deleteTexture(texture);
+        gl.deleteBuffer(buffer);
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        const ext = gl.getExtension('WEBGL_lose_context');
+        if (ext) ext.loseContext();
+      }
+    };
+  }
+
+  function makeMultiresThumbnail(image) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.72);
+  }
+
+  async function generateSceneMultires(root, scene, sceneIndex, sceneCount, button) {
+    const image = await loadImageElement(scene.imageData);
+    const limits = getMultiresWebGLLimits();
+    const spec = calculateMultiresSpec(image, limits);
+    const source = prepareMultiresSource(image, limits.maxTextureSize);
+    const projector = createCubemapProjector(source, spec.cubeResolution);
+    const faceLetters = ['f', 'b', 'u', 'd', 'l', 'r'];
+    const sceneDir = safeFilename(scene.id, 'scene-' + (sceneIndex + 1));
+    const faceCanvas = document.createElement('canvas');
+    faceCanvas.width = spec.cubeResolution;
+    faceCanvas.height = spec.cubeResolution;
+    const faceCtx = faceCanvas.getContext('2d', { alpha: false });
+    const levelCanvas = document.createElement('canvas');
+    const tileCanvas = document.createElement('canvas');
+    const fallbackCanvas = document.createElement('canvas');
+    const fallbackSize = Math.min(1024, spec.cubeResolution);
+    fallbackCanvas.width = fallbackSize;
+    fallbackCanvas.height = fallbackSize;
+    const fallbackCtx = fallbackCanvas.getContext('2d', { alpha: false });
+
+    try {
+      for (let faceIndex = 0; faceIndex < faceLetters.length; faceIndex++) {
+        const face = faceLetters[faceIndex];
+        button.textContent = 'Multires ' + (sceneIndex + 1) + '/' + sceneCount +
+          ' · ' + face.toUpperCase();
+
+        projector.renderFace(faceIndex);
+        faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+        faceCtx.drawImage(projector.canvas, 0, 0);
+
+        for (let level = spec.maxLevel; level >= 1; level--) {
+          const divisor = Math.pow(2, spec.maxLevel - level);
+          const levelSize = Math.max(1, Math.floor(spec.cubeResolution / divisor));
+          levelCanvas.width = levelSize;
+          levelCanvas.height = levelSize;
+          const levelCtx = levelCanvas.getContext('2d', { alpha: false });
+          levelCtx.drawImage(faceCanvas, 0, 0, levelSize, levelSize);
+
+          const tiles = Math.ceil(levelSize / spec.tileResolution);
+          for (let y = 0; y < tiles; y++) {
+            for (let x = 0; x < tiles; x++) {
+              const sx = x * spec.tileResolution;
+              const sy = y * spec.tileResolution;
+              const width = Math.min(spec.tileResolution, levelSize - sx);
+              const height = Math.min(spec.tileResolution, levelSize - sy);
+
+              tileCanvas.width = width;
+              tileCanvas.height = height;
+              const tileCtx = tileCanvas.getContext('2d', { alpha: false });
+              tileCtx.drawImage(levelCanvas, sx, sy, width, height, 0, 0, width, height);
+
+              const blob = await canvasToBlob(tileCanvas, 'image/jpeg', spec.quality);
+              root.file(
+                'multires/' + sceneDir + '/' + level + '/' + face + y + '_' + x + '.jpg',
+                blob
+              );
+            }
+          }
+        }
+
+        fallbackCtx.clearRect(0, 0, fallbackSize, fallbackSize);
+        fallbackCtx.drawImage(faceCanvas, 0, 0, fallbackSize, fallbackSize);
+        const fallbackBlob = await canvasToBlob(fallbackCanvas, 'image/jpeg', spec.quality);
+        root.file('multires/' + sceneDir + '/fallback/' + face + '.jpg', fallbackBlob);
+
+        await yieldToBrowser();
+      }
+    } finally {
+      projector.destroy();
+    }
+
+    return {
+      sceneDir,
+      tileResolution: spec.tileResolution,
+      maxLevel: spec.maxLevel,
+      cubeResolution: spec.cubeResolution,
+      thumbnail: makeMultiresThumbnail(image)
+    };
+  }
+
+  function buildPortableTourConfig(sceneFiles, multiresScenes = new Map()) {
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: project.firstScene });
     project.scenes.forEach((scene) => {
-      if (config.scenes[scene.id]) config.scenes[scene.id].panorama = 'images/' + sceneFiles.get(scene.id);
+      const sceneConfig = config.scenes[scene.id];
+      if (!sceneConfig) return;
+
+      const multi = multiresScenes.get(scene.id);
+      if (multi) {
+        delete sceneConfig.panorama;
+        sceneConfig.type = 'multires';
+        sceneConfig.multiRes = {
+          basePath: 'multires/' + multi.sceneDir + '/',
+          path: '%l/%s%y_%x',
+          fallbackPath: 'fallback/%s',
+          extension: 'jpg',
+          tileResolution: multi.tileResolution,
+          maxLevel: multi.maxLevel,
+          cubeResolution: multi.cubeResolution,
+          equirectangularThumbnail: multi.thumbnail
+        };
+      } else {
+        sceneConfig.type = 'equirectangular';
+        sceneConfig.panorama = 'images/' + sceneFiles.get(scene.id);
+      }
     });
     return config;
   }
@@ -1898,21 +2226,37 @@
       const sceneFiles = new Map();
       const usedNames = new Set();
 
-      project.scenes.forEach((scene, index) => {
-        const ext = extensionForScene(scene);
-        const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
-        let filename = baseName + '.' + ext;
-        let suffix = 2;
-        while (usedNames.has(filename.toLowerCase())) filename = baseName + '-' + suffix++ + '.' + ext;
-        usedNames.add(filename.toLowerCase());
-        sceneFiles.set(scene.id, filename);
+      const multiresScenes = new Map();
 
-        const payload = dataUrlPayload(scene.imageData);
-        if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
-        else root.file('images/' + filename, decodeURIComponent(payload.data));
-      });
+      if (project.settings.multiresEnabled) {
+        for (let index = 0; index < project.scenes.length; index++) {
+          const scene = project.scenes[index];
+          const multi = await generateSceneMultires(
+            root,
+            scene,
+            index,
+            project.scenes.length,
+            button
+          );
+          multiresScenes.set(scene.id, multi);
+        }
+      } else {
+        project.scenes.forEach((scene, index) => {
+          const ext = extensionForScene(scene);
+          const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
+          let filename = baseName + '.' + ext;
+          let suffix = 2;
+          while (usedNames.has(filename.toLowerCase())) filename = baseName + '-' + suffix++ + '.' + ext;
+          usedNames.add(filename.toLowerCase());
+          sceneFiles.set(scene.id, filename);
 
-      const config = buildPortableTourConfig(sceneFiles);
+          const payload = dataUrlPayload(scene.imageData);
+          if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
+          else root.file('images/' + filename, decodeURIComponent(payload.data));
+        });
+      }
+
+      const config = buildPortableTourConfig(sceneFiles, multiresScenes);
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
@@ -1924,7 +2268,8 @@
         '- index.html — страница просмотра\n' +
         '- assets/tour.js — конфигурация и запуск тура\n' +
         '- assets/tour.css — оформление страницы\n' +
-        '- images/ — все панорамы\n' +
+        '- images/ — исходные панорамы при обычном экспорте\n' +
+        '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
         '- start-server.bat — запуск тура в Windows двойным кликом\n' +
@@ -2015,6 +2360,13 @@
     project.settings.fadeDuration = Math.max(0, Number(els.sceneFadeDuration.value) || 0);
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
     project.settings.autoRotate = Number(els.autoRotate.value) || -2;
+    project.settings.multiresEnabled = els.multiresEnabled.checked;
+    project.settings.multiresTileSize = [512, 1024].includes(Number(els.multiresTileSize.value))
+      ? Number(els.multiresTileSize.value) : 512;
+    project.settings.multiresQuality = clampNumber(els.multiresQuality.value, 50, 100, 85);
+    project.settings.multiresMaxCubeSize = [2048, 4096, 8192].includes(Number(els.multiresMaxCubeSize.value))
+      ? Number(els.multiresMaxCubeSize.value) : 4096;
+    els.multiresOptions.hidden = !project.settings.multiresEnabled;
     markDirty();
   }
 
@@ -2207,6 +2559,10 @@
       applyProjectSettingChange();
       renderViewer();
     });
+    els.multiresEnabled.addEventListener('change', applyProjectSettingChange);
+    els.multiresTileSize.addEventListener('change', applyProjectSettingChange);
+    els.multiresQuality.addEventListener('change', applyProjectSettingChange);
+    els.multiresMaxCubeSize.addEventListener('change', applyProjectSettingChange);
 
     els.sceneTitle.addEventListener('input', () => applySceneFieldChanges());
     els.scenePitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
