@@ -792,52 +792,52 @@
 
   function exportedViewerHtml() {
     const title = escapeHtml(project.title || 'Виртуальная экскурсия');
-    return '<!doctype html>\\n' +
-      '<html lang="ru">\\n<head>\\n' +
-      '  <meta charset="utf-8">\\n' +
-      '  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\\n' +
-      '  <meta name="theme-color" content="#05070c">\\n' +
-      '  <title>' + title + '</title>\\n' +
-      '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\\n' +
-      '  <link rel="stylesheet" href="assets/tour.css">\\n' +
-      '</head>\\n<body>\\n' +
-      '  <div id="panorama"></div>\\n' +
-      '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\\n' +
-      '  <script src="vendor/pannellum/build/pannellum.js"><\\/script>\\n' +
-      '  <script src="assets/tour.js"><\\/script>\\n' +
-      '</body>\\n</html>\\n';
+    return '<!doctype html>\n' +
+      '<html lang="ru">\n<head>\n' +
+      '  <meta charset="utf-8">\n' +
+      '  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' +
+      '  <meta name="theme-color" content="#05070c">\n' +
+      '  <title>' + title + '</title>\n' +
+      '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
+      '  <link rel="stylesheet" href="assets/tour.css">\n' +
+      '</head>\n<body>\n' +
+      '  <div id="panorama"></div>\n' +
+      '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
+      '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
+      '  <script src="assets/tour.js"></script>\n' +
+      '</body>\n</html>\n';
   }
 
   function exportedViewerCss() {
-    return ':root{color-scheme:dark}\\n' +
-      '*{box-sizing:border-box}\\n' +
-      'html,body,#panorama{width:100%;height:100%;margin:0}\\n' +
-      'html,body{overflow:hidden;background:#05070c}\\n' +
-      'body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}\\n' +
-      '.pnlm-container{background:#05070c}\\n' +
-      '.pnlm-title-box,.pnlm-author-box{background:rgba(5,7,12,.72)!important;backdrop-filter:blur(12px)}\\n' +
-      '.pnlm-scene{border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\\n' +
-      '.pnlm-info{border-radius:50%;box-shadow:0 0 0 4px rgba(31,214,187,.2)}\\n' +
-      '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\\n' +
-      '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\\n' +
-      'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\\n';
+    return ':root{color-scheme:dark}\n' +
+      '*{box-sizing:border-box}\n' +
+      'html,body,#panorama{width:100%;height:100%;margin:0}\n' +
+      'html,body{overflow:hidden;background:#05070c}\n' +
+      'body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}\n' +
+      '.pnlm-container{background:#05070c}\n' +
+      '.pnlm-title-box,.pnlm-author-box{background:rgba(5,7,12,.72)!important;backdrop-filter:blur(12px)}\n' +
+      '.pnlm-scene{border-radius:50%;box-shadow:0 0 0 4px rgba(89,111,255,.22)}\n' +
+      '.pnlm-info{border-radius:50%;box-shadow:0 0 0 4px rgba(31,214,187,.2)}\n' +
+      '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\n' +
+      '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\n' +
+      'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n';
   }
 
   function exportedViewerJs(config) {
     const json = JSON.stringify(config, null, 2).replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
-    return "(() => {\\n" +
-      "  'use strict';\\n" +
-      "  const config = " + json + ";\\n" +
-      "  const start = () => {\\n" +
-      "    if (!window.pannellum) {\\n" +
-      "      document.body.innerHTML = '<div style=\\\"padding:30px;color:white;background:#05070c;font-family:system-ui\\\">Не удалось загрузить Pannellum.</div>';\\n" +
-      "      return;\\n" +
-      "    }\\n" +
-      "    window.tourViewer = pannellum.viewer('panorama', config);\\n" +
-      "  };\\n" +
-      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });\\n" +
-      "  else start();\\n" +
-      "})();\\n";
+    return "(() => {\n" +
+      "  'use strict';\n" +
+      "  const config = " + json + ";\n" +
+      "  const start = () => {\n" +
+      "    if (!window.pannellum) {\n" +
+      "      document.body.innerHTML = '<div style=\\\"padding:30px;color:white;background:#05070c;font-family:system-ui\\\">Не удалось загрузить Pannellum.</div>';\n" +
+      "      return;\n" +
+      "    }\n" +
+      "    window.tourViewer = pannellum.viewer('panorama', config);\n" +
+      "  };\n" +
+      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });\n" +
+      "  else start();\n" +
+      "})();\n";
   }
 
   async function fetchRequiredAsset(url) {
@@ -912,18 +912,18 @@
       root.file('assets/tour.js', exportedViewerJs(config));
       root.file('tour.json', JSON.stringify(config, null, 2));
       root.file('README.txt',
-        'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\\n\\n' +
-        'Содержимое:\\n' +
-        '- index.html — страница просмотра\\n' +
-        '- assets/tour.js — конфигурация и запуск тура\\n' +
-        '- assets/tour.css — оформление страницы\\n' +
-        '- images/ — все панорамы\\n' +
-        '- vendor/pannellum/ — локальная копия Pannellum\\n' +
-        '- tour.json — конфигурация тура\\n\\n' +
-        'Для сайта:\\n1. Распакуйте папку целиком.\\n2. Загрузите её на HTTP/HTTPS-сервер.\\n3. Откройте index.html.\\n\\n' +
-        'Для локального просмотра: python -m http.server 8080\\n' +
-        'Затем откройте http://localhost:8080/' + rootName + '/\\n\\n' +
-        'Интернет для просмотра экспортированного тура не требуется.\\n'
+        'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
+        'Содержимое:\n' +
+        '- index.html — страница просмотра\n' +
+        '- assets/tour.js — конфигурация и запуск тура\n' +
+        '- assets/tour.css — оформление страницы\n' +
+        '- images/ — все панорамы\n' +
+        '- vendor/pannellum/ — локальная копия Pannellum\n' +
+        '- tour.json — конфигурация тура\n\n' +
+        'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
+        'Для локального просмотра: python -m http.server 8080\n' +
+        'Затем откройте http://localhost:8080/' + rootName + '/\n\n' +
+        'Интернет для просмотра экспортированного тура не требуется.\n'
       );
 
       button.textContent = 'Pannellum…';
