@@ -1034,11 +1034,24 @@
     };
 
     if (hotspot.type === 'scene') {
+      const targetScene = getScene(hotspot.targetSceneId);
+      const cssClass = transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot);
+
+      if (targetScene?.sceneType === 'panorama') {
+        return {
+          ...base,
+          type: 'scene',
+          sceneId: hotspot.targetSceneId,
+          cssClass
+        };
+      }
+
       return {
         ...base,
-        type: 'scene',
-        sceneId: hotspot.targetSceneId,
-        cssClass: transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot)
+        type: 'info',
+        cssClass,
+        tourTargetSceneId: hotspot.targetSceneId,
+        clickHandlerFunc: () => selectScene(hotspot.targetSceneId)
       };
     }
 
@@ -1072,7 +1085,7 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType === 'panorama'))
+          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
           .map(hotspotToPannellum)
       };
     });
@@ -3310,6 +3323,7 @@
     });
 
     els.hotspotTarget.addEventListener('change', () => {
+      updateHotspotTargetHint();
       if (els.hotspotIconPreset.value !== 'preview') return;
       pendingHotspotIconData = '';
       pendingHotspotIconFilename = '';
