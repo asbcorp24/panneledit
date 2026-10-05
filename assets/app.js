@@ -2581,7 +2581,8 @@
     sceneFiles,
     multiresScenes = new Map(),
     objectSceneFiles = new Map(),
-    stlSceneFiles = new Map()
+    stlSceneFiles = new Map(),
+    audioConfig = { projectMusic: null, scenes: {} }
   ) {
     const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
@@ -2616,12 +2617,34 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama'
+        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
+        textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+        audio: audioConfig.scenes?.[scene.id] || { music: null, narration: null }
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
     config.stlScenes = Object.fromEntries(stlSceneFiles);
+    config.projectAudio = { music: audioConfig.projectMusic || null };
     return config;
+  }
+
+  function bundleAudioSlot(root, slot, baseName) {
+    const data = normalizeAudioSlot(slot || {}, { volume: 50, loop: false });
+    if (!data.data) return null;
+
+    const ext = audioExtension(data);
+    const filename = safeFilename(baseName, 'audio') + '.' + ext;
+    const path = 'audio/' + filename;
+    const payload = dataUrlPayload(data.data);
+    if (payload.base64) root.file(path, payload.data, { base64: true });
+    else root.file(path, decodeURIComponent(payload.data));
+
+    return {
+      src: path,
+      volume: data.volume,
+      loop: Boolean(data.loop),
+      filename: data.filename || filename
+    };
   }
 
   function exportedViewerHtml() {
