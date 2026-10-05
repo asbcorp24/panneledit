@@ -79,6 +79,35 @@
             <span>Скорость</span>
             <input id="autoRotate" type="number" value="-2" min="-20" max="20" step="0.5">
           </label>
+          <label class="switch-row">
+            <span>
+              <b>Multiresolution ZIP</b>
+              <small>Тайлы Pannellum для больших панорам</small>
+            </span>
+            <input id="multiresEnabled" type="checkbox">
+          </label>
+          <div class="multires-options" id="multiresOptions" hidden>
+            <label class="field inline-field">
+              <span>Размер тайла</span>
+              <select id="multiresTileSize">
+                <option value="512" selected>512 px</option>
+                <option value="1024">1024 px</option>
+              </select>
+            </label>
+            <label class="field inline-field">
+              <span>JPEG качество</span>
+              <input id="multiresQuality" type="number" value="85" min="50" max="100" step="1">
+            </label>
+            <label class="field inline-field">
+              <span>Макс. грань куба</span>
+              <select id="multiresMaxCubeSize">
+                <option value="2048">2048 px</option>
+                <option value="4096" selected>4096 px</option>
+                <option value="8192">8192 px</option>
+              </select>
+            </label>
+            <p class="field-note">В редакторе остаётся исходная 2:1 панорама. Тайлы создаются только при экспорте ZIP.</p>
+          </div>
         </section>
       </aside>
 
@@ -379,6 +408,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="assets/app.js?v=20261005-3"></script>
+  <script src="assets/app.js?v=20261005-4"></script>
 </body>
 </html>
