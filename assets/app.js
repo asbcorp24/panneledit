@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 2;
+  const PROJECT_VERSION = 3;
 
   const $ = (id) => document.getElementById(id);
 
@@ -45,10 +45,14 @@
     panoramaUploadBox: $('panoramaUploadBox'),
     object360UploadBox: $('object360UploadBox'),
     object360ImportNote: $('object360ImportNote'),
+    stlUploadBox: $('stlUploadBox'),
+    stlImportNote: $('stlImportNote'),
     newSceneImage: $('newSceneImage'),
     newSceneFileName: $('newSceneFileName'),
     newObject360Zip: $('newObject360Zip'),
     newObject360FileName: $('newObject360FileName'),
+    newStlFile: $('newStlFile'),
+    newStlFileName: $('newStlFileName'),
     sceneSettings: $('sceneSettings'),
     noSceneSettings: $('noSceneSettings'),
     sceneSettingsSubtitle: $('sceneSettingsSubtitle'),
@@ -68,6 +72,17 @@
     object360Autoplay: $('object360Autoplay'),
     object360Filename: $('object360Filename'),
     object360ZipReplace: $('object360ZipReplace'),
+    stlSceneSettings: $('stlSceneSettings'),
+    stlSceneStats: $('stlSceneStats'),
+    stlSceneFile: $('stlSceneFile'),
+    stlYaw: $('stlYaw'),
+    stlPitch: $('stlPitch'),
+    stlZoom: $('stlZoom'),
+    stlColor: $('stlColor'),
+    stlWireframe: $('stlWireframe'),
+    stlAutoplay: $('stlAutoplay'),
+    stlFilename: $('stlFilename'),
+    stlFileReplace: $('stlFileReplace'),
     btnDeleteScene: $('btnDeleteScene'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
@@ -122,8 +137,10 @@
   let currentSceneId = null;
   let viewer = null;
   let objectViewer = null;
+  let stlViewer = null;
   let previewViewer = null;
   let previewObjectViewer = null;
+  let previewStlViewer = null;
   let dbPromise = null;
   let saveTimer = null;
   let toastTimer = null;
