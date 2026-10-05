@@ -7,7 +7,10 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $Root = [System.IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
-$RootPrefix = $Root.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+$RootPrefix = $Root
+if (-not $RootPrefix.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+    $RootPrefix += [System.IO.Path]::DirectorySeparatorChar
+}
 
 function Get-MimeType {
     param([string]$Path)
@@ -158,7 +161,7 @@ try {
         $fileStream = $null
 
         try {
-            $reader = New-Object System.IO.StreamReader(
+            $reader = [System.IO.StreamReader]::new(
                 $stream,
                 [System.Text.Encoding]::ASCII,
                 $false,
@@ -221,7 +224,7 @@ try {
                 continue
             }
 
-            $fileInfo = New-Object System.IO.FileInfo($filePath)
+            $fileInfo = [System.IO.FileInfo]::new($filePath)
             $totalLength = $fileInfo.Length
             $start = [int64]0
             $end = [int64]($totalLength - 1)
@@ -282,7 +285,7 @@ try {
                 [void]$fileStream.Seek($start, [System.IO.SeekOrigin]::Begin)
             }
 
-            $buffer = New-Object byte[] 65536
+            $buffer = [byte[]]::new(65536)
             $remaining = [int64]$contentLength
 
             while ($remaining -gt 0) {
