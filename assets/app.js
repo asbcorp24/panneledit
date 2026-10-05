@@ -1475,6 +1475,14 @@
     return response;
   }
 
+  async function bundleWindowsLauncher(root) {
+    const files = ['start-server.bat', 'server.ps1'];
+    await Promise.all(files.map(async (name) => {
+      const response = await fetchRequiredAsset(name);
+      root.file(name, await response.text());
+    }));
+  }
+
   async function bundlePannellum(zip) {
     const base = 'https://cdn.jsdelivr.net/npm/pannellum@2.5.7/';
     const cssUrl = base + 'build/pannellum.css';
@@ -1550,12 +1558,16 @@
         '- images/ — все панорамы\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
+        '- start-server.bat — запуск тура в Windows двойным кликом\n' +
+        '- server.ps1 — встроенный локальный HTTP-сервер\n' +
         '- tour.json — конфигурация тура\n\n' +
+        'Windows:\n1. Распакуйте папку целиком.\n2. Дважды щёлкните start-server.bat.\n3. Тур автоматически откроется в браузере.\n\n' +
         'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
-        'Для локального просмотра: python -m http.server 8080\n' +
-        'Затем откройте http://localhost:8080/' + rootName + '/\n\n' +
         'Интернет для просмотра экспортированного тура не требуется.\n'
       );
+
+      button.textContent = 'Windows-сервер…';
+      await bundleWindowsLauncher(root);
 
       button.textContent = 'Pannellum…';
       await bundlePannellum(root);
