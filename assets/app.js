@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 1;
+  const PROJECT_VERSION = 2;
 
   const $ = (id) => document.getElementById(id);
 
@@ -356,7 +356,7 @@
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
-      sceneType: scene.sceneType === 'object360' ? 'object360' : 'panorama',
+      sceneType: (scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama',
       filename: String(scene.filename || ('panorama-' + (index + 1) + '.jpg')),
       imageData: String(scene.imageData || scene.panorama || scene.object360?.coverData || ''),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
