@@ -3657,6 +3657,14 @@
   function applyProjectSettingChange() {
     project.title = els.projectTitle.value.trim() || 'Виртуальная экскурсия';
     project.firstScene = els.firstScene.value || project.scenes[0]?.id || null;
+    project.audio = {
+      music: normalizeAudioSlot({
+        ...(project.audio?.music || {}),
+        volume: els.projectMusicVolume.value,
+        loop: els.projectMusicLoop.checked
+      }, { volume: 35, loop: true })
+    };
+    els.projectMusicVolumeValue.textContent = project.audio.music.volume + '%';
     project.settings.fadeEnabled = els.sceneFadeEnabled.checked;
     project.settings.fadeDuration = Math.max(0, Number(els.sceneFadeDuration.value) || 0);
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
@@ -3676,6 +3684,12 @@
     if (!scene) return;
 
     scene.title = els.sceneTitle.value.trim() || scene.title;
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    scene.audio.music.volume = clampNumber(els.sceneMusicVolume.value, 0, 100, 45);
+    scene.audio.music.loop = els.sceneMusicLoop.checked;
+    scene.audio.narration.volume = clampNumber(els.sceneNarrationVolume.value, 0, 100, 80);
+    els.sceneMusicVolumeValue.textContent = scene.audio.music.volume + '%';
+    els.sceneNarrationVolumeValue.textContent = scene.audio.narration.volume + '%';
 
     if (scene.sceneType === 'object360') {
       const data = normalizeObject360Data(scene.object360 || {});
