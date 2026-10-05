@@ -1726,6 +1726,160 @@
     els.hotspotTargetTypeHint.dataset.sceneType = target.sceneType || 'panorama';
   }
 
+  function openTextObjectDialog(textObjectId = '') {
+    const scene = getScene();
+    if (!scene) return;
+
+    scene.textObjects = Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    const existing = textObjectId
+      ? scene.textObjects.find((item) => item.id === textObjectId)
+      : null;
+    const item = normalizeTextObject(existing || {
+      type: 'title',
+      text: scene.title || 'Заголовок',
+      x: 5,
+      y: 8,
+      width: 55,
+      fontSize: 42,
+      color: '#ffffff',
+      align: 'left',
+      background: 'none',
+      animation: 'fade'
+    });
+
+    els.textObjectForm.reset();
+    els.textObjectEditId.value = existing?.id || '';
+    els.textObjectDialogTitle.textContent = existing ? 'Редактировать текст' : 'Новый текстовый объект';
+    els.textObjectType.value = item.type;
+    els.textObjectText.value = item.text;
+    els.textObjectX.value = String(item.x);
+    els.textObjectY.value = String(item.y);
+    els.textObjectWidth.value = String(item.width);
+    els.textObjectFontSize.value = String(item.fontSize);
+    els.textObjectColor.value = item.color;
+    els.textObjectAlign.value = item.align;
+    els.textObjectBackground.value = item.background;
+    els.textObjectAnimation.value = item.animation;
+    els.btnDeleteTextObject.hidden = !existing;
+    els.textObjectDialog.showModal();
+  }
+
+  function saveTextObjectFromDialog() {
+    const scene = getScene();
+    if (!scene) return;
+
+    const text = els.textObjectText.value.trim();
+    if (!text) {
+      showToast('Введите текст');
+      return;
+    }
+
+    scene.textObjects = Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    const existingId = els.textObjectEditId.value;
+    let item = existingId ? scene.textObjects.find((entry) => entry.id === existingId) : null;
+    if (!item) {
+      item = { id: uid('text') };
+      scene.textObjects.push(item);
+    }
+
+    const normalized = normalizeTextObject({
+      id: item.id,
+      type: els.textObjectType.value,
+      text,
+      x: els.textObjectX.value,
+      y: els.textObjectY.value,
+      width: els.textObjectWidth.value,
+      fontSize: els.textObjectFontSize.value,
+      color: els.textObjectColor.value,
+      align: els.textObjectAlign.value,
+      background: els.textObjectBackground.value,
+      animation: els.textObjectAnimation.value
+    });
+
+    Object.assign(item, normalized);
+    els.textObjectDialog.close();
+    markDirty();
+    renderTextObjectList();
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+  }
+
+  function deleteTextObject(textObjectId) {
+    const scene = getScene();
+    if (!scene) return;
+    scene.textObjects = (scene.textObjects || []).filter((item) => item.id !== textObjectId);
+    if (els.textObjectDialog.open) els.textObjectDialog.close();
+    markDirty();
+    renderTextObjectList();
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+  }
+
+  function updateDraggedTextObject(element, clientX, clientY) {
+    const scene = getScene();
+    if (!scene || !element) return;
+    const item = (scene.textObjects || []).find((entry) => entry.id === element.dataset.textObjectId);
+    if (!item) return;
+
+    const rect = els.sceneOverlay.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = clampNumber(((clientX - rect.left) / rect.width) * 100, 0, 100, item.x);
+    const y = clampNumber(((clientY - rect.top) / rect.height) * 100, 0, 100, item.y);
+    item.x = Number(x.toFixed(2));
+    item.y = Number(y.toFixed(2));
+    element.style.left = item.x + '%';
+    element.style.top = item.y + '%';
+  }
+
+  function audioExtension(slot) {
+    const name = String(slot?.filename || '').toLowerCase();
+    const ext = name.match(/\.([a-z0-9]{2,5})$/)?.[1];
+    if (['mp3','ogg','wav'].includes(ext)) return ext;
+    const mime = String(slot?.data || '').match(/^data:audio\/([^;,]+)/i)?.[1]?.toLowerCase() || '';
+    if (mime.includes('ogg')) return 'ogg';
+    if (mime.includes('wav')) return 'wav';
+    return 'mp3';
+  }
+
+  function stopPreviewAudio() {
+    for (const audio of [previewMusicAudio, previewNarrationAudio]) {
+      if (!audio) continue;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (_) {}
+    }
+    previewMusicAudio = null;
+    previewNarrationAudio = null;
+    els.previewMusicButton?.classList.remove('active');
+    els.previewNarrationButton?.classList.remove('active');
+  }
+
+  function configurePreviewAudio(scene) {
+    stopPreviewAudio();
+    if (!scene) return;
+
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    const projectMusic = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+    const music = scene.audio.music.data ? scene.audio.music : projectMusic;
+
+    if (music.data) {
+      previewMusicAudio = new Audio(music.data);
+      previewMusicAudio.volume = music.volume / 100;
+      previewMusicAudio.loop = Boolean(music.loop);
+      els.previewMusicButton.hidden = false;
+    } else {
+      els.previewMusicButton.hidden = true;
+    }
+
+    if (scene.audio.narration.data) {
+      previewNarrationAudio = new Audio(scene.audio.narration.data);
+      previewNarrationAudio.volume = scene.audio.narration.volume / 100;
+      els.previewNarrationButton.hidden = false;
+    } else {
+      els.previewNarrationButton.hidden = true;
+    }
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
     const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
