@@ -280,6 +280,52 @@
         <textarea id="hotspotInfo" rows="4" placeholder="Описание объекта"></textarea>
       </label>
 
+      <div class="glow-settings">
+        <label class="switch-row glow-switch-row">
+          <span>
+            <b>Свечение ярлыка</b>
+            <small>Индивидуальный glow для этой точки</small>
+          </span>
+          <input id="hotspotGlowEnabled" type="checkbox">
+        </label>
+
+        <div id="hotspotGlowControls" class="glow-controls" hidden>
+          <div class="glow-color-row">
+            <label class="field">
+              <span>Цвет</span>
+              <input id="hotspotGlowColor" type="color" value="#6c7cff">
+            </label>
+            <div class="glow-demo-wrap">
+              <span>Предпросмотр</span>
+              <div id="hotspotGlowDemo" class="glow-demo"></div>
+            </div>
+          </div>
+
+          <label class="range-field">
+            <span>Радиус <b id="hotspotGlowBlurValue">18 px</b></span>
+            <input id="hotspotGlowBlur" type="range" min="0" max="50" step="1" value="18">
+          </label>
+
+          <label class="range-field">
+            <span>Интенсивность <b id="hotspotGlowStrengthValue">75%</b></span>
+            <input id="hotspotGlowStrength" type="range" min="0" max="100" step="5" value="75">
+          </label>
+
+          <label class="switch-row glow-pulse-row">
+            <span>
+              <b>Пульсация</b>
+              <small>Без изменения размера и положения</small>
+            </span>
+            <input id="hotspotGlowPulse" type="checkbox">
+          </label>
+
+          <label class="range-field" id="hotspotGlowPulseSpeedRow" hidden>
+            <span>Скорость <b id="hotspotGlowPulseSpeedValue">1.6 с</b></span>
+            <input id="hotspotGlowPulseSpeed" type="range" min="0.5" max="4" step="0.1" value="1.6">
+          </label>
+        </div>
+      </div>
+
       <div class="field-grid">
         <label class="field">
           <span>Pitch</span>
