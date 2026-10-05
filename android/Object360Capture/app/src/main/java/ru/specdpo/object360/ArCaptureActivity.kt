@@ -212,7 +212,32 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun resumeAr() {
         try {
             if (arSession == null) {
-                when (ArCoreApk.getInstance().requestInstall(this, !installRequested)) {
+                val arCoreApk = ArCoreApk.getInstance()
+                val availability = arCoreApk.checkAvailability(this)
+
+                if (availability.isUnsupported) {
+                    arUnavailable("Этот телефон не поддерживает ARCore.")
+                    return
+                }
+
+                if (availability.isTransient) {
+                    binding.arStatusText.text = "AR: проверяю совместимость..."
+                    arCoreApk.checkAvailabilityAsync(this) { result ->
+                        if (result.isSupported) {
+                            resumeAr()
+                        } else {
+                            arUnavailable("ARCore не поддерживается или его доступность не удалось подтвердить.")
+                        }
+                    }
+                    return
+                }
+
+                if (!availability.isSupported) {
+                    arUnavailable("Не удалось подтвердить поддержку ARCore на этом устройстве.")
+                    return
+                }
+
+                when (arCoreApk.requestInstall(this, !installRequested)) {
                     ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                         installRequested = true
                         return
