@@ -104,6 +104,10 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
     }
 
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityArCaptureBinding.inflate(layoutInflater)
@@ -123,7 +127,20 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
 
         setupUi()
+        requestLegacyStoragePermission()
         updateStaticUi()
+    }
+
+    private fun requestLegacyStoragePermission() {
+        if (
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
     }
 
     private fun setupUi() {
