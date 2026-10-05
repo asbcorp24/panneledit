@@ -286,6 +286,10 @@
         wireframe: Boolean(options.wireframe),
         autoRotate: Boolean(options.autoRotate),
         color: normalizeHex(options.color),
+        backgroundMode: ['hitech','black','light','gradient','transparent','image','panorama'].includes(String(options.backgroundMode))
+          ? String(options.backgroundMode)
+          : 'hitech',
+        backgroundImage: String(options.backgroundImage || ''),
         onChange: typeof options.onChange === 'function' ? options.onChange : null
       };
 
@@ -295,6 +299,8 @@
       this.wireframe = this.options.wireframe;
       this.autoRotate = this.options.autoRotate;
       this.color = this.options.color;
+      this.backgroundMode = this.options.backgroundMode;
+      this.backgroundImage = this.options.backgroundImage;
       this.destroyed = false;
       this.geometry = null;
       this.animationId = 0;
@@ -315,6 +321,7 @@
       this.root = document.createElement('div');
       this.root.className = 'stl-viewer';
       this.root.tabIndex = 0;
+      this.applyBackground();
 
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'stl-canvas';
@@ -354,6 +361,80 @@
       this.root.append(this.canvas, this.loading, this.hud);
       this.container.append(this.root);
       this.updateHud();
+    }
+
+    applyBackground() {
+      if (!this.root) return;
+
+      const mode = this.backgroundMode || 'hitech';
+      const image = this.backgroundImage || '';
+
+      this.root.dataset.backgroundMode = mode;
+      this.root.style.background = '';
+      this.root.style.backgroundColor = '';
+      this.root.style.backgroundImage = '';
+      this.root.style.backgroundSize = '';
+      this.root.style.backgroundPosition = '';
+      this.root.style.backgroundRepeat = '';
+      this.root.style.backgroundBlendMode = '';
+
+      if (mode === 'hitech') {
+        return;
+      }
+
+      if (mode === 'black') {
+        this.root.style.background = '#000000';
+        return;
+      }
+
+      if (mode === 'light') {
+        this.root.style.background =
+          'radial-gradient(circle at 50% 42%, #ffffff 0%, #eef1f7 48%, #cfd5df 100%)';
+        return;
+      }
+
+      if (mode === 'gradient') {
+        this.root.style.background =
+          'radial-gradient(circle at 50% 36%, rgba(104,84,255,.40), transparent 35%),' +
+          'linear-gradient(145deg,#07111f 0%,#17254a 48%,#3a1f52 100%)';
+        return;
+      }
+
+      if (mode === 'transparent') {
+        this.root.style.background = 'transparent';
+        return;
+      }
+
+      if ((mode === 'image' || mode === 'panorama') && image) {
+        const safe = JSON.stringify(image);
+
+        if (mode === 'panorama') {
+          this.root.style.backgroundColor = '#040812';
+          this.root.style.backgroundImage =
+            'linear-gradient(rgba(4,8,18,.18),rgba(4,8,18,.18)),url(' + safe + ')';
+          this.root.style.backgroundSize = '100% 100%, auto 100%';
+          this.root.style.backgroundRepeat = 'no-repeat, repeat-x';
+          this.updatePanoramaBackground();
+        } else {
+          this.root.style.backgroundColor = '#040812';
+          this.root.style.backgroundImage =
+            'linear-gradient(rgba(4,8,18,.12),rgba(4,8,18,.12)),url(' + safe + ')';
+          this.root.style.backgroundSize = '100% 100%, cover';
+          this.root.style.backgroundPosition = 'center, center';
+          this.root.style.backgroundRepeat = 'no-repeat, no-repeat';
+        }
+        return;
+      }
+
+      // If an image / panorama was selected but later removed, fall back to Hi-Tech.
+      this.root.dataset.backgroundMode = 'hitech';
+    }
+
+    updatePanoramaBackground() {
+      if (!this.root || this.backgroundMode !== 'panorama' || !this.backgroundImage) return;
+      const normalizedYaw = ((this.yaw % 360) + 360) % 360;
+      const position = 50 - (normalizedYaw / 360) * 100;
+      this.root.style.backgroundPosition = 'center, ' + position.toFixed(3) + '% center';
     }
 
     initGl() {
@@ -577,6 +658,8 @@
 
     render() {
       if (!this.geometry || this.destroyed) return;
+
+      this.updatePanoramaBackground();
 
       const gl = this.gl;
       this.resize();
