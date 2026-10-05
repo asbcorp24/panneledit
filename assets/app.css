@@ -420,3 +420,45 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
   border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);
   color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui
 }
+
+
+/* STL 3D scenes */
+.scene-type-control-3{grid-template-columns:repeat(3,1fr)}
+.scene-kind.stl-kind,.stl-badge{background:rgba(124,140,255,.12);color:#c2c9ff;border-color:rgba(124,140,255,.22)}
+.scene-card.stl-scene .scene-thumb{object-fit:contain;padding:4px;background:#060c18}
+.scene-card.stl-scene .scene-index{color:#c2c9ff;background:rgba(124,140,255,.09)}
+
+.stl-host{position:relative;overflow:hidden}
+.stl-viewer{
+  position:absolute;inset:0;overflow:hidden;
+  background:
+    radial-gradient(circle at 50% 45%,rgba(124,140,255,.16),transparent 42%),
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),
+    #040812;
+  background-size:auto,40px 40px,40px 40px;
+  outline:0;touch-action:none;cursor:grab;user-select:none
+}
+.stl-viewer.dragging{cursor:grabbing}
+.stl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stl-loading{
+  position:absolute;left:50%;top:50%;translate:-50% -50%;
+  padding:8px 11px;border:1px solid var(--line);border-radius:9px;
+  background:rgba(5,9,18,.82);backdrop-filter:blur(8px);
+  color:var(--muted);font-size:10px
+}
+.stl-hud{
+  position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(8,13,24,.8);backdrop-filter:blur(12px)
+}
+.stl-stats{
+  flex:none;padding:4px 7px;border-radius:7px;background:rgba(124,140,255,.12);
+  color:#c8ceff;font-size:9px;font-variant-numeric:tabular-nums
+}
+.stl-hint{flex:1;min-width:0;color:var(--muted);font-size:9px;text-align:center}
+.stl-mode,.stl-auto,.stl-reset{
+  flex:none;min-width:34px;height:28px;padding:0 8px;border:1px solid var(--line);
+  border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:800
+}
+.stl-mode:hover,.stl-auto:hover,.stl-reset:hover{border-color:var(--line-strong);background:#18243b}
