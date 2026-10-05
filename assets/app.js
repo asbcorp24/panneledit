@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 3;
+  const PROJECT_VERSION = 4;
 
   const $ = (id) => document.getElementById(id);
 
@@ -1727,6 +1727,13 @@
     project.scenes = project.scenes.filter((item) => item.id !== scene.id);
     project.scenes.forEach((item) => {
       item.hotspots = (item.hotspots || []).filter((hotspot) => hotspot.targetSceneId !== scene.id);
+      if (item.sceneType === 'stl' && item.stl?.backgroundSceneId === scene.id) {
+        item.stl = normalizeStlData({
+          ...item.stl,
+          backgroundMode: 'hitech',
+          backgroundSceneId: ''
+        });
+      }
     });
 
     if (project.firstScene === scene.id) {
@@ -3130,6 +3137,32 @@
         if (payload.base64) root.file(modelPath, payload.data, { base64: true });
         else root.file(modelPath, decodeURIComponent(payload.data));
 
+        let backgroundImage = '';
+        let backgroundMode = data.backgroundMode || 'hitech';
+
+        if (backgroundMode === 'image' && data.backgroundImageData) {
+          const bgPayload = dataUrlPayload(data.backgroundImageData);
+          const bgMime = String(bgPayload.mime || '').toLowerCase();
+          const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
+          const bgName = 'stl-bg-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
+          backgroundImage = 'backgrounds/' + bgName;
+          if (bgPayload.base64) root.file(backgroundImage, bgPayload.data, { base64: true });
+          else root.file(backgroundImage, decodeURIComponent(bgPayload.data));
+        } else if (backgroundMode === 'panorama' && data.backgroundSceneId) {
+          const bgScene = getScene(data.backgroundSceneId);
+          if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
+            const bgPayload = dataUrlPayload(bgScene.imageData);
+            const bgMime = String(bgPayload.mime || '').toLowerCase();
+            const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
+            const bgName = 'stl-panorama-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
+            backgroundImage = 'backgrounds/' + bgName;
+            if (bgPayload.base64) root.file(backgroundImage, bgPayload.data, { base64: true });
+            else root.file(backgroundImage, decodeURIComponent(bgPayload.data));
+          } else {
+            backgroundMode = 'hitech';
+          }
+        }
+
         stlSceneFiles.set(scene.id, {
           source: modelPath,
           yaw: data.yaw,
@@ -3138,7 +3171,9 @@
           wireframe: data.wireframe,
           autoplay: data.autoplay,
           color: data.color,
-          triangleCount: data.triangleCount
+          triangleCount: data.triangleCount,
+          backgroundMode,
+          backgroundImage
         });
       }
 
@@ -3161,6 +3196,7 @@
         '- images/ — исходные панорамы при обычном экспорте\n' +
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
+        '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
