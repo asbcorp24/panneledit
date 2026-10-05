@@ -581,8 +581,9 @@
       const gl = this.gl;
       this.resize();
       gl.enable(gl.DEPTH_TEST);
-      gl.enable(gl.CULL_FACE);
-      gl.cullFace(gl.BACK);
+      // STL-файлы на практике нередко содержат смешанное направление граней.
+      // Рисуем обе стороны, чтобы модель не получала случайные "дыры".
+      gl.disable(gl.CULL_FACE);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
