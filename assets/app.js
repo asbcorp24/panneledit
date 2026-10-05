@@ -1397,7 +1397,23 @@
 
   async function saveCurrentView() {
     const scene = getScene();
-    if (!scene || !viewer) return;
+    if (!scene) return;
+
+    if (scene.sceneType === 'object360') {
+      if (!objectViewer) return;
+      const state = objectViewer.getState();
+      scene.object360 = normalizeObject360Data({
+        ...scene.object360,
+        startSector: state.sector,
+        startRow: state.row
+      });
+      markDirty();
+      renderSceneSettings();
+      showToast('Стартовый кадр объекта сохранён');
+      return;
+    }
+
+    if (!viewer) return;
     scene.pitch = Number(viewer.getPitch().toFixed(2));
     scene.yaw = Number(viewer.getYaw().toFixed(2));
     scene.hfov = Number(viewer.getHfov().toFixed(1));
@@ -2598,15 +2614,30 @@
     if (!scene) return;
 
     scene.title = els.sceneTitle.value.trim() || scene.title;
-    scene.pitch = Number(els.scenePitch.value) || 0;
-    scene.yaw = Number(els.sceneYaw.value) || 0;
-    scene.hfov = Math.min(120, Math.max(30, Number(els.sceneHfov.value) || 100));
+
+    if (scene.sceneType === 'object360') {
+      const data = normalizeObject360Data(scene.object360 || {});
+      data.startSector = Math.max(0, Math.min(data.sectors - 1, Number(els.object360StartSector.value) || 0));
+      data.startRow = Math.max(0, Math.min(data.rows - 1, Number(els.object360StartRow.value) || 0));
+      data.autoplay = els.object360Autoplay.checked;
+      scene.object360 = data;
+    } else {
+      scene.pitch = Number(els.scenePitch.value) || 0;
+      scene.yaw = Number(els.sceneYaw.value) || 0;
+      scene.hfov = Math.min(120, Math.max(30, Number(els.sceneHfov.value) || 100));
+    }
+
     markDirty({ rerenderViewer: rerender });
   }
 
   function setupEvents() {
     els.btnAddScene.addEventListener('click', openSceneDialog);
     els.btnAddSceneCenter.addEventListener('click', openSceneDialog);
+
+    els.sceneTypeControl.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-scene-type]');
+      if (button) setNewSceneType(button.dataset.sceneType);
+    });
 
     els.newSceneImage.addEventListener('change', () => {
       const file = els.newSceneImage.files?.[0];
@@ -2616,25 +2647,40 @@
       }
     });
 
+    els.newObject360Zip.addEventListener('change', () => {
+      const file = els.newObject360Zip.files?.[0];
+      els.newObject360FileName.textContent = file ? file.name : 'ZIP из Android-приложения Object360Capture';
+      if (file && !els.newSceneTitle.value.trim()) {
+        els.newSceneTitle.value = file.name.replace(/\.object360\.zip$|\.zip$/i, '');
+      }
+    });
+
     els.sceneForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
 
-      const file = els.newSceneImage.files?.[0];
+      const sceneType = els.newSceneType.value;
       const title = els.newSceneTitle.value.trim();
+      const file = sceneType === 'object360'
+        ? els.newObject360Zip.files?.[0]
+        : els.newSceneImage.files?.[0];
+
       if (!file || !title) {
-        showToast('Укажите название и выберите панораму');
+        showToast(sceneType === 'object360'
+          ? 'Укажите название и выберите Object360 ZIP'
+          : 'Укажите название и выберите панораму');
         return;
       }
 
       const button = event.submitter;
       if (button) button.disabled = true;
       try {
-        await createSceneFromFile(file, title);
+        if (sceneType === 'object360') await createObject360SceneFromZip(file, title);
+        else await createSceneFromFile(file, title);
         els.sceneDialog.close();
       } catch (error) {
         console.error(error);
-        showToast('Не удалось добавить панораму');
+        showToast('Не удалось добавить сцену: ' + (error?.message || 'ошибка'));
       } finally {
         if (button) button.disabled = false;
       }
@@ -2791,11 +2837,14 @@
     els.scenePitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.sceneYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.sceneHfov.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.object360StartSector.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.object360StartRow.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.object360Autoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
 
     els.sceneImageReplace.addEventListener('change', async () => {
       const scene = getScene();
       const file = els.sceneImageReplace.files?.[0];
-      if (!scene || !file) return;
+      if (!scene || scene.sceneType === 'object360' || !file) return;
       try {
         scene.imageData = await fileToDataURL(file);
         scene.filename = file.name;
@@ -2813,6 +2862,71 @@
         showToast('Не удалось заменить панораму');
       } finally {
         els.sceneImageReplace.value = '';
+      }
+    });
+
+    els.object360ZipReplace.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.object360ZipReplace.files?.[0];
+      if (!scene || scene.sceneType !== 'object360' || !file) return;
+
+      const oldId = scene.id;
+      const oldTitle = scene.title;
+      try {
+        const zip = await JSZip.loadAsync(file);
+        const names = Object.keys(zip.files);
+        const configName = names.find((name) => /(^|\/)config\.json$/i.test(name));
+        let config = {};
+        if (configName) {
+          try { config = JSON.parse(await zip.file(configName).async('text')); } catch (_) {}
+        }
+
+        const entries = [];
+        names.forEach((name) => {
+          const match = String(name).replace(/\\/g, '/').match(/(?:^|\/)row_(\d+)\/frame_(\d+)\.(jpe?g|png|webp)$/i);
+          if (match && !zip.files[name].dir) entries.push({
+            name,
+            row: Number(match[1]) - 1,
+            sector: Number(match[2]),
+            ext: match[3].toLowerCase()
+          });
+        });
+        if (!entries.length) throw new Error('В ZIP нет кадров');
+
+        const rows = Math.max(Number(config.rows) || 1, Math.max(...entries.map((item) => item.row)) + 1);
+        const sectors = Math.max(Number(config.sectors) || 1, Math.max(...entries.map((item) => item.sector)) + 1);
+        const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
+
+        for (const entry of entries) {
+          const base64 = await zip.file(entry.name).async('base64');
+          const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+        }
+
+        scene.id = oldId;
+        scene.title = oldTitle;
+        scene.filename = file.name;
+        scene.imageData = frames.flat().find(Boolean) || '';
+        scene.object360 = normalizeObject360Data({
+          ...config,
+          sectors,
+          rows,
+          frames,
+          coverData: scene.imageData,
+          frameCount: entries.length,
+          startSector: 0,
+          startRow: rows === 3 ? 1 : 0,
+          autoplay: scene.object360?.autoplay
+        });
+
+        markDirty();
+        renderViewer();
+        showToast('Object360 ZIP заменён');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось заменить Object360 ZIP: ' + (error?.message || 'ошибка'));
+      } finally {
+        els.object360ZipReplace.value = '';
       }
     });
 
@@ -2867,15 +2981,22 @@
     window.addEventListener('drop', async (event) => {
       dragDepth = 0;
       els.dropOverlay.classList.remove('visible');
-      const file = [...event.dataTransfer?.files || []].find((item) => item.type.startsWith('image/'));
+      const files = [...event.dataTransfer?.files || []];
+      const file = files.find((item) => item.type.startsWith('image/')) ||
+        files.find((item) => /\.zip$/i.test(item.name || ''));
       if (!file) return;
       event.preventDefault();
       try {
-        await createSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''));
-        showToast('Панорама добавлена');
+        if (/\.zip$/i.test(file.name || '')) {
+          await createObject360SceneFromZip(file, file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
+          showToast('Объект 360° добавлен');
+        } else {
+          await createSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''));
+          showToast('Панорама добавлена');
+        }
       } catch (error) {
         console.error(error);
-        showToast('Не удалось добавить панораму');
+        showToast('Не удалось добавить сцену: ' + (error?.message || 'ошибка'));
       }
     });
 
@@ -2889,7 +3010,9 @@
 
     window.addEventListener('resize', () => {
       try { viewer?.resize(); } catch (_) {}
+      try { objectViewer?.resize(); } catch (_) {}
       try { previewViewer?.resize(); } catch (_) {}
+      try { previewObjectViewer?.resize(); } catch (_) {}
     });
   }
 
