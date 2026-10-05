@@ -3790,6 +3790,55 @@
       if (card) selectScene(card.dataset.sceneId);
     });
 
+    els.btnAddTextObject.addEventListener('click', () => openTextObjectDialog());
+
+    els.textObjectList.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-text-object-id]');
+      if (card) openTextObjectDialog(card.dataset.textObjectId);
+    });
+
+    els.textObjectForm.addEventListener('submit', (event) => {
+      if (event.submitter?.value === 'cancel') return;
+      event.preventDefault();
+      saveTextObjectFromDialog();
+    });
+
+    els.btnDeleteTextObject.addEventListener('click', () => {
+      const id = els.textObjectEditId.value;
+      if (id && confirm('Удалить этот текстовый объект?')) deleteTextObject(id);
+    });
+
+    let draggedTextElement = null;
+    els.sceneOverlay.addEventListener('pointerdown', (event) => {
+      const element = event.target.closest('[data-text-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      draggedTextElement = element;
+      element.classList.add('dragging');
+      try { element.setPointerCapture(event.pointerId); } catch (_) {}
+      updateDraggedTextObject(element, event.clientX, event.clientY);
+    });
+    els.sceneOverlay.addEventListener('pointermove', (event) => {
+      if (!draggedTextElement) return;
+      updateDraggedTextObject(draggedTextElement, event.clientX, event.clientY);
+    });
+    const finishTextDrag = () => {
+      if (!draggedTextElement) return;
+      draggedTextElement.classList.remove('dragging');
+      draggedTextElement = null;
+      markDirty();
+      renderTextObjectList();
+    };
+    els.sceneOverlay.addEventListener('pointerup', finishTextDrag);
+    els.sceneOverlay.addEventListener('pointercancel', finishTextDrag);
+    els.sceneOverlay.addEventListener('dblclick', (event) => {
+      const element = event.target.closest('[data-text-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openTextObjectDialog(element.dataset.textObjectId);
+    });
+
     els.hotspotList.addEventListener('click', (event) => {
       const card = event.target.closest('[data-hotspot-id]');
       if (!card) return;
@@ -3933,6 +3982,40 @@
     els.multiresQuality.addEventListener('change', applyProjectSettingChange);
     els.multiresMaxCubeSize.addEventListener('change', applyProjectSettingChange);
 
+    els.projectMusicFile.addEventListener('change', async () => {
+      const file = els.projectMusicFile.files?.[0];
+      if (!file) return;
+      try {
+        const current = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+        project.audio = {
+          music: normalizeAudioSlot({
+            ...current,
+            data: await fileToDataURL(file),
+            filename: file.name
+          }, { volume: 35, loop: true })
+        };
+        els.projectMusicName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить музыку тура');
+      } finally {
+        els.projectMusicFile.value = '';
+      }
+    });
+    els.projectMusicVolume.addEventListener('input', applyProjectSettingChange);
+    els.projectMusicLoop.addEventListener('change', applyProjectSettingChange);
+    els.btnRemoveProjectMusic.addEventListener('click', () => {
+      project.audio = {
+        music: normalizeAudioSlot({
+          volume: els.projectMusicVolume.value,
+          loop: els.projectMusicLoop.checked
+        }, { volume: 35, loop: true })
+      };
+      els.projectMusicName.textContent = 'Не выбрана';
+      markDirty();
+    });
+
     els.sceneTitle.addEventListener('input', () => applySceneFieldChanges());
     els.scenePitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.sceneYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
@@ -3974,6 +4057,73 @@
     });
     els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+
+    els.sceneMusicFile.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.sceneMusicFile.files?.[0];
+      if (!scene || !file) return;
+      try {
+        scene.audio = normalizeSceneAudio(scene.audio || {});
+        scene.audio.music = normalizeAudioSlot({
+          ...scene.audio.music,
+          data: await fileToDataURL(file),
+          filename: file.name
+        }, { volume: 45, loop: true });
+        els.sceneMusicName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить музыку сцены');
+      } finally {
+        els.sceneMusicFile.value = '';
+      }
+    });
+    els.sceneMusicVolume.addEventListener('input', () => applySceneFieldChanges());
+    els.sceneMusicLoop.addEventListener('change', () => applySceneFieldChanges());
+    els.btnRemoveSceneMusic.addEventListener('click', () => {
+      const scene = getScene();
+      if (!scene) return;
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      scene.audio.music = normalizeAudioSlot({
+        volume: els.sceneMusicVolume.value,
+        loop: els.sceneMusicLoop.checked
+      }, { volume: 45, loop: true });
+      els.sceneMusicName.textContent = 'Не выбрана';
+      markDirty();
+    });
+
+    els.sceneNarrationFile.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.sceneNarrationFile.files?.[0];
+      if (!scene || !file) return;
+      try {
+        scene.audio = normalizeSceneAudio(scene.audio || {});
+        scene.audio.narration = normalizeAudioSlot({
+          ...scene.audio.narration,
+          data: await fileToDataURL(file),
+          filename: file.name
+        }, { volume: 80, loop: false });
+        els.sceneNarrationName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить озвучку');
+      } finally {
+        els.sceneNarrationFile.value = '';
+      }
+    });
+    els.sceneNarrationVolume.addEventListener('input', () => applySceneFieldChanges());
+    els.btnRemoveSceneNarration.addEventListener('click', () => {
+      const scene = getScene();
+      if (!scene) return;
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      scene.audio.narration = normalizeAudioSlot({
+        volume: els.sceneNarrationVolume.value,
+        loop: false
+      }, { volume: 80, loop: false });
+      els.sceneNarrationName.textContent = 'Не выбрана';
+      markDirty();
+    });
 
     els.sceneImageReplace.addEventListener('change', async () => {
       const scene = getScene();
@@ -4109,6 +4259,35 @@
     els.downloadZipLink.addEventListener('click', savePendingZip);
 
     els.btnPreview.addEventListener('click', openPreview);
+    els.previewMusicButton.addEventListener('click', async () => {
+      if (!previewMusicAudio) return;
+      try {
+        if (previewMusicAudio.paused) {
+          await previewMusicAudio.play();
+          els.previewMusicButton.classList.add('active');
+        } else {
+          previewMusicAudio.pause();
+          els.previewMusicButton.classList.remove('active');
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+    });
+    els.previewNarrationButton.addEventListener('click', async () => {
+      if (!previewNarrationAudio) return;
+      try {
+        if (previewNarrationAudio.paused) {
+          previewNarrationAudio.currentTime = 0;
+          await previewNarrationAudio.play();
+          els.previewNarrationButton.classList.add('active');
+        } else {
+          previewNarrationAudio.pause();
+          els.previewNarrationButton.classList.remove('active');
+        }
+      } catch (error) {
+        console.warn(error);
+      }
+    });
     els.closePreview.addEventListener('click', closePreview);
     els.previewDialog.addEventListener('cancel', (event) => {
       event.preventDefault();
