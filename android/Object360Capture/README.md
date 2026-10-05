@@ -116,3 +116,8 @@ ARCore hit-test обычно попадает в видимую переднюю
 - AppCompat 1.8.0
 - Core KTX 1.19.1
 - Activity KTX 1.13.0
+
+
+## CI
+
+GitHub Actions автоматически собирает debug APK при изменениях в `android/Object360Capture` и прикладывает его как artifact `Object360Capture-debug`.
