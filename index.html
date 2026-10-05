@@ -243,6 +243,9 @@
           <button type="button" class="transition-icon-option" data-icon="stairs" title="Лестница">
             <img src="assets/icons/stairs.svg" alt=""><small>Лестница</small>
           </button>
+          <button type="button" class="transition-icon-option" data-icon="preview" title="Авто-превью целевой сцены">
+            <span class="preview-icon-symbol">▣</span><small>Превью</small>
+          </button>
           <button type="button" class="transition-icon-option" data-icon="custom" title="Своя картинка">
             <span class="custom-icon-plus">＋</span><small>Своя</small>
           </button>
@@ -257,6 +260,13 @@
             <img id="hotspotIconPreview" alt="">
             <span id="hotspotIconFilename">Файл не выбран</span>
           </div>
+        </div>
+        <div class="auto-preview-box" id="autoPreviewBox" hidden>
+          <div class="auto-preview-image-wrap">
+            <img id="hotspotAutoPreviewImage" alt="Превью целевой сцены">
+            <span id="hotspotAutoPreviewStatus">Превью ещё не создано</span>
+          </div>
+          <button type="button" class="btn btn-small" id="btnRefreshHotspotPreview">Обновить превью</button>
         </div>
       </div>
 
