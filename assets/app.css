@@ -470,3 +470,90 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
 .scene-target-hint[data-scene-type="object360"]{color:#75e7d6}
 .scene-target-hint[data-scene-type="stl"]{color:#c2c9ff}
 .scene-target-hint[data-scene-type="panorama"]{color:#aab7ff}
+
+
+/* Text overlays and audio */
+.viewer-wrap{position:relative}
+.scene-overlay{
+  position:absolute;inset:0;z-index:24;pointer-events:none;overflow:hidden
+}
+.scene-overlay[hidden]{display:none}
+.scene-text-object{
+  position:absolute;transform:translate(0,0);pointer-events:none;max-width:90%;
+  line-height:1.15;text-shadow:0 2px 14px rgba(0,0,0,.5);overflow-wrap:anywhere;
+  animation-duration:.48s;animation-fill-mode:both
+}
+.scene-text-object.is-editor{
+  pointer-events:auto;cursor:move;border:1px dashed transparent;border-radius:10px;
+  padding:4px;touch-action:none
+}
+.scene-text-object.is-editor:hover,.scene-text-object.dragging{
+  border-color:rgba(124,140,255,.75);background:rgba(6,10,18,.18)
+}
+.scene-text-title{font-weight:900;letter-spacing:-.03em}
+.scene-text-description{font-weight:500;line-height:1.45}
+.scene-text-bg-dark .scene-text-inner{
+  display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.12);
+  border-radius:14px;background:rgba(5,9,18,.64);backdrop-filter:blur(12px)
+}
+.scene-text-bg-light .scene-text-inner{
+  display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.35);
+  border-radius:14px;background:rgba(255,255,255,.78);color:#101827;
+  text-shadow:none;backdrop-filter:blur(12px)
+}
+.scene-text-drag-hint{
+  position:absolute;right:4px;top:-18px;padding:2px 5px;border-radius:5px;
+  background:rgba(5,9,18,.8);color:#aab3c8;font-size:8px;font-weight:700;
+  opacity:0;transition:opacity .15s
+}
+.scene-text-object.is-editor:hover .scene-text-drag-hint{opacity:1}
+.scene-text-anim-fade{animation-name:sceneTextFade}
+.scene-text-anim-slide{animation-name:sceneTextSlide}
+.scene-text-anim-none{animation:none}
+@keyframes sceneTextFade{from{opacity:0}to{opacity:1}}
+@keyframes sceneTextSlide{from{opacity:0;translate:0 18px}to{opacity:1;translate:0 0}}
+
+.text-object-list{display:flex;flex-direction:column;gap:7px}
+.text-object-list.empty{display:block}
+.text-object-card{
+  display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:8px;
+  padding:8px;border:1px solid var(--line);border-radius:10px;background:#0a101c;cursor:pointer
+}
+.text-object-card:hover{border-color:var(--line-strong);background:#0d1524}
+.text-object-kind{
+  width:28px;height:28px;display:grid;place-items:center;border-radius:8px;
+  background:rgba(124,140,255,.12);color:#c8ceff;font-size:10px;font-weight:900
+}
+.text-object-card div{min-width:0}
+.text-object-card b,.text-object-card span{display:block}
+.text-object-card b{font-size:10px}
+.text-object-card div span{margin-top:2px;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.text-object-card em{font-style:normal;color:var(--muted);font-size:8px}
+
+.audio-settings-block,.scene-audio-settings{
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--line)
+}
+.mini-section-title{
+  margin-bottom:8px;color:#dfe5f5;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.08em
+}
+.audio-slot{
+  margin-top:9px;padding:9px;border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;background:rgba(255,255,255,.018)
+}
+.audio-slot-title{display:block;margin-bottom:7px;color:#bcc7dc;font-size:9px;font-weight:800}
+
+.preview-stage{position:relative;width:100%;height:calc(100% - 48px);overflow:hidden}
+.preview-stage #previewPanorama{position:absolute;inset:0;width:100%;height:100%}
+.scene-overlay-preview{z-index:25}
+.tour-audio-controls{
+  position:absolute;right:12px;bottom:12px;z-index:60;display:flex;gap:7px;pointer-events:auto
+}
+.tour-audio-controls button{
+  width:38px;height:38px;border:1px solid rgba(255,255,255,.15);border-radius:50%;
+  background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px);cursor:pointer;
+  font-size:16px;font-weight:900
+}
+.tour-audio-controls button.active{
+  border-color:rgba(31,214,187,.65);box-shadow:0 0 0 3px rgba(31,214,187,.12);color:#75e7d6
+}
+.tour-audio-controls button[hidden]{display:none}
