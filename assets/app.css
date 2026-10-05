@@ -212,6 +212,17 @@ kbd{font:inherit;color:#bdc5d7;border:1px solid var(--line);background:var(--pan
 .segmented button{border:0;border-radius:7px;background:transparent;color:var(--muted);padding:8px;cursor:pointer;font-size:10px;font-weight:700}
 .segmented button.active{background:var(--panel-3);color:var(--text)}
 .preview-modal{width:min(1180px,calc(100vw - 26px));height:min(760px,calc(100vh - 26px));padding:0;overflow:hidden}
+.download-modal{width:min(520px,calc(100vw - 24px));padding:18px}
+.download-ready{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+.download-ready-icon{width:52px;height:52px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,var(--accent),#6ff0d8);color:#04231e;font-size:13px;font-weight:900;letter-spacing:.04em;box-shadow:0 12px 28px rgba(31,214,187,.18)}
+.download-ready-copy h2{margin:0 0 4px;font-size:17px}
+.download-ready-copy p{margin:0;color:var(--muted);font-size:10px;line-height:1.55}
+.download-file-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#090f1b}
+.download-file-card b{display:block;font-size:11px;word-break:break-all}
+.download-file-card span{display:block;color:var(--muted);font-size:9px;margin-top:4px}
+.download-file-badge{flex:none!important;margin:0!important;padding:5px 7px;border-radius:7px;background:rgba(108,124,255,.12);color:#aab3ff!important;font-weight:800}
+.download-main-btn{text-decoration:none;min-width:140px}
+
 .preview-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--line)}
 .preview-head strong{font-size:12px}
 #previewPanorama{width:100%;height:calc(100% - 48px)}
