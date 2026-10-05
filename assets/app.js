@@ -2348,12 +2348,16 @@
   'use strict';
 
   const config = ${json};
+
   let panoViewer = null;
   let objectViewer = null;
   let stlViewer = null;
+  let currentSceneId = '';
+  const historyStack = [];
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
+  const backButton = document.getElementById('tourBackButton');
 
   const escapeHtmlText = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -2380,12 +2384,52 @@
     if (menu) menu.value = id || '';
   };
 
-  const showScene = (id) => {
+  const updateBackButton = () => {
+    if (!backButton) return;
+    backButton.hidden = historyStack.length === 0;
+    if (!historyStack.length) return;
+
+    const previousId = historyStack[historyStack.length - 1];
+    const previous = config.sceneMeta?.[previousId];
+    backButton.textContent = previous?.title
+      ? '← ' + previous.title
+      : '← Назад';
+    backButton.title = previous?.title
+      ? 'Вернуться: ' + previous.title
+      : 'Вернуться назад';
+  };
+
+  const decorateUniversalHotspots = (panoConfig) => {
+    Object.values(panoConfig.scenes || {}).forEach((scene) => {
+      (scene.hotSpots || []).forEach((hotspot) => {
+        const target = hotspot.tourTargetSceneId;
+        if (!target) return;
+
+        hotspot.clickHandlerFunc = () => {
+          showScene(target, true);
+        };
+      });
+    });
+  };
+
+  const showScene = (id, pushHistory = true) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
 
+    if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
+      updateMenu(id);
+      updateBackButton();
+      return;
+    }
+
+    if (pushHistory && currentSceneId && currentSceneId !== id) {
+      historyStack.push(currentSceneId);
+    }
+
+    currentSceneId = id;
     destroy();
     updateMenu(id);
+    updateBackButton();
 
     if (meta.sceneType === 'object360') {
       const data = config.object360Scenes?.[id];
@@ -2438,8 +2482,26 @@
     delete panoConfig.sceneOrder;
     delete panoConfig.tourFirstScene;
 
+    decorateUniversalHotspots(panoConfig);
+
     panoViewer = pannellum.viewer('panorama', panoConfig);
-    panoViewer.on('scenechange', (sceneId) => updateMenu(sceneId));
+    panoViewer.on('scenechange', (sceneId) => {
+      if (!sceneId) return;
+
+      if (currentSceneId && sceneId !== currentSceneId) {
+        historyStack.push(currentSceneId);
+      }
+
+      currentSceneId = sceneId;
+      updateMenu(sceneId);
+      updateBackButton();
+    });
+  };
+
+  const goBack = () => {
+    const previous = historyStack.pop();
+    updateBackButton();
+    if (previous) showScene(previous, false);
   };
 
   const start = () => {
@@ -2451,17 +2513,23 @@
         const icon = meta.sceneType === 'object360'
           ? '◉ '
           : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
+
         return '<option value="' + escapeHtmlText(id) + '">' +
           icon + escapeHtmlText(meta.title || id) + '</option>';
       }).join('');
 
-      menu.addEventListener('change', () => showScene(menu.value));
+      menu.addEventListener('change', () => showScene(menu.value, true));
     }
 
-    showScene(config.tourFirstScene || order[0]);
+    if (backButton) {
+      backButton.addEventListener('click', goBack);
+    }
+
+    showScene(config.tourFirstScene || order[0], false);
   };
 
-  window.showTourScene = showScene;
+  window.showTourScene = (id) => showScene(id, true);
+  window.tourBack = goBack;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
