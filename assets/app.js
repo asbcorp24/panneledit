@@ -2749,7 +2749,8 @@
     css +=
       '.scene-text-overlay{position:fixed;inset:0;z-index:35;pointer-events:none;overflow:hidden}\n' +
       '.scene-text-object{position:absolute;pointer-events:none;max-width:90%;line-height:1.15;text-shadow:0 2px 14px rgba(0,0,0,.5);overflow-wrap:anywhere;animation-duration:.48s;animation-fill-mode:both}\n' +
-      '.scene-text-title{font-weight:900;letter-spacing:-.03em}.scene-text-description{font-weight:500;line-height:1.45}\n' +
+      '.scene-text-title{font-weight:900;letter-spacing:-.03em}.scene-text-description{font-weight:500;line-height:1.45}\n' +      '.scene-text-inner{white-space:pre-line}\n' +
+
       '.scene-text-bg-dark .scene-text-inner{display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(5,9,18,.64);backdrop-filter:blur(12px)}\n' +
       '.scene-text-bg-light .scene-text-inner{display:block;padding:.7em .9em;border:1px solid rgba(255,255,255,.35);border-radius:14px;background:rgba(255,255,255,.78);color:#101827;text-shadow:none;backdrop-filter:blur(12px)}\n' +
       '.scene-text-anim-fade{animation-name:sceneTextFade}.scene-text-anim-slide{animation-name:sceneTextSlide}.scene-text-anim-none{animation:none}\n' +
