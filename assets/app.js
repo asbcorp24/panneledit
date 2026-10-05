@@ -1895,9 +1895,11 @@
     };
   }
 
-  function buildPortableTourConfig(sceneFiles, multiresScenes = new Map()) {
-    const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: project.firstScene });
-    project.scenes.forEach((scene) => {
+  function buildPortableTourConfig(sceneFiles, multiresScenes = new Map(), objectSceneFiles = new Map()) {
+    const firstPanorama = project.scenes.find((scene) => scene.sceneType !== 'object360')?.id || null;
+    const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
+
+    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
       const sceneConfig = config.scenes[scene.id];
       if (!sceneConfig) return;
 
@@ -1920,6 +1922,17 @@
         sceneConfig.panorama = 'images/' + sceneFiles.get(scene.id);
       }
     });
+
+    config.tourFirstScene = project.firstScene || project.scenes[0]?.id || null;
+    config.sceneOrder = project.scenes.map((scene) => scene.id);
+    config.sceneMeta = Object.fromEntries(project.scenes.map((scene) => [
+      scene.id,
+      {
+        title: scene.title,
+        sceneType: scene.sceneType === 'object360' ? 'object360' : 'panorama'
+      }
+    ]));
+    config.object360Scenes = Object.fromEntries(objectSceneFiles);
     return config;
   }
 
@@ -1934,9 +1947,11 @@
       '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
       '  <link rel="stylesheet" href="assets/tour.css">\n' +
       '</head>\n<body>\n' +
+      '  <select id="sceneMenuExport" aria-label="Сцены тура"></select>\n' +
       '  <div id="panorama"></div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
+      '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
       '</body>\n</html>\n';
   }
@@ -2002,7 +2017,9 @@
       '.pnlm-info{border-radius:50%;box-shadow:0 0 0 4px rgba(31,214,187,.2)}\n' +
       '.editor-url-hotspot{width:24px!important;height:24px!important;border-radius:50%;background:#ffb74d!important;box-shadow:0 0 0 4px rgba(255,183,77,.18);cursor:pointer}\n' +
       '.editor-url-hotspot:before{content:"↗";display:grid;place-items:center;width:100%;height:100%;color:#171008;font-weight:900;font-size:13px}\n' +
-      'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n';
+      'noscript{position:fixed;inset:0;display:grid;place-items:center;padding:30px;text-align:center;color:#fff;background:#05070c}\n' +
+      '#sceneMenuExport{position:fixed;z-index:50;left:12px;top:12px;max-width:min(320px,calc(100vw - 24px));border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(6,10,18,.78);color:#fff;padding:8px 10px;backdrop-filter:blur(12px);font:600 12px system-ui}\n' +
+      '.object360-host{position:relative;overflow:hidden}.object360-viewer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(108,124,255,.12),transparent 38%),#040812;outline:0;user-select:none;touch-action:none;cursor:grab}.object360-viewer.dragging{cursor:grabbing}.object360-image-wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.object360-image{max-width:92%;max-height:88%;width:auto;height:auto;object-fit:contain;transform-origin:center center;transition:transform .08s linear;filter:drop-shadow(0 28px 55px rgba(0,0,0,.38));pointer-events:none}.object360-loading{position:absolute;left:50%;top:50%;translate:-50% -50%;padding:8px 11px;border-radius:9px;background:rgba(5,9,18,.78);color:#a9b4ca;font-size:10px}.object360-hud{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(8,13,24,.78);backdrop-filter:blur(12px)}.object360-counter,.object360-row-label{flex:none;padding:4px 7px;border-radius:7px;background:rgba(255,255,255,.055);font-size:9px}.object360-row-label{color:#75e7d6}.object360-hint{flex:1;color:#9ba7bd;font-size:9px;text-align:center}.object360-autoplay,.object360-reset{flex:none;width:34px;height:28px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer}\n';
 
     customIconFiles.forEach((filename, hotspotId) => {
       css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
@@ -2024,15 +2041,43 @@
     return "(() => {\n" +
       "  'use strict';\n" +
       "  const config = " + json + ";\n" +
-      "  const start = () => {\n" +
-      "    if (!window.pannellum) {\n" +
-      "      document.body.innerHTML = '<div style=\\\"padding:30px;color:white;background:#05070c;font-family:system-ui\\\">Не удалось загрузить Pannellum.</div>';\n" +
+      "  let panoViewer = null;\n" +
+      "  let objectViewer = null;\n" +
+      "  const host = document.getElementById('panorama');\n" +
+      "  const menu = document.getElementById('sceneMenuExport');\n" +
+      "  const destroy = () => {\n" +
+      "    if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }\n" +
+      "    if (objectViewer) { try { objectViewer.destroy(); } catch (_) {} objectViewer = null; }\n" +
+      "    host.innerHTML = '';\n" +
+      "  };\n" +
+      "  const updateMenu = (id) => { if (menu) menu.value = id || ''; };\n" +
+      "  const showScene = (id) => {\n" +
+      "    const meta = config.sceneMeta?.[id];\n" +
+      "    if (!meta) return;\n" +
+      "    destroy();\n" +
+      "    updateMenu(id);\n" +
+      "    if (meta.sceneType === 'object360') {\n" +
+      "      const data = config.object360Scenes?.[id];\n" +
+      "      if (!data || !window.Object360Viewer) { host.innerHTML = '<div style=\\"padding:30px;color:white\\">Object360 сцена недоступна</div>'; return; }\n" +
+      "      objectViewer = new Object360Viewer(host, data);\n" +
       "      return;\n" +
       "    }\n" +
-      "    window.tourViewer = pannellum.viewer('panorama', config);\n" +
+      "    if (!window.pannellum) { host.innerHTML = '<div style=\\"padding:30px;color:white\\">Pannellum не загрузился</div>'; return; }\n" +
+      "    const panoConfig = { ...config, default: { ...(config.default || {}), firstScene: id } };\n" +
+      "    delete panoConfig.object360Scenes; delete panoConfig.sceneMeta; delete panoConfig.sceneOrder; delete panoConfig.tourFirstScene;\n" +
+      "    panoViewer = pannellum.viewer('panorama', panoConfig);\n" +
+      "    panoViewer.on('scenechange', (sceneId) => updateMenu(sceneId));\n" +
       "  };\n" +
-      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });\n" +
-      "  else start();\n" +
+      "  const start = () => {\n" +
+      "    const order = config.sceneOrder || Object.keys(config.sceneMeta || {});\n" +
+      "    if (menu) {\n" +
+      "      menu.innerHTML = order.map((id) => { const m = config.sceneMeta[id] || {}; return '<option value=\\"' + id.replace(/&/g,'&amp;').replace(/\\"/g,'&quot;') + '\\">' + (m.sceneType === 'object360' ? '◉ ' : '◌ ') + String(m.title || id).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</option>'; }).join('');\n" +
+      "      menu.addEventListener('change', () => showScene(menu.value));\n" +
+      "    }\n" +
+      "    showScene(config.tourFirstScene || order[0]);\n" +
+      "  };\n" +
+      "  window.showTourScene = showScene;\n" +
+      "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();\n" +
       "})();\n";
   }
 
@@ -2466,21 +2511,24 @@
       const usedNames = new Set();
 
       const multiresScenes = new Map();
+      const objectSceneFiles = new Map();
+      const panoramaScenes = project.scenes.filter((scene) => scene.sceneType !== 'object360');
+      const objectScenes = project.scenes.filter((scene) => scene.sceneType === 'object360');
 
       if (project.settings.multiresEnabled) {
-        for (let index = 0; index < project.scenes.length; index++) {
-          const scene = project.scenes[index];
+        for (let index = 0; index < panoramaScenes.length; index++) {
+          const scene = panoramaScenes[index];
           const multi = await generateSceneMultires(
             root,
             scene,
             index,
-            project.scenes.length,
+            panoramaScenes.length,
             button
           );
           multiresScenes.set(scene.id, multi);
         }
       } else {
-        project.scenes.forEach((scene, index) => {
+        panoramaScenes.forEach((scene, index) => {
           const ext = extensionForScene(scene);
           const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
           let filename = baseName + '.' + ext;
@@ -2495,11 +2543,45 @@
         });
       }
 
-      const config = buildPortableTourConfig(sceneFiles, multiresScenes);
+      for (let sceneIndex = 0; sceneIndex < objectScenes.length; sceneIndex++) {
+        const scene = objectScenes[sceneIndex];
+        const data = normalizeObject360Data(scene.object360 || {});
+        const sceneDir = safeFilename(scene.id || scene.title, 'object-' + (sceneIndex + 1));
+        const paths = Array.from({ length: data.rows }, () => Array(data.sectors).fill(''));
+
+        for (let row = 0; row < data.rows; row++) {
+          for (let sector = 0; sector < data.sectors; sector++) {
+            const frame = data.frames[row]?.[sector] || '';
+            if (!frame) continue;
+            const payload = dataUrlPayload(frame);
+            const mime = String(payload.mime || '').toLowerCase();
+            const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+            const filename = 'frame_' + String(sector).padStart(3, '0') + '.' + ext;
+            const path = 'object360/' + sceneDir + '/row_' + (row + 1) + '/' + filename;
+            if (payload.base64) root.file(path, payload.data, { base64: true });
+            else root.file(path, decodeURIComponent(payload.data));
+            paths[row][sector] = path;
+          }
+        }
+
+        objectSceneFiles.set(scene.id, {
+          sectors: data.sectors,
+          rows: data.rows,
+          frames: paths,
+          startSector: data.startSector,
+          startRow: data.startRow,
+          autoplay: data.autoplay,
+          captureMode: data.captureMode
+        });
+      }
+
+      const config = buildPortableTourConfig(sceneFiles, multiresScenes, objectSceneFiles);
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
+      const objectViewerAsset = await fetchRequiredAsset('assets/object360.js');
+      root.file('assets/object360.js', await objectViewerAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       root.file('README.txt',
         'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
@@ -2508,6 +2590,7 @@
         '- assets/tour.js — конфигурация и запуск тура\n' +
         '- assets/tour.css — оформление страницы\n' +
         '- images/ — исходные панорамы при обычном экспорте\n' +
+        '- object360/ — кадры сцен «Объект 360°»\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -2550,8 +2633,12 @@
       if (!imported.scenes.length) {
         throw new Error('В проекте нет сцен');
       }
-      if (imported.scenes.some((scene) => !scene.imageData)) {
-        throw new Error('В импортируемом проекте отсутствуют встроенные изображения');
+      if (imported.scenes.some((scene) =>
+        scene.sceneType === 'object360'
+          ? !countObjectFrames(scene.object360)
+          : !scene.imageData
+      )) {
+        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры');
       }
 
       project = imported;
