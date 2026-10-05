@@ -1004,7 +1004,7 @@
   function buildPannellumConfig({ useEmbeddedImages = true, firstSceneId = null } = {}) {
     const scenes = {};
 
-    project.scenes.filter((scene) => scene.sceneType !== 'object360').forEach((scene) => {
+    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
       scenes[scene.id] = {
         type: 'equirectangular',
         panorama: useEmbeddedImages ? scene.imageData : scene.filename,
@@ -1013,7 +1013,7 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType !== 'object360'))
+          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId && s.sceneType === 'panorama'))
           .map(hotspotToPannellum)
       };
     });
@@ -1047,6 +1047,10 @@
     if (objectViewer) {
       try { objectViewer.destroy(); } catch (error) { console.warn(error); }
       objectViewer = null;
+    }
+    if (stlViewer) {
+      try { stlViewer.destroy(); } catch (error) { console.warn(error); }
+      stlViewer = null;
     }
   }
 
@@ -1086,6 +1090,42 @@
       } catch (error) {
         console.error(error);
         showToast('Ошибка запуска Object 360°');
+      }
+      return;
+    }
+
+    if (scene.sceneType === 'stl') {
+      if (!window.StlViewer) {
+        showToast('STL Viewer не загрузился');
+        return;
+      }
+      const data = normalizeStlData(scene.stl || {});
+      scene.stl = data;
+      try {
+        stlViewer = new StlViewer(els.panorama, {
+          source: data.data,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          zoom: data.zoom,
+          wireframe: data.wireframe,
+          autoRotate: data.autoplay,
+          color: data.color,
+          onChange: (state) => {
+            els.coords.textContent =
+              'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
+              '° · zoom ' + Number(state.zoom).toFixed(2);
+          }
+        });
+        stlViewer.ready.catch((error) => {
+          console.error(error);
+          showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
+        });
+        els.coords.textContent =
+          'yaw ' + formatNum(data.yaw) + '° · pitch ' + formatNum(data.pitch) +
+          '° · zoom ' + Number(data.zoom).toFixed(2);
+      } catch (error) {
+        console.error(error);
+        showToast('Ошибка запуска STL Viewer');
       }
       return;
     }
@@ -1142,7 +1182,7 @@
     updateToolbarState();
 
     const target = getScene(sceneId);
-    if (viewer && target?.sceneType !== 'object360') {
+    if (viewer && target?.sceneType === 'panorama') {
       try {
         viewer.loadScene(sceneId);
         return;
