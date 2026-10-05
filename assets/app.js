@@ -635,6 +635,12 @@
 
   function renderProjectSettings() {
     els.projectTitle.value = project.title || '';
+    const projectMusic = normalizeAudioSlot(project.audio?.music || {}, { volume: 35, loop: true });
+    project.audio = { music: projectMusic };
+    els.projectMusicName.textContent = projectMusic.filename || 'Не выбрана';
+    els.projectMusicVolume.value = String(projectMusic.volume);
+    els.projectMusicVolumeValue.textContent = projectMusic.volume + '%';
+    els.projectMusicLoop.checked = Boolean(projectMusic.loop);
     els.sceneFadeEnabled.checked = Boolean(project.settings.fadeEnabled);
     els.sceneFadeDuration.value = Number(project.settings.fadeDuration ?? 900);
     els.autoRotateEnabled.checked = Boolean(project.settings.autoRotateEnabled);
@@ -714,6 +720,69 @@
       els.sceneHfov.value = Number(scene.hfov);
       els.sceneFilename.textContent = scene.filename || 'panorama.jpg';
     }
+
+    scene.audio = normalizeSceneAudio(scene.audio || {});
+    els.sceneMusicName.textContent = scene.audio.music.filename || 'Не выбрана';
+    els.sceneMusicVolume.value = String(scene.audio.music.volume);
+    els.sceneMusicVolumeValue.textContent = scene.audio.music.volume + '%';
+    els.sceneMusicLoop.checked = Boolean(scene.audio.music.loop);
+    els.sceneNarrationName.textContent = scene.audio.narration.filename || 'Не выбрана';
+    els.sceneNarrationVolume.value = String(scene.audio.narration.volume);
+    els.sceneNarrationVolumeValue.textContent = scene.audio.narration.volume + '%';
+
+    renderTextObjectList();
+  }
+
+  function textObjectMarkup(item, { editor = false } = {}) {
+    const classes = [
+      'scene-text-object',
+      'scene-text-' + item.type,
+      'scene-text-bg-' + item.background,
+      'scene-text-anim-' + item.animation,
+      editor ? 'is-editor' : ''
+    ].filter(Boolean).join(' ');
+
+    const style = [
+      'left:' + item.x + '%',
+      'top:' + item.y + '%',
+      'width:' + item.width + '%',
+      'font-size:' + item.fontSize + 'px',
+      'color:' + item.color,
+      'text-align:' + item.align
+    ].join(';');
+
+    return '<div class="' + classes + '" data-text-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
+      '<div class="scene-text-inner">' + escapeHtml(item.text).replace(/\n/g, '<br>') + '</div>' +
+      (editor ? '<span class="scene-text-drag-hint">перетащить</span>' : '') +
+      '</div>';
+  }
+
+  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true } = {}) {
+    if (!target) return;
+    const items = Array.isArray(scene?.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
+    if (scene) scene.textObjects = items;
+    target.innerHTML = items.map((item) => textObjectMarkup(item, { editor })).join('');
+    target.hidden = !scene || !items.length;
+  }
+
+  function renderTextObjectList() {
+    const scene = getScene();
+    const items = scene?.textObjects || [];
+    if (!items.length) {
+      els.textObjectList.className = 'text-object-list empty';
+      els.textObjectList.innerHTML = '<div class="empty-state">Нет текста</div>';
+      return;
+    }
+
+    els.textObjectList.className = 'text-object-list';
+    els.textObjectList.innerHTML = items.map((item) => {
+      const label = item.type === 'title' ? 'Заголовок' : 'Описание';
+      return '<article class="text-object-card" data-text-object-id="' + escapeHtml(item.id) + '">' +
+        '<span class="text-object-kind">' + (item.type === 'title' ? 'H' : 'T') + '</span>' +
+        '<div><b>' + escapeHtml(label) + '</b><span>' + escapeHtml(item.text || 'Без текста') + '</span></div>' +
+        '<em>' + Math.round(item.x) + '% / ' + Math.round(item.y) + '%</em>' +
+        '</article>';
+    }).join('');
   }
 
   function renderHotspotList() {
@@ -764,7 +833,9 @@
       ? 'Сохранить текущий кадр'
       : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
+    els.btnAddTextObject.disabled = !hasScene;
     els.viewerPlaceholder.hidden = hasScene;
+    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
   }
 
   function clampNumber(value, min, max, fallback) {
