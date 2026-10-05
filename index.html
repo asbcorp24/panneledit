@@ -57,6 +57,23 @@
             <span>Стартовая сцена</span>
             <select id="firstScene"></select>
           </label>
+
+          <div class="audio-settings-block">
+            <div class="mini-section-title">Музыка тура</div>
+            <div class="file-line">
+              <span id="projectMusicName">Не выбрана</span>
+              <label class="btn btn-small file-btn">MP3 / OGG / WAV<input id="projectMusicFile" type="file" accept="audio/mpeg,audio/ogg,audio/wav,audio/x-wav,.mp3,.ogg,.wav"></label>
+            </div>
+            <label class="range-field">
+              <span>Громкость <b id="projectMusicVolumeValue">35%</b></span>
+              <input id="projectMusicVolume" type="range" min="0" max="100" step="1" value="35">
+            </label>
+            <label class="switch-row">
+              <span><b>Повторять</b><small>Музыка продолжается между сценами</small></span>
+              <input id="projectMusicLoop" type="checkbox" checked>
+            </label>
+            <button type="button" class="btn btn-small btn-full" id="btnRemoveProjectMusic">Убрать музыку тура</button>
+          </div>
           <label class="switch-row">
             <span>
               <b>Плавный переход</b>
@@ -126,6 +143,7 @@
 
         <div class="viewer-wrap">
           <div id="panorama"></div>
+          <div id="sceneOverlay" class="scene-overlay" aria-label="Текстовые объекты сцены"></div>
           <div id="viewerPlaceholder" class="viewer-placeholder">
             <div class="placeholder-orbit">
               <span></span><span></span><span></span>
@@ -284,7 +302,54 @@
                 </div>
               </label>
             </div>
+            <div class="scene-audio-settings">
+              <div class="mini-section-title">Аудио сцены</div>
+
+              <div class="audio-slot">
+                <span class="audio-slot-title">Музыка сцены</span>
+                <div class="file-line">
+                  <span id="sceneMusicName">Не выбрана</span>
+                  <label class="btn btn-small file-btn">Выбрать<input id="sceneMusicFile" type="file" accept="audio/mpeg,audio/ogg,audio/wav,audio/x-wav,.mp3,.ogg,.wav"></label>
+                </div>
+                <label class="range-field">
+                  <span>Громкость <b id="sceneMusicVolumeValue">45%</b></span>
+                  <input id="sceneMusicVolume" type="range" min="0" max="100" step="1" value="45">
+                </label>
+                <label class="switch-row">
+                  <span><b>Повторять</b><small>Заменяет музыку тура в этой сцене</small></span>
+                  <input id="sceneMusicLoop" type="checkbox" checked>
+                </label>
+                <button type="button" class="btn btn-small btn-full" id="btnRemoveSceneMusic">Убрать музыку сцены</button>
+              </div>
+
+              <div class="audio-slot">
+                <span class="audio-slot-title">Озвучка / диктор</span>
+                <div class="file-line">
+                  <span id="sceneNarrationName">Не выбрана</span>
+                  <label class="btn btn-small file-btn">Выбрать<input id="sceneNarrationFile" type="file" accept="audio/mpeg,audio/ogg,audio/wav,audio/x-wav,.mp3,.ogg,.wav"></label>
+                </div>
+                <label class="range-field">
+                  <span>Громкость <b id="sceneNarrationVolumeValue">80%</b></span>
+                  <input id="sceneNarrationVolume" type="range" min="0" max="100" step="1" value="80">
+                </label>
+                <button type="button" class="btn btn-small btn-full" id="btnRemoveSceneNarration">Убрать озвучку</button>
+              </div>
+            </div>
+
             <button class="btn btn-danger btn-full" id="btnDeleteScene">Удалить сцену</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Текст</h2>
+              <p>Заголовки и описания</p>
+            </div>
+            <button class="icon-btn" id="btnAddTextObject" title="Добавить текст" disabled>＋</button>
+          </div>
+          <div id="textObjectList" class="text-object-list empty">
+            <div class="empty-state">Нет текста</div>
           </div>
         </section>
 
@@ -355,6 +420,91 @@
       <div class="modal-actions">
         <button class="btn" value="cancel">Отмена</button>
         <button class="btn btn-primary" id="confirmAddScene" value="default">Добавить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="textObjectDialog" class="modal">
+    <form method="dialog" id="textObjectForm">
+      <input id="textObjectEditId" type="hidden">
+      <div class="modal-head">
+        <div>
+          <h2 id="textObjectDialogTitle">Текстовый объект</h2>
+          <p>Текст показывается поверх текущей сцены</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Закрыть">×</button>
+      </div>
+
+      <label class="field">
+        <span>Тип</span>
+        <select id="textObjectType">
+          <option value="title">Заголовок</option>
+          <option value="description">Описание</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Текст</span>
+        <textarea id="textObjectText" rows="5" placeholder="Введите заголовок или описание"></textarea>
+      </label>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>X, %</span>
+          <input id="textObjectX" type="number" min="0" max="100" step="0.5" value="5">
+        </label>
+        <label class="field">
+          <span>Y, %</span>
+          <input id="textObjectY" type="number" min="0" max="100" step="0.5" value="8">
+        </label>
+        <label class="field">
+          <span>Ширина, %</span>
+          <input id="textObjectWidth" type="number" min="10" max="90" step="1" value="40">
+        </label>
+      </div>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>Размер</span>
+          <input id="textObjectFontSize" type="number" min="12" max="96" step="1" value="32">
+        </label>
+        <label class="field">
+          <span>Цвет</span>
+          <input id="textObjectColor" type="color" value="#ffffff">
+        </label>
+        <label class="field">
+          <span>Выравнивание</span>
+          <select id="textObjectAlign">
+            <option value="left">Слева</option>
+            <option value="center">По центру</option>
+            <option value="right">Справа</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Фон блока</span>
+        <select id="textObjectBackground">
+          <option value="none">Без фона</option>
+          <option value="dark">Тёмное стекло</option>
+          <option value="light">Светлое стекло</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Появление</span>
+        <select id="textObjectAnimation">
+          <option value="fade">Fade</option>
+          <option value="slide">Slide</option>
+          <option value="none">Без анимации</option>
+        </select>
+      </label>
+
+      <div class="modal-actions split">
+        <button type="button" class="btn btn-danger" id="btnDeleteTextObject" hidden>Удалить</button>
+        <span></span>
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn btn-primary" value="default">Сохранить</button>
       </div>
     </form>
   </dialog>
@@ -511,7 +661,14 @@
       <strong>Предпросмотр тура</strong>
       <button class="icon-btn" id="closePreview">×</button>
     </div>
-    <div id="previewPanorama"></div>
+    <div class="preview-stage">
+      <div id="previewPanorama"></div>
+      <div id="previewSceneOverlay" class="scene-overlay scene-overlay-preview"></div>
+      <div id="previewAudioControls" class="tour-audio-controls preview-audio-controls">
+        <button type="button" id="previewMusicButton" title="Музыка">♪</button>
+        <button type="button" id="previewNarrationButton" title="Озвучка">🔊</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="downloadDialog" class="modal download-modal">
@@ -541,6 +698,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="assets/object360.js?v=20261005-1"></script>
   <script src="assets/stl-viewer.js?v=20261005-2"></script>
-  <script src="assets/app.js?v=20261005-8"></script>
+  <script src="assets/app.js?v=20261005-9"></script>
 </body>
 </html>
