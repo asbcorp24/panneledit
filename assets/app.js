@@ -386,9 +386,12 @@
         : hotspot.type === 'url' ? hotspot.url || 'Ссылка'
         : hotspot.info || 'Информация';
       const icon = hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i';
+      const iconMarkup = hotspot.type === 'scene' && hotspot.iconPreset === 'preview' && hotspot.iconData
+        ? '<span class="hotspot-icon scene has-image"><img src="' + escapeHtml(hotspot.iconData) + '" alt=""></span>'
+        : '<span class="hotspot-icon ' + escapeHtml(hotspot.type) + '">' + icon + '</span>';
       return `
         <article class="hotspot-card" data-hotspot-id="${escapeHtml(hotspot.id)}">
-          <span class="hotspot-icon ${escapeHtml(hotspot.type)}">${icon}</span>
+          ${iconMarkup}
           <div>
             <b>${escapeHtml(hotspot.text || target)}</b>
             <span>${escapeHtml(target)}</span>
@@ -1272,6 +1275,7 @@
         '- assets/tour.js — конфигурация и запуск тура\n' +
         '- assets/tour.css — оформление страницы\n' +
         '- images/ — все панорамы\n' +
+        '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
         '- tour.json — конфигурация тура\n\n' +
         'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
