@@ -806,7 +806,7 @@
       ...base,
       type: 'info',
       text: hotspot.info ? ((hotspot.text ? hotspot.text + ': ' : '') + hotspot.info) : hotspot.text,
-      cssClass: hotspotStyleClass(hotspot)
+      cssClass: 'pnlm-info ' + hotspotStyleClass(hotspot)
     };
   }
 
