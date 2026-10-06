@@ -3,6 +3,7 @@ package ru.specdpo.object360
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -11,6 +12,7 @@ import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
 import android.view.Surface
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -110,6 +112,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CaptureOrientationSettings.apply(this)
         binding = ActivityArCaptureBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -128,6 +131,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         setupUi()
         requestLegacyStoragePermission()
+        applyResponsiveLayout()
         updateStaticUi()
     }
 
@@ -145,6 +149,9 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun setupUi() {
         binding.btnArBack.setOnClickListener { finish() }
+        binding.btnArOrientation.setOnClickListener {
+            showOrientationDialog()
+        }
 
         binding.btnAr36.setOnClickListener { changeGrid(36, captureSession.rows) }
         binding.btnAr72.setOnClickListener { changeGrid(72, captureSession.rows) }
@@ -774,6 +781,10 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun updateStaticUi() {
+        val orientationMode = CaptureOrientationSettings.get(this)
+        binding.btnArOrientation.text = "ОРИЕНТАЦИЯ: ${orientationMode.buttonLabel}"
+        binding.arCoverageOverlay.landscapeLayout =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         binding.btnArRows.text = if (captureSession.rows == 1) "1 РЯД" else "3 РЯДА"
         binding.btnArAuto.text = if (autoMode) "AUTO: ВКЛ" else "AUTO: ВЫКЛ"
 
@@ -807,6 +818,87 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arCoverageSphere.currentSector = currentSector
         binding.arCoverageSphere.captured = capturedKeys
     }
+
+    private fun showOrientationDialog() {
+        val modes = CaptureOrientationMode.values()
+        val current = CaptureOrientationSettings.get(this)
+
+        AlertDialog.Builder(this)
+            .setTitle("Ориентация съёмки")
+            .setSingleChoiceItems(
+                modes.map { it.title }.toTypedArray(),
+                current.ordinal
+            ) { dialog, which ->
+                val mode = modes[which]
+                CaptureOrientationSettings.set(this, mode)
+                CaptureOrientationSettings.apply(this, mode)
+                binding.btnArOrientation.text =
+                    "ОРИЕНТАЦИЯ: ${mode.buttonLabel}"
+                dialog.dismiss()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun applyResponsiveLayout() {
+        val landscape =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        binding.arCoverageOverlay.landscapeLayout = landscape
+
+        val topPadding = dp(if (landscape) 6 else 10)
+        binding.arTopPanel.setPadding(
+            topPadding,
+            topPadding,
+            topPadding,
+            topPadding
+        )
+
+        val bottomPadding = dp(if (landscape) 7 else 14)
+        binding.arBottomPanel.setPadding(
+            bottomPadding,
+            bottomPadding,
+            bottomPadding,
+            bottomPadding
+        )
+
+        binding.arGuideText.maxWidth = dp(if (landscape) 560 else 340)
+
+        binding.arMapPanel.layoutParams = binding.arMapPanel.layoutParams.apply {
+            width = dp(if (landscape) 124 else 148)
+            height = dp(if (landscape) 250 else 330)
+        }
+        binding.arMapPanel.requestLayout()
+
+        binding.arTrajectoryOverlay.layoutParams =
+            binding.arTrajectoryOverlay.layoutParams.apply {
+                width = dp(if (landscape) 106 else 124)
+                height = dp(if (landscape) 106 else 124)
+            }
+        binding.arTrajectoryOverlay.requestLayout()
+
+        binding.arCoverageSphere.layoutParams =
+            binding.arCoverageSphere.layoutParams.apply {
+                width = dp(if (landscape) 116 else 134)
+                height = dp(if (landscape) 118 else 142)
+            }
+        binding.arCoverageSphere.requestLayout()
+
+        binding.arRowPanel.layoutParams = binding.arRowPanel.layoutParams.apply {
+            width = if (landscape) dp(70) else ViewGroup.LayoutParams.WRAP_CONTENT
+        }
+        binding.arRowPanel.requestLayout()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        displayRotation = currentDisplayRotation()
+        applyResponsiveLayout()
+        updateStaticUi()
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun showReview() {
         val text = buildString {
