@@ -4664,7 +4664,16 @@
         let backgroundMode = data.backgroundMode || 'hitech';
 
         if (backgroundMode === 'image' && data.backgroundImageData) {
-          const bgPayload = dataUrlPayload(data.backgroundImageData);
+          const settings = normalizeExportSettings(project.exportSettings || {});
+          const bgData = settings.optimizeEnabled
+            ? await optimizeImageDataUrl(
+                data.backgroundImageData,
+                Math.min(settings.maxImageWidth, 4096),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(data.backgroundImageData)
+              )
+            : data.backgroundImageData;
+          const bgPayload = dataUrlPayload(bgData);
           const bgMime = String(bgPayload.mime || '').toLowerCase();
           const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
           const bgName = 'stl-bg-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
@@ -4674,7 +4683,11 @@
         } else if (backgroundMode === 'panorama' && data.backgroundSceneId) {
           const bgScene = getScene(data.backgroundSceneId);
           if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
-            const bgPayload = dataUrlPayload(bgScene.imageData);
+            const settings = normalizeExportSettings(project.exportSettings || {});
+            const bgData = settings.optimizeEnabled
+              ? await optimizeImageDataUrl(bgScene.imageData, settings.maxImageWidth, settings.jpegQuality, false)
+              : bgScene.imageData;
+            const bgPayload = dataUrlPayload(bgData);
             const bgMime = String(bgPayload.mime || '').toLowerCase();
             const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
             const bgName = 'stl-panorama-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
