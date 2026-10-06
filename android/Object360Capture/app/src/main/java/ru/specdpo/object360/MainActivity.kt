@@ -3,10 +3,13 @@ package ru.specdpo.object360
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Surface
+import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -37,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private var imageCapture: ImageCapture? = null
+    private var previewUseCase: Preview? = null
     private lateinit var session: CaptureSession
     private lateinit var orientationTracker: OrientationTracker
 
@@ -62,6 +66,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CaptureOrientationSettings.apply(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -82,6 +87,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUi() {
+        binding.btnCaptureOrientation.setOnClickListener {
+            showOrientationDialog()
+        }
         binding.btnArMode.setOnClickListener {
             startActivity(Intent(this, ArCaptureActivity::class.java))
         }
@@ -112,6 +120,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnReview.setOnClickListener { showReview() }
         binding.btnExport.setOnClickListener { exportZip() }
+        applyResponsiveLayout()
         updateUi()
     }
 
@@ -131,11 +140,17 @@ class MainActivity : AppCompatActivity() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.previewView.surfaceProvider)
-            }
+            val rotation = currentDisplayRotation()
+            val preview = Preview.Builder()
+                .setTargetRotation(rotation)
+                .build()
+                .also {
+                    it.setSurfaceProvider(binding.previewView.surfaceProvider)
+                }
+            previewUseCase = preview
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setTargetRotation(rotation)
                 .build()
             try {
                 cameraProvider.unbindAll()
@@ -268,6 +283,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUi() {
+        val orientationMode = CaptureOrientationSettings.get(this)
+        binding.btnCaptureOrientation.text = "ОРИЕНТАЦИЯ: ${orientationMode.buttonLabel}"
+        binding.coverageOverlay.landscapeLayout =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         binding.coverageOverlay.sectors = session.sectors
         binding.coverageOverlay.rows = session.rows
         binding.coverageOverlay.currentSector = currentSector
@@ -386,6 +405,82 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun showOrientationDialog() {
+        val modes = CaptureOrientationMode.values()
+        val current = CaptureOrientationSettings.get(this)
+
+        AlertDialog.Builder(this)
+            .setTitle("Ориентация съёмки")
+            .setSingleChoiceItems(
+                modes.map { it.title }.toTypedArray(),
+                current.ordinal
+            ) { dialog, which ->
+                val mode = modes[which]
+                CaptureOrientationSettings.set(this, mode)
+                CaptureOrientationSettings.apply(this, mode)
+                binding.btnCaptureOrientation.text =
+                    "ОРИЕНТАЦИЯ: ${mode.buttonLabel}"
+                dialog.dismiss()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun applyResponsiveLayout() {
+        val landscape =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        binding.coverageOverlay.landscapeLayout = landscape
+
+        val horizontalPadding = dp(if (landscape) 8 else 12)
+        binding.topPanel.setPadding(
+            horizontalPadding,
+            horizontalPadding,
+            horizontalPadding,
+            horizontalPadding
+        )
+
+        val bottomPadding = dp(if (landscape) 8 else 16)
+        binding.bottomPanel.setPadding(
+            bottomPadding,
+            bottomPadding,
+            bottomPadding,
+            bottomPadding
+        )
+
+        binding.hintText.maxWidth = dp(if (landscape) 520 else 340)
+
+        binding.btnArMode.layoutParams = binding.btnArMode.layoutParams.apply {
+            width = if (landscape) dp(520) else ViewGroup.LayoutParams.MATCH_PARENT
+        }
+        binding.btnArMode.requestLayout()
+    }
+
+    private fun updateCameraRotation() {
+        val rotation = currentDisplayRotation()
+        previewUseCase?.targetRotation = rotation
+        imageCapture?.targetRotation = rotation
+    }
+
+    private fun currentDisplayRotation(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: Surface.ROTATION_0
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateCameraRotation()
+        applyResponsiveLayout()
+        updateUi()
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     override fun onResume() {
         super.onResume()
