@@ -112,7 +112,6 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        CaptureOrientationSettings.apply(this)
         binding = ActivityArCaptureBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -130,6 +129,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
 
         setupUi()
+        CaptureOrientationSettings.apply(this)
         requestLegacyStoragePermission()
         applyResponsiveLayout()
         updateStaticUi()
