@@ -255,6 +255,7 @@
   let previewViewer = null;
   let previewObjectViewer = null;
   let previewStlViewer = null;
+  let previewSceneId = null;
   let previewMusicAudio = null;
   let previewNarrationAudio = null;
   let dbPromise = null;
@@ -4868,13 +4869,16 @@
       previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
+    previewSceneId = null;
   }
 
   function renderPreviewScene(sceneId) {
     const scene = getScene(sceneId);
     if (!scene) return;
+    previewSceneId = scene.id;
 
     destroyPreviewViewers();
+    previewSceneId = scene.id;
     renderCompositeOverlay(scene, els.previewSceneOverlay, null, { editor: false });
     configurePreviewAudio(scene);
 
@@ -4923,6 +4927,7 @@
     previewViewer.on('scenechange', (nextSceneId) => {
       const nextScene = getScene(nextSceneId);
       if (!nextScene) return;
+      previewSceneId = nextScene.id;
       renderCompositeOverlay(nextScene, els.previewSceneOverlay, null, { editor: false });
       configurePreviewAudio(nextScene);
     });
@@ -6095,7 +6100,7 @@
       }
     });
     els.previewSceneOverlay.addEventListener('click', (event) => {
-      const scene = getScene();
+      const scene = getScene(previewSceneId);
       const hotspotEl = event.target.closest('[data-screen-hotspot-id]');
       if (hotspotEl && scene) {
         const hotspot = (scene.hotspots || []).find((item) => item.id === hotspotEl.dataset.screenHotspotId);
