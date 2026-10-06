@@ -273,6 +273,47 @@
     return out;
   }
 
+  function rotateXVec(v, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c];
+  }
+
+  function rotateYVec(v, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
+  }
+
+  function normalizeVec(v) {
+    const len = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / len, v[1] / len, v[2] / len];
+  }
+
+  function rayTriangle(origin, direction, a, b, c) {
+    const eps = 1e-7;
+    const e1 = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+    const e2 = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+    const p = [
+      direction[1]*e2[2] - direction[2]*e2[1],
+      direction[2]*e2[0] - direction[0]*e2[2],
+      direction[0]*e2[1] - direction[1]*e2[0]
+    ];
+    const det = e1[0]*p[0] + e1[1]*p[1] + e1[2]*p[2];
+    if (Math.abs(det) < eps) return null;
+    const inv = 1 / det;
+    const tvec = [origin[0]-a[0], origin[1]-a[1], origin[2]-a[2]];
+    const u = (tvec[0]*p[0] + tvec[1]*p[1] + tvec[2]*p[2]) * inv;
+    if (u < 0 || u > 1) return null;
+    const q = [
+      tvec[1]*e1[2] - tvec[2]*e1[1],
+      tvec[2]*e1[0] - tvec[0]*e1[2],
+      tvec[0]*e1[1] - tvec[1]*e1[0]
+    ];
+    const v = (direction[0]*q[0] + direction[1]*q[1] + direction[2]*q[2]) * inv;
+    if (v < 0 || u + v > 1) return null;
+    const t = (e2[0]*q[0] + e2[1]*q[1] + e2[2]*q[2]) * inv;
+    return t > eps ? t : null;
+  }
+
   class StlViewer {
     constructor(container, options = {}) {
       this.container = typeof container === 'string' ? document.getElementById(container) : container;
@@ -624,6 +665,69 @@
     setColor(color) {
       this.color = normalizeHex(color);
       this.emitChange();
+    }
+
+    pick(clientX, clientY) {
+      if (!this.geometry?.positions?.length) return null;
+      const rect = this.canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+
+      const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = 1 - ((clientY - rect.top) / rect.height) * 2;
+      const aspect = rect.width / rect.height;
+      const tan = Math.tan((42 * DEG) / 2);
+      let direction = normalizeVec([ndcX * aspect * tan, ndcY * tan, -1]);
+
+      const distance = 4.2 / this.zoom;
+      let origin = [0, 0, distance];
+
+      // inverse of R = Rx(pitch) * Ry(yaw): R^-1 = Ry(-yaw) * Rx(-pitch)
+      origin = rotateXVec(origin, -this.pitch * DEG);
+      origin = rotateYVec(origin, -this.yaw * DEG);
+      direction = rotateXVec(direction, -this.pitch * DEG);
+      direction = rotateYVec(direction, -this.yaw * DEG);
+      direction = normalizeVec(direction);
+
+      const pos = this.geometry.positions;
+      let bestT = Infinity;
+      let best = null;
+      for (let i = 0; i + 8 < pos.length; i += 9) {
+        const a = [pos[i], pos[i+1], pos[i+2]];
+        const b = [pos[i+3], pos[i+4], pos[i+5]];
+        const cc = [pos[i+6], pos[i+7], pos[i+8]];
+        const t = rayTriangle(origin, direction, a, b, cc);
+        if (t !== null && t < bestT) {
+          bestT = t;
+          best = [
+            origin[0] + direction[0] * t,
+            origin[1] + direction[1] * t,
+            origin[2] + direction[2] * t
+          ];
+        }
+      }
+      if (!best) return null;
+      return { point: best, screen: this.projectPoint(best) };
+    }
+
+    projectPoint(point) {
+      if (!point || point.length < 3) return null;
+      let v = rotateYVec([Number(point[0])||0, Number(point[1])||0, Number(point[2])||0], this.yaw * DEG);
+      v = rotateXVec(v, this.pitch * DEG);
+      const distance = 4.2 / this.zoom;
+      v[2] -= distance;
+      if (v[2] >= -0.05) return { visible:false, x:-100, y:-100, depth:v[2] };
+
+      const rect = this.canvas.getBoundingClientRect();
+      const aspect = Math.max(0.001, rect.width / Math.max(1, rect.height));
+      const f = 1 / Math.tan((42 * DEG) / 2);
+      const ndcX = (v[0] * f / aspect) / (-v[2]);
+      const ndcY = (v[1] * f) / (-v[2]);
+      const x = (ndcX + 1) * 50;
+      const y = (1 - ndcY) * 50;
+      return {
+        visible: x >= -12 && x <= 112 && y >= -12 && y <= 112,
+        x, y, depth:-v[2]
+      };
     }
 
     getState() {
