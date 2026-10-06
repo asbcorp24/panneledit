@@ -4346,6 +4346,77 @@
     }));
   }
 
+  async function optimizeImageDataUrl(dataUrl, maxWidth, quality = 84) {
+    if (!dataUrl || !/^data:image\//i.test(dataUrl)) return dataUrl;
+    if (!normalizeExportSettings(project.exportSettings || {}).optimizeEnabled) return dataUrl;
+
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Не удалось прочитать изображение для оптимизации'));
+      img.src = dataUrl;
+    });
+
+    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 8192));
+    const ratio = targetWidth / Math.max(1, image.naturalWidth || image.width);
+    const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
+    if (ratio >= 0.999 && /image\/jpe?g/i.test(dataUrl) && quality >= 92) return dataUrl;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext('2d', { alpha:false });
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,targetWidth,targetHeight);
+    ctx.drawImage(image,0,0,targetWidth,targetHeight);
+    return canvas.toDataURL('image/jpeg', clampNumber(quality,45,100,84) / 100);
+  }
+
+  function exportedManifest() {
+    const title = project.title || 'Виртуальная экскурсия';
+    return JSON.stringify({
+      name:title,
+      short_name:title.slice(0,32),
+      start_url:'./',
+      display:'standalone',
+      background_color:'#05070c',
+      theme_color:'#05070c',
+      orientation:'any',
+      icons:[
+        {src:'icons/app-icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}
+      ]
+    },null,2);
+  }
+
+  function exportedAppIconSvg() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c8cff"/><stop offset="1" stop-color="#20d6bb"/></linearGradient></defs>' +
+      '<rect width="512" height="512" rx="110" fill="#05070c"/><circle cx="256" cy="256" r="166" fill="none" stroke="url(#g)" stroke-width="28"/>' +
+      '<path d="M145 256h222M256 145c68 58 68 164 0 222M256 145c-68 58-68 164 0 222" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round"/>' +
+      '</svg>';
+  }
+
+  function exportedServiceWorker() {
+    return "const CACHE='pannellum-tour-v6';\n" +
+      "const CORE=['./','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest'];\n" +
+      "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));\n" +
+      "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));\n" +
+      "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>hit)));});\n";
+  }
+
+  function qrDataUrlForUrl(url) {
+    if (!url || !window.QRCode) return '';
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:256px;height:256px';
+    document.body.appendChild(host);
+    try {
+      new QRCode(host,{text:url,width:256,height:256,colorDark:'#06101f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+      return host.querySelector('canvas')?.toDataURL?.('image/png') || host.querySelector('img')?.src || '';
+    } finally {
+      host.remove();
+    }
+  }
+
   async function exportTourPackage() {
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
@@ -4388,8 +4459,11 @@
           multiresScenes.set(scene.id, multi);
         }
       } else {
-        panoramaScenes.forEach((scene, index) => {
-          const ext = extensionForScene(scene);
+        for (let index = 0; index < panoramaScenes.length; index++) {
+          const scene = panoramaScenes[index];
+          const settings = normalizeExportSettings(project.exportSettings || {});
+          const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
+          const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
           const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
           let filename = baseName + '.' + ext;
           let suffix = 2;
@@ -4397,10 +4471,10 @@
           usedNames.add(filename.toLowerCase());
           sceneFiles.set(scene.id, filename);
 
-          const payload = dataUrlPayload(scene.imageData);
+          const payload = dataUrlPayload(optimized);
           if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
           else root.file('images/' + filename, decodeURIComponent(payload.data));
-        });
+        }
       }
 
       for (let sceneIndex = 0; sceneIndex < objectScenes.length; sceneIndex++) {
@@ -4413,9 +4487,11 @@
           for (let sector = 0; sector < data.sectors; sector++) {
             const frame = data.frames[row]?.[sector] || '';
             if (!frame) continue;
-            const payload = dataUrlPayload(frame);
+            const settings = normalizeExportSettings(project.exportSettings || {});
+            const optimizedFrame = await optimizeImageDataUrl(frame, settings.objectFrameWidth, settings.jpegQuality);
+            const payload = dataUrlPayload(optimizedFrame);
             const mime = String(payload.mime || '').toLowerCase();
-            const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+            const ext = settings.optimizeEnabled ? 'jpg' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
             const filename = 'frame_' + String(sector).padStart(3, '0') + '.' + ext;
             const path = 'object360/' + sceneDir + '/row_' + (row + 1) + '/' + filename;
             if (payload.base64) root.file(path, payload.data, { base64: true });
@@ -4534,6 +4610,18 @@
       const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
       root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
+      if (config.exportSettings?.pwaEnabled) {
+        root.file('manifest.webmanifest', exportedManifest());
+        root.file('sw.js', exportedServiceWorker());
+        root.file('icons/app-icon.svg', exportedAppIconSvg());
+      }
+      if (config.exportSettings?.publicUrl) {
+        const qrData = qrDataUrlForUrl(config.exportSettings.publicUrl);
+        if (qrData) {
+          const qrPayload = dataUrlPayload(qrData);
+          root.file('qr-tour.png', qrPayload.data, { base64:true });
+        }
+      }
       root.file('README.txt',
         'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
         'Содержимое:\n' +
@@ -4545,6 +4633,9 @@
         '- models/ — STL-модели 3D-сцен\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- audio/ — музыка тура, музыка сцен и озвучка\n' +
+        '- media/ — фото, видео, PDF и галереи\n' +
+        '- manifest.webmanifest / sw.js — PWA (если включено)\n' +
+        '- qr-tour.png — QR публичной ссылки (если указан URL)\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
