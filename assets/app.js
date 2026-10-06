@@ -1669,6 +1669,8 @@
           ...base,
           type: 'scene',
           sceneId: hotspot.targetSceneId,
+          tourTargetSceneId: hotspot.targetSceneId,
+          tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
           cssClass
         };
       }
@@ -1678,6 +1680,7 @@
         type: 'info',
         cssClass,
         tourTargetSceneId: hotspot.targetSceneId,
+        tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
         clickHandlerFunc: () => {
           if (typeof universalSceneHandler === 'function') {
             universalSceneHandler(hotspot.targetSceneId);
@@ -1792,6 +1795,7 @@
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
               '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
         els.coords.textContent =
@@ -1826,6 +1830,7 @@
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
               '° · zoom ' + Number(state.zoom).toFixed(2);
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
         stlViewer.ready.catch((error) => {
@@ -2460,13 +2465,29 @@
     document.querySelector('.hotspot-url-field').hidden = type !== 'url';
   }
 
-  function openHotspotDialog(pitch, yaw, hotspotId = null) {
+  function openHotspotDialog(pitch, yaw, hotspotId = null, anchor = null) {
     const scene = getScene();
     if (!scene) return;
 
     els.hotspotForm.reset();
     els.hotspotEditId.value = hotspotId || '';
     let hotspot = hotspotId ? scene.hotspots.find((item) => item.id === hotspotId) : null;
+
+    pendingHotspotAnchor = hotspot
+      ? {
+          anchorMode: hotspot.anchorMode,
+          anchorX: hotspot.anchorX,
+          anchorY: hotspot.anchorY,
+          anchorSector: hotspot.anchorSector,
+          anchorRow: hotspot.anchorRow,
+          anchorYaw: hotspot.anchorYaw,
+          anchorPitch: hotspot.anchorPitch
+        }
+      : (anchor || (scene.sceneType === 'object360'
+        ? { anchorMode:'object360', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
+        : scene.sceneType === 'stl'
+          ? { anchorMode:'stl-screen', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
+          : { anchorMode:'panorama', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:Number(yaw)||0, anchorPitch:Number(pitch)||0 }));
 
     const p = hotspot ? hotspot.pitch : pitch;
     const y = hotspot ? hotspot.yaw : yaw;
@@ -2476,6 +2497,7 @@
     els.hotspotPitch.value = formatNum(p);
     els.hotspotYaw.value = formatNum(y);
     els.hotspotText.value = hotspot?.text || '';
+    els.hotspotTransition.value = hotspot?.transition || project.settings.defaultTransition || 'fade';
     els.hotspotUrl.value = hotspot?.url || '';
     els.hotspotInfo.value = hotspot?.info || '';
     loadGlowControls(hotspot);
@@ -2487,6 +2509,24 @@
     els.hotspotIconFile.value = '';
 
     populateHotspotTargets(hotspot?.targetSceneId || '');
+    if (pendingHotspotAnchor?.anchorMode === 'object360') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'Object360: кадр ' + ((pendingHotspotAnchor.anchorSector || 0) + 1) +
+        ', ряд ' + ((pendingHotspotAnchor.anchorRow || 0) + 1) +
+        ', позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
+        Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else if (pendingHotspotAnchor?.anchorMode === 'stl-screen') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'STL: привязка к ракурсу yaw ' + formatNum(pendingHotspotAnchor.anchorYaw) +
+        '° / pitch ' + formatNum(pendingHotspotAnchor.anchorPitch) +
+        '°, позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
+        Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else {
+      els.hotspotAnchorInfo.hidden = true;
+      els.hotspotAnchorInfo.textContent = '';
+    }
     const activeType = hotspot?.type || (project.scenes.length > 1 ? 'scene' : 'info');
     setHotspotType(activeType);
     setHotspotIconPreset(hotspot?.iconPreset || (activeType === 'scene' ? 'preview' : 'arrow'));
@@ -2561,7 +2601,17 @@
       glowPulse: els.hotspotGlowPulse.checked,
       glowPulseSpeed: clampNumber(els.hotspotGlowPulseSpeed.value, 0.5, 4, 1.6),
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
-      info: type === 'info' ? els.hotspotInfo.value.trim() : ''
+      info: type === 'info' ? els.hotspotInfo.value.trim() : '',
+      transition: els.hotspotTransition.value || project.settings.defaultTransition || 'fade',
+      anchorMode: pendingHotspotAnchor?.anchorMode || (scene.sceneType === 'panorama' ? 'panorama' : scene.sceneType === 'object360' ? 'object360' : 'stl-screen'),
+      anchorX: pendingHotspotAnchor?.anchorX ?? 50,
+      anchorY: pendingHotspotAnchor?.anchorY ?? 50,
+      anchorSector: pendingHotspotAnchor?.anchorSector ?? 0,
+      anchorRow: pendingHotspotAnchor?.anchorRow ?? 0,
+      anchorYaw: pendingHotspotAnchor?.anchorYaw ?? Number(yaw) || 0,
+      anchorPitch: pendingHotspotAnchor?.anchorPitch ?? Number(pitch) || 0,
+      visible: hotspot.visible !== false,
+      locked: Boolean(hotspot.locked)
     });
 
     els.hotspotDialog.close();
