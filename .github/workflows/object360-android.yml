@@ -43,11 +43,8 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses > /dev/null
 
-      - name: Inspect Android 17 SDK packages
-        run: android sdk list --all --all-versions --canary | grep -Ei "android-37|cinnamon|build-tools.*37" || true
-
       - name: Install Android API 37
-        run: sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+        run: android sdk install platform-tools platforms/android-37.0 build-tools/37.0.0
 
       - name: Build debug APK
         run: gradle clean assembleDebug --stacktrace
