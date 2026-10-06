@@ -44,7 +44,7 @@ jobs:
         run: yes | sdkmanager --licenses > /dev/null
 
       - name: Install Android API 37
-        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+        run: sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;37.0.0"
 
       - name: Build debug APK
         run: gradle clean assembleDebug --stacktrace
