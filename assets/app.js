@@ -1806,6 +1806,7 @@
             renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
+        renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
         els.coords.textContent =
           'угол ' + formatNum(objectFrameAngle(data, data.startSector)) + '° · кадр ' +
           (data.startSector + 1) + '/' + data.sectors;
@@ -1841,6 +1842,7 @@
             renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
+        renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true });
         stlViewer.ready.catch((error) => {
           console.error(error);
           showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
@@ -3813,6 +3815,7 @@
         const data = config.object360Scenes?.[id];
         if (!data || !window.Object360Viewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
         objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderOverlay(id,state)});
+        renderOverlay(id,objectViewer.getState());
         return;
       }
       if (meta.sceneType === 'stl') {
@@ -3823,6 +3826,7 @@
           autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
           onChange:(state)=>renderOverlay(id,state)
         });
+        renderOverlay(id,stlViewer.getState());
         stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
@@ -3913,7 +3917,14 @@
 
   const start = () => {
     const order = config.sceneOrder || Object.keys(config.sceneMeta || {});
-    if (config.exportSettings?.kioskMode) document.body.classList.add('kiosk');
+    if (config.exportSettings?.kioskMode) {
+      document.body.classList.add('kiosk');
+      try {
+        history.pushState({kiosk:true},'',location.href);
+        window.addEventListener('popstate',()=>history.go(1));
+      } catch (_) {}
+      document.addEventListener('contextmenu',(event)=>event.preventDefault());
+    }
 
     if (menu) {
       menu.innerHTML = '';
@@ -4801,6 +4812,7 @@
         autoplay: data.autoplay,
         onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
+      renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
     }
 
@@ -4819,6 +4831,7 @@
         backgroundImage: stlBackgroundImageForData(data),
         onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
+      renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false });
       previewStlViewer.ready.catch(console.error);
       return;
     }
