@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 5;
+  const PROJECT_VERSION = 6;
 
   const $ = (id) => document.getElementById(id);
 
@@ -200,6 +200,11 @@
   let pendingZipDownloadUrl = '';
   let pendingZipBlob = null;
   let pendingZipFilename = '';
+  let undoStack = [];
+  let redoStack = [];
+  let historySnapshot = '';
+  let applyingHistory = false;
+  const HISTORY_LIMIT = 60;
 
   function createEmptyProject() {
     return {
@@ -209,6 +214,27 @@
       audio: {
         music: { data: '', filename: '', volume: 35, loop: true }
       },
+      startScreen: {
+        enabled: true,
+        title: 'Виртуальная экскурсия',
+        subtitle: '',
+        coverData: '',
+        coverFilename: '',
+        allowSilent: true
+      },
+      guide: {
+        enabled: false,
+        steps: []
+      },
+      exportSettings: {
+        optimizeEnabled: true,
+        jpegQuality: 84,
+        maxImageWidth: 8192,
+        objectFrameWidth: 1280,
+        pwaEnabled: true,
+        kioskMode: false,
+        publicUrl: ''
+      },
       settings: {
         fadeEnabled: true,
         fadeDuration: 900,
@@ -217,7 +243,8 @@
         multiresEnabled: false,
         multiresTileSize: 512,
         multiresQuality: 85,
-        multiresMaxCubeSize: 4096
+        multiresMaxCubeSize: 4096,
+        defaultTransition: 'fade'
       },
       scenes: []
     };
@@ -479,6 +506,7 @@
   }
 
   function markDirty({ rerenderViewer = false } = {}) {
+    rememberHistory();
     setSaveState('dirty');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persistProject, 350);
@@ -522,8 +550,139 @@
       color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#ffffff',
       align: ['left','center','right'].includes(input.align) ? input.align : 'left',
       background: ['none','dark','light'].includes(input.background) ? input.background : (type === 'description' ? 'dark' : 'none'),
-      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade'
+      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade',
+      visible: input.visible !== false,
+      locked: Boolean(input.locked)
     };
+  }
+
+  function normalizeLayerFlags(input = {}) {
+    return {
+      visible: input.visible !== false,
+      locked: Boolean(input.locked)
+    };
+  }
+
+  function normalizeMediaObject(input = {}) {
+    const type = ['image','gallery','video','pdf','button'].includes(input.type) ? input.type : 'image';
+    const flags = normalizeLayerFlags(input);
+    return {
+      id: String(input.id || uid('media')),
+      type,
+      title: String(input.title || ''),
+      data: String(input.data || ''),
+      filename: String(input.filename || ''),
+      gallery: Array.isArray(input.gallery) ? input.gallery.map((item) => ({
+        data: String(item?.data || ''),
+        filename: String(item?.filename || '')
+      })).filter((item) => item.data) : [],
+      url: String(input.url || ''),
+      targetSceneId: String(input.targetSceneId || ''),
+      x: clampNumber(input.x, 0, 100, 10),
+      y: clampNumber(input.y, 0, 100, 20),
+      width: clampNumber(input.width, 8, 95, type === 'button' ? 22 : 36),
+      height: clampNumber(input.height, 6, 90, type === 'button' ? 10 : 32),
+      fit: ['contain','cover'].includes(input.fit) ? input.fit : 'contain',
+      autoplay: Boolean(input.autoplay),
+      loop: Boolean(input.loop),
+      muted: input.muted !== false,
+      background: ['none','dark','light'].includes(input.background) ? input.background : 'dark',
+      animation: ['none','fade','slide','zoom'].includes(input.animation) ? input.animation : 'fade',
+      visible: flags.visible,
+      locked: flags.locked
+    };
+  }
+
+  function normalizeGuide(input = {}, scenes = []) {
+    const ids = new Set(scenes.map((scene) => scene.id));
+    const steps = Array.isArray(input.steps) ? input.steps.map((step) => ({
+      id: String(step.id || uid('guide')),
+      sceneId: String(step.sceneId || ''),
+      duration: clampNumber(step.duration, 2, 600, 12),
+      narrationAuto: Boolean(step.narrationAuto),
+      highlightHotspotId: String(step.highlightHotspotId || '')
+    })).filter((step) => ids.has(step.sceneId)) : [];
+    return { enabled: Boolean(input.enabled), steps };
+  }
+
+  function normalizeStartScreen(input = {}, title = '') {
+    return {
+      enabled: input.enabled !== false,
+      title: String(input.title || title || 'Виртуальная экскурсия'),
+      subtitle: String(input.subtitle || ''),
+      coverData: String(input.coverData || ''),
+      coverFilename: String(input.coverFilename || ''),
+      allowSilent: input.allowSilent !== false
+    };
+  }
+
+  function normalizeExportSettings(input = {}) {
+    return {
+      optimizeEnabled: input.optimizeEnabled !== false,
+      jpegQuality: clampNumber(input.jpegQuality, 45, 100, 84),
+      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 8192),
+      objectFrameWidth: clampNumber(input.objectFrameWidth, 480, 4096, 1280),
+      pwaEnabled: input.pwaEnabled !== false,
+      kioskMode: Boolean(input.kioskMode),
+      publicUrl: String(input.publicUrl || '')
+    };
+  }
+
+  function snapshotProject() {
+    try { return JSON.stringify(project); } catch (_) { return ''; }
+  }
+
+  function resetHistory() {
+    undoStack = [];
+    redoStack = [];
+    historySnapshot = snapshotProject();
+  }
+
+  function rememberHistory() {
+    if (applyingHistory) return;
+    const next = snapshotProject();
+    if (!next || next === historySnapshot) return;
+    if (historySnapshot) {
+      undoStack.push(historySnapshot);
+      if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    }
+    historySnapshot = next;
+    redoStack = [];
+    updateHistoryButtons();
+  }
+
+  function updateHistoryButtons() {
+    if (els.btnUndo) els.btnUndo.disabled = undoStack.length === 0;
+    if (els.btnRedo) els.btnRedo.disabled = redoStack.length === 0;
+  }
+
+  async function applyHistorySnapshot(snapshot, targetStack) {
+    if (!snapshot) return;
+    const current = snapshotProject();
+    applyingHistory = true;
+    try {
+      if (current) targetStack.push(current);
+      project = normalizeProject(JSON.parse(snapshot));
+      currentSceneId = project.scenes.some((scene) => scene.id === currentSceneId)
+        ? currentSceneId
+        : (project.firstScene || project.scenes[0]?.id || null);
+      historySnapshot = snapshotProject();
+      await persistProject();
+      renderAll();
+    } finally {
+      applyingHistory = false;
+      updateHistoryButtons();
+    }
+  }
+
+  async function undoProject() {
+    const snapshot = undoStack.pop();
+    await applyHistorySnapshot(snapshot, redoStack);
+  }
+
+  async function redoProject() {
+    const snapshot = redoStack.pop();
+    await applyHistorySnapshot(snapshot, undoStack);
   }
 
   function normalizeProject(input) {
@@ -534,7 +693,12 @@
     next.audio = {
       music: normalizeAudioSlot(input.audio?.music || {}, { volume: 35, loop: true })
     };
+    next.startScreen = normalizeStartScreen(input.startScreen || {}, next.title);
+    next.exportSettings = normalizeExportSettings(input.exportSettings || {});
     next.settings = { ...next.settings, ...(input.settings || {}) };
+    next.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(next.settings.defaultTransition)
+      ? next.settings.defaultTransition
+      : 'fade';
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
@@ -559,6 +723,7 @@
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
       audio: normalizeSceneAudio(scene.audio || {}),
       textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+      mediaObjects: Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [],
       hotspots: Array.isArray(scene.hotspots) ? scene.hotspots.map((hotspot) => ({
         id: String(hotspot.id || uid('hotspot')),
         type: ['scene', 'info', 'url'].includes(hotspot.type) ? hotspot.type : 'info',
@@ -576,13 +741,26 @@
         glowPulse: Boolean(hotspot.glowPulse),
         glowPulseSpeed: clampNumber(hotspot.glowPulseSpeed, 0.5, 4, 1.6),
         url: hotspot.url ? String(hotspot.url) : '',
-        info: hotspot.info ? String(hotspot.info) : ''
+        info: hotspot.info ? String(hotspot.info) : '',
+        transition: ['fade','zoom','blur','portal','glitch','black'].includes(hotspot.transition) ? hotspot.transition : 'fade',
+        anchorMode: ['panorama','object360','stl-screen'].includes(hotspot.anchorMode)
+          ? hotspot.anchorMode
+          : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : ((scene.sceneType === 'stl' || scene.stl) ? 'stl-screen' : 'panorama')),
+        anchorX: clampNumber(hotspot.anchorX, 0, 100, 50),
+        anchorY: clampNumber(hotspot.anchorY, 0, 100, 50),
+        anchorSector: Math.max(0, Number(hotspot.anchorSector) || 0),
+        anchorRow: Math.max(0, Number(hotspot.anchorRow) || 0),
+        anchorYaw: Number(hotspot.anchorYaw) || 0,
+        anchorPitch: Number(hotspot.anchorPitch) || 0,
+        visible: hotspot.visible !== false,
+        locked: Boolean(hotspot.locked)
       })) : []
     })) : [];
 
     next.firstScene = next.scenes.some((scene) => scene.id === input.firstScene)
       ? String(input.firstScene)
       : (next.scenes[0]?.id || null);
+    next.guide = normalizeGuide(input.guide || {}, next.scenes);
 
     return next;
   }
