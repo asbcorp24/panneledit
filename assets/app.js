@@ -3558,7 +3558,7 @@
     infoPanel.hidden = !text;
   };
 
-  const screenHotspotVisible = (hotspot, meta, state) => {
+  const screenHotspotVisible = (hotspot, meta, state, projector = null) => {
     if (hotspot.visible === false) return false;
     if (meta.sceneType === 'object360') {
       if (!state) return true;
@@ -3569,6 +3569,9 @@
         Number(state.row||0) === Number(hotspot.anchorRow||0);
     }
     if (meta.sceneType === 'stl') {
+      if (hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+        return Boolean(projector.projectPoint(hotspot.modelPoint)?.visible);
+      }
       if (!state) return true;
       const dy = Math.abs((((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180);
       const dp = Math.abs((Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0));
@@ -3577,9 +3580,13 @@
     return false;
   };
 
-  const screenHotspotPosition = (hotspot, meta, state) => {
+  const screenHotspotPosition = (hotspot, meta, state, projector = null) => {
     let x = Number(hotspot.anchorX)||50;
     let y = Number(hotspot.anchorY)||50;
+    if (meta.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+      const projected = projector.projectPoint(hotspot.modelPoint);
+      if (projected) return {x:projected.x,y:projected.y};
+    }
     if (meta.sceneType === 'stl' && state) {
       const dy = (((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180;
       const dp = (Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0);
@@ -3604,7 +3611,7 @@
     }
   };
 
-  const renderOverlay = (id, state = null) => {
+  const renderOverlay = (id, state = null, projector = null) => {
     if (!overlay) return;
     overlay.innerHTML = '';
     const meta = config.sceneMeta?.[id] || {};
@@ -3679,8 +3686,8 @@
         nav.className = 'scene-gallery-nav';
         const prev = document.createElement('button'); prev.type='button'; prev.textContent='‹';
         const next = document.createElement('button'); next.type='button'; next.textContent='›';
-        prev.addEventListener('click', () => { galleryIndexes.set(item.id,(index - 1 + item.gallery.length)%item.gallery.length); renderOverlay(id,state); });
-        next.addEventListener('click', () => { galleryIndexes.set(item.id,(index + 1)%item.gallery.length); renderOverlay(id,state); });
+        prev.addEventListener('click', () => { galleryIndexes.set(item.id,(index - 1 + item.gallery.length)%item.gallery.length); renderOverlay(id,state,projector); });
+        next.addEventListener('click', () => { galleryIndexes.set(item.id,(index + 1)%item.gallery.length); renderOverlay(id,state,projector); });
         nav.append(prev,next);
         el.append(frame,nav);
       }
@@ -3688,8 +3695,8 @@
     });
 
     (meta.screenHotspots || []).forEach((hotspot) => {
-      if (!screenHotspotVisible(hotspot, meta, state)) return;
-      const pos = screenHotspotPosition(hotspot, meta, state);
+      if (!screenHotspotVisible(hotspot, meta, state, projector)) return;
+      const pos = screenHotspotPosition(hotspot, meta, state, projector);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
@@ -3841,9 +3848,9 @@
         stlViewer = new StlViewer(host,{
           source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
           autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
-          onChange:(state)=>renderOverlay(id,state)
+          onChange:(state)=>renderOverlay(id,state,stlViewer)
         });
-        renderOverlay(id,stlViewer.getState());
+        renderOverlay(id,stlViewer.getState(),stlViewer);
         stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
