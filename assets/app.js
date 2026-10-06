@@ -3176,7 +3176,8 @@
     multiresScenes = new Map(),
     objectSceneFiles = new Map(),
     stlSceneFiles = new Map(),
-    audioConfig = { projectMusic: null, scenes: {} }
+    audioConfig = { projectMusic: null, scenes: {} },
+    mediaConfig = {}
   ) {
     const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
@@ -3213,13 +3214,69 @@
         title: scene.title,
         sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
         textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+        mediaObjects: mediaConfig[scene.id] || [],
+        screenHotspots: scene.sceneType === 'panorama' ? [] : (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
         audio: audioConfig.scenes?.[scene.id] || { music: null, narration: null }
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
     config.stlScenes = Object.fromEntries(stlSceneFiles);
     config.projectAudio = { music: audioConfig.projectMusic || null };
+    config.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
+    if (config.startScreen.coverData) config.startScreen.coverData = 'images/start-cover' + extensionForDataUrl(config.startScreen.coverData, '.jpg');
+    config.guide = normalizeGuide(project.guide || {}, project.scenes);
+    config.exportSettings = normalizeExportSettings(project.exportSettings || {});
+    config.defaultTransition = project.settings.defaultTransition || 'fade';
     return config;
+  }
+
+  function extensionForDataUrl(data, fallback = '.bin') {
+    const mime = String(data || '').match(/^data:([^;,]+)/i)?.[1]?.toLowerCase() || '';
+    if (mime.includes('jpeg')) return '.jpg';
+    if (mime.includes('png')) return '.png';
+    if (mime.includes('webp')) return '.webp';
+    if (mime.includes('mp4')) return '.mp4';
+    if (mime.includes('webm')) return '.webm';
+    if (mime.includes('pdf')) return '.pdf';
+    if (mime.includes('mpeg')) return '.mp3';
+    if (mime.includes('ogg')) return '.ogg';
+    if (mime.includes('wav')) return '.wav';
+    return fallback;
+  }
+
+  function bundleDataUrlFile(root, data, path) {
+    if (!data) return '';
+    const payload = dataUrlPayload(data);
+    if (payload.base64) root.file(path, payload.data, { base64:true });
+    else root.file(path, decodeURIComponent(payload.data));
+    return path;
+  }
+
+  function bundleMediaObjects(root) {
+    const output = {};
+    project.scenes.forEach((scene) => {
+      const dir = 'media/' + safeFilename(scene.id || scene.title, 'scene');
+      output[scene.id] = (scene.mediaObjects || []).filter((item) => item.visible !== false).map((raw, index) => {
+        const item = normalizeMediaObject(raw);
+        const base = safeFilename(item.title || item.id || ('media-' + (index + 1)), 'media-' + (index + 1));
+        const exported = { ...item, data:'', gallery:[] };
+
+        if (item.data && ['image','video','pdf'].includes(item.type)) {
+          const ext = extensionForDataUrl(item.data, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.jpg');
+          exported.src = bundleDataUrlFile(root, item.data, dir + '/' + base + ext);
+        }
+        if (item.type === 'gallery') {
+          exported.gallery = (item.gallery || []).map((entry, galleryIndex) => {
+            const ext = extensionForDataUrl(entry.data, '.jpg');
+            const path = dir + '/' + base + '-' + String(galleryIndex + 1).padStart(2, '0') + ext;
+            bundleDataUrlFile(root, entry.data, path);
+            return { src:path, filename:entry.filename || '' };
+          });
+        }
+        return exported;
+      });
+    });
+    return output;
   }
 
   function bundleAudioSlot(root, slot, baseName) {
@@ -4278,12 +4335,20 @@
         };
       });
 
+      const mediaConfig = bundleMediaObjects(root);
+
+      if (project.startScreen?.coverData) {
+        const coverExt = extensionForDataUrl(project.startScreen.coverData, '.jpg');
+        bundleDataUrlFile(root, project.startScreen.coverData, 'images/start-cover' + coverExt);
+      }
+
       const config = buildPortableTourConfig(
         sceneFiles,
         multiresScenes,
         objectSceneFiles,
         stlSceneFiles,
-        audioConfig
+        audioConfig,
+        mediaConfig
       );
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
