@@ -51,48 +51,65 @@
                 android:textSize="15sp" />
         </LinearLayout>
 
-        <LinearLayout
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:orientation="horizontal">
+            android:fillViewport="true"
+            android:scrollbars="none">
 
-            <Button
-                android:id="@+id/btn36"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_button"
-                android:text="36"
-                android:textColor="#FFFFFF" />
+                android:gravity="center"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btn72"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_button"
-                android:text="72"
-                android:textColor="#FFFFFF" />
+                <Button
+                    android:id="@+id/btn36"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_button"
+                    android:text="36"
+                    android:textColor="#FFFFFF" />
 
-            <Button
-                android:id="@+id/btnCalibrate"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_button"
-                android:text="СТАРТ / 0°"
-                android:textColor="#FFFFFF" />
+                <Button
+                    android:id="@+id/btn72"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="72"
+                    android:textColor="#FFFFFF" />
 
-            <Button
-                android:id="@+id/btnAuto"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/bg_button"
-                android:text="AUTO: ВЫКЛ"
-                android:textColor="#FFFFFF" />
-        </LinearLayout>
+                <Button
+                    android:id="@+id/btnCalibrate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="СТАРТ / 0°"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnAuto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="AUTO: ВЫКЛ"
+                    android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnCaptureOrientation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="ОРИЕНТАЦИЯ: АВТО"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </LinearLayout>
 
     <LinearLayout
@@ -144,6 +161,7 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/bottomPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
