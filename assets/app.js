@@ -3637,7 +3637,7 @@
       return;
     }
     if (hotspot.type === 'info') {
-      showInfo((hotspot.text ? hotspot.text + '\n\n' : '') + (hotspot.info || ''));
+      showInfo((hotspot.text ? hotspot.text + '\\n\\n' : '') + (hotspot.info || ''));
     }
   };
 
