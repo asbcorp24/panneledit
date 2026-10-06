@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupUi()
+        CaptureOrientationSettings.apply(this)
         requestLegacyStoragePermission()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
