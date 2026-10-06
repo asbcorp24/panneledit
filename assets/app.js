@@ -627,7 +627,8 @@
       background: ['none','dark','light'].includes(input.background) ? input.background : (type === 'description' ? 'dark' : 'none'),
       animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade',
       visible: input.visible !== false,
-      locked: Boolean(input.locked)
+      locked: Boolean(input.locked),
+      zIndex: Number.isFinite(Number(input.zIndex)) ? Number(input.zIndex) : 10
     };
   }
 
@@ -664,7 +665,8 @@
       background: ['none','dark','light'].includes(input.background) ? input.background : 'dark',
       animation: ['none','fade','slide','zoom'].includes(input.animation) ? input.animation : 'fade',
       visible: flags.visible,
-      locked: flags.locked
+      locked: flags.locked,
+      zIndex: Number.isFinite(Number(input.zIndex)) ? Number(input.zIndex) : 20
     };
   }
 
@@ -828,7 +830,8 @@
         anchorYaw: Number(hotspot.anchorYaw) || 0,
         anchorPitch: Number(hotspot.anchorPitch) || 0,
         visible: hotspot.visible !== false,
-        locked: Boolean(hotspot.locked)
+        locked: Boolean(hotspot.locked),
+        zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
       })) : []
     })) : [];
 
@@ -1007,7 +1010,8 @@
       'width:' + item.width + '%',
       'font-size:' + item.fontSize + 'px',
       'color:' + item.color,
-      'text-align:' + item.align
+      'text-align:' + item.align,
+      'z-index:' + (Number(item.zIndex) || 10)
     ].join(';');
 
     return '<div class="' + classes + '" data-text-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
@@ -1061,7 +1065,8 @@
       'left:' + item.x + '%',
       'top:' + item.y + '%',
       'width:' + item.width + '%',
-      'height:' + item.height + '%'
+      'height:' + item.height + '%',
+      'z-index:' + (Number(item.zIndex) || 20)
     ].join(';');
 
     let body = '';
@@ -1133,7 +1138,7 @@
     const label = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Инфо');
     return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor' : '') +
       ' hotspot-' + escapeHtml(hotspot.type) + '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
-      '" style="left:' + pos.x + '%;top:' + pos.y + '%" title="' + escapeHtml(label) + '">' +
+      '" style="left:' + pos.x + '%;top:' + pos.y + '%;z-index:' + (Number(hotspot.zIndex) || 30) + '" title="' + escapeHtml(label) + '">' +
       (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') +
       '<span>' + escapeHtml(label) + '</span></button>';
   }
@@ -1191,11 +1196,14 @@
       els.layerList.innerHTML = '<div class="empty-state">Нет слоёв</div>';
       return;
     }
+    layers.sort((a,b) => (Number(b.item.zIndex)||0) - (Number(a.item.zIndex)||0));
     els.layerList.className = 'layer-list';
     els.layerList.innerHTML = layers.map((layer) =>
       '<article class="layer-card" data-layer-kind="' + layer.kind + '" data-layer-id="' + escapeHtml(layer.id) + '">' +
       '<button type="button" data-layer-action="visible" title="Показать / скрыть">' + (layer.item.visible === false ? '○' : '👁') + '</button>' +
       '<button type="button" data-layer-action="locked" title="Заблокировать">' + (layer.item.locked ? '🔒' : '🔓') + '</button>' +
+      '<button type="button" data-layer-action="up" title="Выше">↑</button>' +
+      '<button type="button" data-layer-action="down" title="Ниже">↓</button>' +
       '<div><b>' + escapeHtml(layer.kind === 'text' ? 'Текст' : layer.kind === 'media' ? 'Медиа' : 'Hotspot') + '</b><span>' + escapeHtml(layer.label) + '</span></div>' +
       '</article>'
     ).join('');
@@ -1276,7 +1284,7 @@
   }
 
   function hotspotStyleClass(hotspot) {
-    return 'hotspot-style-' + hotspotCssToken(hotspot.id);
+    return 'hotspot-style-' + hotspotCssToken(hotspot.id) + ' tour-hotspot-' + hotspotCssToken(hotspot.id);
   }
 
   function normalizedGlow(hotspot) {
@@ -2611,7 +2619,8 @@
       anchorYaw: pendingHotspotAnchor?.anchorYaw ?? (Number(yaw) || 0),
       anchorPitch: pendingHotspotAnchor?.anchorPitch ?? (Number(pitch) || 0),
       visible: hotspot.visible !== false,
-      locked: Boolean(hotspot.locked)
+      locked: Boolean(hotspot.locked),
+      zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
     });
 
     els.hotspotDialog.close();
@@ -4867,11 +4876,18 @@
         '<option value="' + escapeHtml(scene.id) + '"' + (scene.id === step.sceneId ? ' selected' : '') + '>' +
         sceneTypeMeta(scene).icon + ' ' + escapeHtml(scene.title) + '</option>'
       ).join('');
+      const guideScene = getScene(step.sceneId);
+      const hotspotOptions = '<option value="">— без подсветки —</option>' +
+        (guideScene?.hotspots || []).map((hotspot) =>
+          '<option value="' + escapeHtml(hotspot.id) + '"' + (hotspot.id === step.highlightHotspotId ? ' selected' : '') + '>' +
+          escapeHtml(hotspot.text || hotspot.type || 'Hotspot') + '</option>'
+        ).join('');
       return '<article class="guide-step" data-guide-step-id="' + escapeHtml(step.id) + '">' +
         '<span class="guide-step-index">' + (index + 1) + '</span>' +
         '<select data-guide-field="sceneId">' + options + '</select>' +
         '<label><span>сек</span><input data-guide-field="duration" type="number" min="2" max="600" value="' + step.duration + '"></label>' +
         '<label class="guide-check"><input data-guide-field="narrationAuto" type="checkbox"' + (step.narrationAuto ? ' checked' : '') + '> 🔊 авто</label>' +
+        '<select class="guide-highlight-select" data-guide-field="highlightHotspotId">' + hotspotOptions + '</select>' +
         '<div class="guide-step-actions">' +
         '<button type="button" data-guide-action="up">↑</button><button type="button" data-guide-action="down">↓</button><button type="button" data-guide-action="remove">×</button>' +
         '</div></article>';
@@ -5140,7 +5156,10 @@
       if (field === 'sceneId') step.sceneId = event.target.value;
       if (field === 'duration') step.duration = clampNumber(event.target.value, 2, 600, 12);
       if (field === 'narrationAuto') step.narrationAuto = event.target.checked;
+      if (field === 'highlightHotspotId') step.highlightHotspotId = event.target.value;
+      if (field === 'sceneId') step.highlightHotspotId = '';
       markDirty();
+      if (field === 'sceneId') renderGuideEditor();
     });
     els.guideStepList.addEventListener('click', (event) => {
       const button = event.target.closest('[data-guide-action]');
@@ -5332,6 +5351,8 @@
       if (!item) return;
       if (action.dataset.layerAction === 'visible') item.visible = item.visible === false;
       if (action.dataset.layerAction === 'locked') item.locked = !item.locked;
+      if (action.dataset.layerAction === 'up') item.zIndex = (Number(item.zIndex) || 0) + 1;
+      if (action.dataset.layerAction === 'down') item.zIndex = (Number(item.zIndex) || 0) - 1;
       markDirty({ rerenderViewer: card.dataset.layerKind === 'hotspot' && getScene()?.sceneType === 'panorama' });
       renderCompositeOverlay(getScene(), els.sceneOverlay, null, { editor:true });
     });
