@@ -3258,7 +3258,10 @@
     config.stlScenes = Object.fromEntries(stlSceneFiles);
     config.projectAudio = { music: audioConfig.projectMusic || null };
     config.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
-    if (config.startScreen.coverData) config.startScreen.coverData = 'images/start-cover' + extensionForDataUrl(config.startScreen.coverData, '.jpg');
+    if (config.startScreen.coverData) {
+      config.startScreen.coverData = 'images/start-cover' +
+        (project.startScreen?.__exportCoverExt || extensionForDataUrl(config.startScreen.coverData, '.jpg'));
+    }
     config.guide = normalizeGuide(project.guide || {}, project.scenes);
     config.exportSettings = normalizeExportSettings(project.exportSettings || {});
     config.defaultTransition = project.settings.defaultTransition || 'fade';
@@ -3288,30 +3291,52 @@
     return path;
   }
 
-  function bundleMediaObjects(root) {
+  async function bundleMediaObjects(root) {
     const output = {};
-    project.scenes.forEach((scene) => {
+    for (const scene of project.scenes) {
       const dir = 'media/' + safeFilename(scene.id || scene.title, 'scene');
-      output[scene.id] = (scene.mediaObjects || []).filter((item) => item.visible !== false).map((raw, index) => {
-        const item = normalizeMediaObject(raw);
+      const sourceItems = (scene.mediaObjects || []).filter((item) => item.visible !== false);
+      output[scene.id] = [];
+      for (let index = 0; index < sourceItems.length; index++) {
+        const item = normalizeMediaObject(sourceItems[index]);
         const base = safeFilename(item.title || item.id || ('media-' + (index + 1)), 'media-' + (index + 1));
         const exported = { ...item, data:'', gallery:[] };
+        const settings = normalizeExportSettings(project.exportSettings || {});
 
         if (item.data && ['image','video','pdf'].includes(item.type)) {
-          const ext = extensionForDataUrl(item.data, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.jpg');
-          exported.src = bundleDataUrlFile(root, item.data, dir + '/' + base + ext);
+          let fileData = item.data;
+          if (item.type === 'image' && settings.optimizeEnabled) {
+            fileData = await optimizeImageDataUrl(
+              item.data,
+              Math.min(settings.maxImageWidth, 2560),
+              settings.jpegQuality,
+              /^data:image\/(png|webp)/i.test(item.data)
+            );
+          }
+          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.jpg');
+          exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
         }
         if (item.type === 'gallery') {
-          exported.gallery = (item.gallery || []).map((entry, galleryIndex) => {
-            const ext = extensionForDataUrl(entry.data, '.jpg');
+          for (let galleryIndex = 0; galleryIndex < (item.gallery || []).length; galleryIndex++) {
+            const entry = item.gallery[galleryIndex];
+            let fileData = entry.data;
+            if (settings.optimizeEnabled) {
+              fileData = await optimizeImageDataUrl(
+                entry.data,
+                Math.min(settings.maxImageWidth, 2560),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(entry.data)
+              );
+            }
+            const ext = extensionForDataUrl(fileData, '.jpg');
             const path = dir + '/' + base + '-' + String(galleryIndex + 1).padStart(2, '0') + ext;
-            bundleDataUrlFile(root, entry.data, path);
-            return { src:path, filename:entry.filename || '' };
-          });
+            bundleDataUrlFile(root, fileData, path);
+            exported.gallery.push({ src:path, filename:entry.filename || '' });
+          }
         }
-        return exported;
-      });
-    });
+        output[scene.id].push(exported);
+      }
+    }
     return output;
   }
 
@@ -4418,7 +4443,7 @@
     }));
   }
 
-  async function optimizeImageDataUrl(dataUrl, maxWidth, quality = 84) {
+  async function optimizeImageDataUrl(dataUrl, maxWidth, quality = 84, preserveAlpha = false) {
     if (!dataUrl || !/^data:image\//i.test(dataUrl)) return dataUrl;
     if (!normalizeExportSettings(project.exportSettings || {}).optimizeEnabled) return dataUrl;
 
@@ -4437,11 +4462,16 @@
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
     canvas.height = targetHeight;
-    const ctx = canvas.getContext('2d', { alpha:false });
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,targetWidth,targetHeight);
+    const ctx = canvas.getContext('2d', { alpha:preserveAlpha });
+    if (!preserveAlpha) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0,0,targetWidth,targetHeight);
+    }
     ctx.drawImage(image,0,0,targetWidth,targetHeight);
-    return canvas.toDataURL('image/jpeg', clampNumber(quality,45,100,84) / 100);
+    return canvas.toDataURL(
+      preserveAlpha ? 'image/webp' : 'image/jpeg',
+      clampNumber(quality,45,100,84) / 100
+    );
   }
 
   function exportedManifest() {
@@ -4687,11 +4717,16 @@
         };
       });
 
-      const mediaConfig = bundleMediaObjects(root);
+      const mediaConfig = await bundleMediaObjects(root);
 
       if (project.startScreen?.coverData) {
-        const coverExt = extensionForDataUrl(project.startScreen.coverData, '.jpg');
-        bundleDataUrlFile(root, project.startScreen.coverData, 'images/start-cover' + coverExt);
+        const settings = normalizeExportSettings(project.exportSettings || {});
+        const coverData = settings.optimizeEnabled
+          ? await optimizeImageDataUrl(project.startScreen.coverData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
+          : project.startScreen.coverData;
+        const coverExt = extensionForDataUrl(coverData, '.jpg');
+        bundleDataUrlFile(root, coverData, 'images/start-cover' + coverExt);
+        project.startScreen.__exportCoverExt = coverExt;
       }
 
       const config = buildPortableTourConfig(
@@ -4702,6 +4737,7 @@
         audioConfig,
         mediaConfig
       );
+      if (project.startScreen && '__exportCoverExt' in project.startScreen) delete project.startScreen.__exportCoverExt;
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
