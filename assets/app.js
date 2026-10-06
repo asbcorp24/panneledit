@@ -1813,7 +1813,7 @@
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
               '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
-            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
         renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
@@ -4827,7 +4827,7 @@
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
-        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
+        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
       renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
@@ -5599,10 +5599,25 @@
         });
       } else if (stlViewer) {
         const state = stlViewer.getState();
-        openHotspotDialog(0, 0, null, {
-          anchorMode:'stl-screen', anchorX:x, anchorY:y,
-          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
-        });
+        let hit = null;
+        try { hit = stlViewer.pick(event.clientX, event.clientY); } catch (error) { console.warn(error); }
+        if (hit?.point) {
+          openHotspotDialog(0, 0, null, {
+            anchorMode:'stl-3d',
+            anchorX:hit.screen?.x ?? x,
+            anchorY:hit.screen?.y ?? y,
+            anchorSector:0,
+            anchorRow:0,
+            anchorYaw:state.yaw,
+            anchorPitch:state.pitch,
+            modelPoint:hit.point
+          });
+        } else {
+          openHotspotDialog(0, 0, null, {
+            anchorMode:'stl-screen', anchorX:x, anchorY:y,
+            anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch, modelPoint:null
+          });
+        }
       }
     });
 
