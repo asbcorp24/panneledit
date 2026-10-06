@@ -4762,6 +4762,104 @@
 
   function setupEvents() {
     els.btnUndo.addEventListener('click', undoProject);
+    els.btnSceneGraph.addEventListener('click', openSceneGraph);
+    els.closeSceneGraph.addEventListener('click', () => els.sceneGraphDialog.close());
+    els.sceneGraphDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.sceneGraphDialog.close();
+    });
+    els.btnGraphAutoLayout.addEventListener('click', renderSceneGraph);
+    els.sceneGraph.addEventListener('click', (event) => {
+      const node = event.target.closest('[data-graph-scene]');
+      if (!node) return;
+      selectScene(node.dataset.graphScene);
+      els.sceneGraphDialog.close();
+    });
+
+    els.btnGuideEditor.addEventListener('click', openGuideEditor);
+    els.closeGuideDialog.addEventListener('click', () => els.guideDialog.close());
+    els.guideDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.guideDialog.close();
+    });
+    els.guideEnabled.addEventListener('change', () => {
+      project.guide = normalizeGuide(project.guide || {}, project.scenes);
+      project.guide.enabled = els.guideEnabled.checked;
+      markDirty();
+    });
+    els.btnAddGuideStep.addEventListener('click', () => {
+      if (!project.scenes.length) return;
+      project.guide = normalizeGuide(project.guide || {}, project.scenes);
+      project.guide.steps.push({
+        id:uid('guide'),
+        sceneId:project.scenes[Math.min(project.guide.steps.length, project.scenes.length - 1)].id,
+        duration:12,
+        narrationAuto:false,
+        highlightHotspotId:''
+      });
+      markDirty();
+      renderGuideEditor();
+    });
+    els.guideStepList.addEventListener('change', (event) => {
+      const row = event.target.closest('[data-guide-step-id]');
+      if (!row) return;
+      const step = project.guide?.steps?.find((entry) => entry.id === row.dataset.guideStepId);
+      if (!step) return;
+      const field = event.target.dataset.guideField;
+      if (field === 'sceneId') step.sceneId = event.target.value;
+      if (field === 'duration') step.duration = clampNumber(event.target.value, 2, 600, 12);
+      if (field === 'narrationAuto') step.narrationAuto = event.target.checked;
+      markDirty();
+    });
+    els.guideStepList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-guide-action]');
+      const row = event.target.closest('[data-guide-step-id]');
+      if (!button || !row) return;
+      const steps = project.guide?.steps || [];
+      const index = steps.findIndex((entry) => entry.id === row.dataset.guideStepId);
+      if (index < 0) return;
+      if (button.dataset.guideAction === 'remove') steps.splice(index, 1);
+      if (button.dataset.guideAction === 'up' && index > 0) [steps[index - 1], steps[index]] = [steps[index], steps[index - 1]];
+      if (button.dataset.guideAction === 'down' && index < steps.length - 1) [steps[index + 1], steps[index]] = [steps[index], steps[index + 1]];
+      markDirty();
+      renderGuideEditor();
+    });
+
+    els.btnAdvancedSettings.addEventListener('click', openAdvancedSettings);
+    els.closeAdvancedSettings.addEventListener('click', () => els.advancedSettingsDialog.close());
+    els.advancedSettingsDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.advancedSettingsDialog.close();
+    });
+    [
+      els.startScreenEnabled, els.startScreenTitle, els.startScreenSubtitle, els.startScreenAllowSilent,
+      els.optimizeEnabled, els.optimizeQuality, els.optimizeMaxImageWidth, els.optimizeObjectFrameWidth,
+      els.pwaEnabled, els.kioskMode, els.publicTourUrl
+    ].forEach((control) => {
+      const eventName = control?.type === 'checkbox' || control?.tagName === 'SELECT' ? 'change' : 'input';
+      control?.addEventListener(eventName, applyAdvancedSettings);
+    });
+    els.startScreenCoverFile.addEventListener('change', async () => {
+      const file = els.startScreenCoverFile.files?.[0];
+      if (!file) return;
+      try {
+        project.startScreen = normalizeStartScreen({
+          ...project.startScreen,
+          coverData:await fileToDataURL(file),
+          coverFilename:file.name
+        }, project.title);
+        els.startScreenCoverName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить обложку');
+      } finally {
+        els.startScreenCoverFile.value = '';
+      }
+    });
+    els.btnAnalyzeProject.addEventListener('click', analyzeProjectSize);
+    els.publicTourUrl.addEventListener('change', renderQrPreview);
+    els.btnDownloadQr.addEventListener('click', downloadQrPng);
     els.btnRedo.addEventListener('click', redoProject);
     window.addEventListener('keydown', (event) => {
       const key = event.key.toLowerCase();
