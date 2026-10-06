@@ -3300,12 +3300,16 @@
 
   function exportedViewerHtml() {
     const title = escapeHtml(project.title || 'Виртуальная экскурсия');
+    const pwa = normalizeExportSettings(project.exportSettings || {}).pwaEnabled;
     return '<!doctype html>\n' +
       '<html lang="ru">\n<head>\n' +
       '  <meta charset="utf-8">\n' +
       '  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' +
       '  <meta name="theme-color" content="#05070c">\n' +
+      '  <meta name="mobile-web-app-capable" content="yes">\n' +
+      '  <meta name="apple-mobile-web-app-capable" content="yes">\n' +
       '  <title>' + title + '</title>\n' +
+      (pwa ? '  <link rel="manifest" href="manifest.webmanifest">\n' : '') +
       '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
       '  <link rel="stylesheet" href="assets/tour.css">\n' +
       '</head>\n<body>\n' +
@@ -3315,15 +3319,32 @@
       '  </div>\n' +
       '  <div id="panorama"></div>\n' +
       '  <div id="sceneTextOverlay" class="scene-text-overlay"></div>\n' +
-      '  <div id="tourAudioControls" class="tour-audio-controls">\n' +
+      '  <div id="tourTransitionLayer" class="tour-transition-layer"></div>\n' +
+      '  <div id="tourInfoPanel" class="tour-info-panel" hidden><button id="tourInfoClose" type="button">×</button><div id="tourInfoContent"></div></div>\n' +
+      '  <div id="tourBottomDock" class="tour-bottom-dock">\n' +
+      '    <button id="tourGuideButton" type="button" title="Экскурсия с гидом" hidden>▶ Гид</button>\n' +
+      '    <button id="tourFullscreenButton" type="button" title="На весь экран">⛶</button>\n' +
       '    <button id="tourMusicButton" type="button" title="Музыка">♪</button>\n' +
       '    <button id="tourNarrationButton" type="button" title="Озвучка" hidden>🔊</button>\n' +
+      '  </div>\n' +
+      '  <div id="tourStartScreen" class="tour-start-screen" hidden>\n' +
+      '    <div class="tour-start-shade"></div>\n' +
+      '    <div class="tour-start-card">\n' +
+      '      <span class="tour-start-kicker">360° · OBJECT · 3D</span>\n' +
+      '      <h1 id="tourStartTitle"></h1>\n' +
+      '      <p id="tourStartSubtitle"></p>\n' +
+      '      <div class="tour-start-actions">\n' +
+      '        <button id="tourStartSound" type="button">Начать со звуком</button>\n' +
+      '        <button id="tourStartSilent" type="button">Без звука</button>\n' +
+      '      </div>\n' +
+      '    </div>\n' +
       '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
+      (pwa ? '  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>\n' : '') +
       '</body>\n</html>\n';
   }
 
