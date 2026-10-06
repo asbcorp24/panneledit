@@ -157,6 +157,11 @@
     mediaObjectHeight: $('mediaObjectHeight'),
     mediaObjectFit: $('mediaObjectFit'),
     mediaObjectAnimation: $('mediaObjectAnimation'),
+    mediaAudioStyleRow: $('mediaAudioStyleRow'),
+    mediaObjectAudioStyle: $('mediaObjectAudioStyle'),
+    mediaVolumeRow: $('mediaVolumeRow'),
+    mediaObjectVolume: $('mediaObjectVolume'),
+    mediaObjectVolumeValue: $('mediaObjectVolumeValue'),
     mediaAutoplayRow: $('mediaAutoplayRow'),
     mediaLoopRow: $('mediaLoopRow'),
     mediaObjectAutoplay: $('mediaObjectAutoplay'),
@@ -641,7 +646,7 @@
   }
 
   function normalizeMediaObject(input = {}) {
-    const type = ['image','gallery','video','pdf','button'].includes(input.type) ? input.type : 'image';
+    const type = ['image','gallery','video','audio','pdf','button'].includes(input.type) ? input.type : 'image';
     const flags = normalizeLayerFlags(input);
     return {
       id: String(input.id || uid('media')),
@@ -662,6 +667,8 @@
       fit: ['contain','cover'].includes(input.fit) ? input.fit : 'contain',
       autoplay: Boolean(input.autoplay),
       loop: Boolean(input.loop),
+      volume: clampNumber(input.volume, 0, 100, 80),
+      audioStyle: ['compact','large','hidden'].includes(input.audioStyle) ? input.audioStyle : 'compact',
       muted: input.muted !== false,
       background: ['none','dark','light'].includes(input.background) ? input.background : 'dark',
       animation: ['none','fade','slide','zoom'].includes(input.animation) ? input.animation : 'fade',
@@ -1084,6 +1091,20 @@
     } else if (item.type === 'video' && item.data) {
       body = '<video src="' + escapeHtml(item.data) + '" controls playsinline ' +
         (item.autoplay ? 'autoplay muted ' : '') + (item.loop ? 'loop ' : '') + '></video>';
+    } else if (item.type === 'audio' && item.data) {
+      const audioStyle = ['compact','large','hidden'].includes(item.audioStyle) ? item.audioStyle : 'compact';
+      const audio = '<audio class="scene-audio-element" data-media-volume="' + item.volume +
+        '" data-media-autoplay="' + (item.autoplay ? '1' : '0') + '" src="' + escapeHtml(item.data) +
+        '" preload="metadata" ' + (audioStyle === 'hidden' ? '' : 'controls ') + (item.loop ? 'loop ' : '') + '></audio>';
+      if (audioStyle === 'hidden') {
+        body = (editor
+          ? '<div class="scene-audio-hidden-editor"><b>♪</b><span>' + escapeHtml(item.title || item.filename || 'Скрытое аудио') + '</span></div>'
+          : '') + audio;
+      } else {
+        body = '<div class="scene-audio-player ' + audioStyle + '">' +
+          '<div class="scene-audio-header"><span class="scene-audio-icon">♪</span><span class="scene-audio-title">' +
+          escapeHtml(item.title || item.filename || 'Аудио') + '</span></div>' + audio + '</div>';
+      }
     } else if (item.type === 'pdf') {
       body = '<div class="scene-document-card"><b>PDF</b><span>' + escapeHtml(item.title || item.filename || 'Документ') + '</span></div>';
     } else if (item.type === 'button') {
@@ -1091,6 +1112,8 @@
     } else {
       body = '<div class="scene-media-placeholder">' + escapeHtml(item.title || item.type) + '</div>';
     }
+
+    if (item.type === 'audio' && item.audioStyle === 'hidden') cls += ' scene-media-audio-hidden';
 
     return '<div class="' + cls + '" data-media-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
       body + (editor && !item.locked ? '<span class="scene-media-drag-hint">перетащить</span>' : '') + '</div>';
@@ -1103,6 +1126,12 @@
     const markup = items.map((item) => mediaObjectMarkup(item, { editor })).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
+    target.querySelectorAll('audio.scene-audio-element').forEach((audio) => {
+      audio.volume = clampNumber(Number(audio.dataset.mediaVolume) / 100, 0, 1, 0.8);
+      if (!editor && audio.dataset.mediaAutoplay === '1') {
+        audio.play().catch(() => {});
+      }
+    });
   }
 
   function screenHotspotVisible(hotspot, scene, state = null, projector = null) {
@@ -1175,6 +1204,13 @@
     target.hidden = !target.children.length;
   }
 
+  function renderDynamicScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, projector = null } = {}) {
+    if (!target || !scene) return;
+    target.querySelectorAll('.screen-hotspot').forEach((element) => element.remove());
+    renderScreenHotspots(scene, target, state, { editor, append: true, projector });
+    target.hidden = !target.children.length;
+  }
+
   function renderMediaObjectList() {
     const scene = getScene();
     const items = scene?.mediaObjects || [];
@@ -1183,11 +1219,11 @@
       els.mediaObjectList.innerHTML = '<div class="empty-state">Нет медиа</div>';
       return;
     }
-    const labels = { image:'Фото', gallery:'Галерея', video:'Видео', pdf:'PDF', button:'Кнопка' };
+    const labels = { image:'Фото', gallery:'Галерея', video:'Видео', audio:'Аудио', pdf:'PDF', button:'Кнопка' };
     els.mediaObjectList.className = 'media-object-list';
     els.mediaObjectList.innerHTML = items.map((item) =>
       '<article class="media-object-card" data-media-object-id="' + escapeHtml(item.id) + '">' +
-      '<span class="media-object-kind">' + ({image:'▧',gallery:'▦',video:'▶',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
+      '<span class="media-object-kind">' + ({image:'▧',gallery:'▦',video:'▶',audio:'♪',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
       '<div><b>' + escapeHtml(labels[item.type] || item.type) + '</b><span>' + escapeHtml(item.title || item.filename || 'Без названия') + '</span></div>' +
       '<em>' + (item.visible === false ? 'скрыт' : (item.locked ? '🔒' : '')) + '</em></article>'
     ).join('');
@@ -1814,7 +1850,7 @@
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
               '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
-            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
+            renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true });
           }
         });
         renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
@@ -1850,7 +1886,7 @@
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
               '° · zoom ' + Number(state.zoom).toFixed(2);
-            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
+            renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
           }
         });
         renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true, projector:stlViewer });
@@ -2338,12 +2374,20 @@
 
   function updateMediaDialogUi() {
     const type = els.mediaObjectType.value;
+    const timedMedia = type === 'video' || type === 'audio';
     els.mediaUploadBox.hidden = type === 'gallery' || type === 'button';
     els.mediaGalleryUploadBox.hidden = type !== 'gallery';
     els.mediaUrlRow.hidden = type !== 'button';
     els.mediaTargetRow.hidden = type !== 'button';
-    els.mediaAutoplayRow.hidden = type !== 'video';
-    els.mediaLoopRow.hidden = type !== 'video';
+    els.mediaAudioStyleRow.hidden = type !== 'audio';
+    els.mediaVolumeRow.hidden = type !== 'audio';
+    els.mediaAutoplayRow.hidden = !timedMedia;
+    els.mediaLoopRow.hidden = !timedMedia;
+    if (!pendingMediaData) {
+      els.mediaObjectFilename.textContent = type === 'audio'
+        ? 'MP3, OGG или WAV'
+        : (type === 'video' ? 'MP4 или WEBM' : (type === 'pdf' ? 'PDF' : 'Файл не выбран'));
+    }
     if (type === 'button') {
       populateSceneSelect(els.mediaObjectTargetScene, getScene()?.id || '');
     }
@@ -2383,6 +2427,9 @@
     els.mediaObjectHeight.value = String(item.height);
     els.mediaObjectFit.value = item.fit;
     els.mediaObjectAnimation.value = item.animation;
+    els.mediaObjectAudioStyle.value = item.audioStyle;
+    els.mediaObjectVolume.value = String(item.volume);
+    els.mediaObjectVolumeValue.textContent = item.volume + '%';
     els.mediaObjectAutoplay.checked = Boolean(item.autoplay);
     els.mediaObjectLoop.checked = Boolean(item.loop);
     els.btnDeleteMediaObject.hidden = !existing;
@@ -2399,7 +2446,7 @@
       showToast('Добавьте изображения галереи');
       return;
     }
-    if (['image','video','pdf'].includes(type) && !pendingMediaData) {
+    if (['image','video','audio','pdf'].includes(type) && !pendingMediaData) {
       showToast('Выберите файл');
       return;
     }
@@ -2432,8 +2479,10 @@
       height: els.mediaObjectHeight.value,
       fit: els.mediaObjectFit.value,
       animation: els.mediaObjectAnimation.value,
-      autoplay: type === 'video' && els.mediaObjectAutoplay.checked,
-      loop: type === 'video' && els.mediaObjectLoop.checked
+      autoplay: (type === 'video' || type === 'audio') && els.mediaObjectAutoplay.checked,
+      loop: (type === 'video' || type === 'audio') && els.mediaObjectLoop.checked,
+      volume: type === 'audio' ? els.mediaObjectVolume.value : item.volume,
+      audioStyle: type === 'audio' ? els.mediaObjectAudioStyle.value : item.audioStyle
     });
     Object.assign(item, normalized);
     els.mediaObjectDialog.close();
@@ -3304,7 +3353,7 @@
         const exported = { ...item, data:'', gallery:[] };
         const settings = normalizeExportSettings(project.exportSettings || {});
 
-        if (item.data && ['image','video','pdf'].includes(item.type)) {
+        if (item.data && ['image','video','audio','pdf'].includes(item.type)) {
           let fileData = item.data;
           if (item.type === 'image' && settings.optimizeEnabled) {
             fileData = await optimizeImageDataUrl(
@@ -3314,7 +3363,7 @@
               /^data:image\/(png|webp)/i.test(item.data)
             );
           }
-          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.jpg');
+          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : item.type === 'audio' ? '.mp3' : '.jpg');
           exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
         }
         if (item.type === 'gallery') {
@@ -3493,7 +3542,7 @@
 
     css +=
       '.scene-text-overlay{position:fixed;inset:0;z-index:35;pointer-events:none;overflow:hidden}\n' +
-      '.scene-media-object{position:absolute;pointer-events:auto;border-radius:14px;overflow:hidden;animation-duration:.48s;animation-fill-mode:both}.scene-media-object img,.scene-media-object video{width:100%;height:100%;display:block}.scene-media-object img{object-position:center}.scene-media-video video{background:#000}.scene-media-pdf,.scene-media-button{height:auto!important}.scene-document-card,.scene-action-button{width:100%;height:100%;min-height:48px;border:1px solid rgba(255,255,255,.15);border-radius:14px;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px)}.scene-document-card{display:flex;align-items:center;gap:10px;padding:12px}.scene-document-card b{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#d94b4b}.scene-action-button{padding:12px 18px;font-weight:800;cursor:pointer}.scene-gallery-frame{position:relative;width:100%;height:100%}.scene-gallery-frame span{position:absolute;right:8px;bottom:8px;padding:4px 7px;border-radius:8px;background:rgba(0,0,0,.65);font-size:10px}.scene-gallery-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none}.scene-gallery-nav button{pointer-events:auto;margin:6px;width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}.scene-media-anim-fade{animation-name:sceneTextFade}.scene-media-anim-slide{animation-name:sceneTextSlide}.scene-media-anim-zoom{animation-name:sceneMediaZoom}.scene-media-anim-none{animation:none}@keyframes sceneMediaZoom{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:scale(1)}}\n' +
+      '.scene-media-object{position:absolute;pointer-events:auto;border-radius:14px;overflow:hidden;animation-duration:.48s;animation-fill-mode:both}.scene-media-object img,.scene-media-object video{width:100%;height:100%;display:block}.scene-media-object img{object-position:center}.scene-media-video video{background:#000}.scene-media-audio{height:auto!important;min-height:58px;overflow:visible;box-shadow:none}.scene-audio-player{width:100%;min-height:58px;padding:9px;border:1px solid rgba(255,255,255,.15);border-radius:14px;background:rgba(6,10,18,.84);backdrop-filter:blur(12px);box-shadow:0 12px 36px rgba(0,0,0,.28)}.scene-audio-player.large{padding:13px}.scene-audio-header{display:flex;align-items:center;gap:8px;margin-bottom:7px;min-width:0}.scene-audio-icon{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:rgba(31,214,187,.12);color:#75e7d6;font-size:14px;font-weight:900}.scene-audio-title{min-width:0;color:#eef3ff;font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.scene-audio-player.large .scene-audio-icon{width:38px;height:38px;font-size:18px}.scene-audio-player.large .scene-audio-title{font-size:12px}.scene-audio-player audio{display:block;width:100%;height:36px}.scene-media-audio-hidden{width:0!important;height:0!important;min-height:0!important;overflow:hidden!important;pointer-events:none!important}.scene-media-pdf,.scene-media-button{height:auto!important}.scene-document-card,.scene-action-button{width:100%;height:100%;min-height:48px;border:1px solid rgba(255,255,255,.15);border-radius:14px;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px)}.scene-document-card{display:flex;align-items:center;gap:10px;padding:12px}.scene-document-card b{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#d94b4b}.scene-action-button{padding:12px 18px;font-weight:800;cursor:pointer}.scene-gallery-frame{position:relative;width:100%;height:100%}.scene-gallery-frame span{position:absolute;right:8px;bottom:8px;padding:4px 7px;border-radius:8px;background:rgba(0,0,0,.65);font-size:10px}.scene-gallery-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none}.scene-gallery-nav button{pointer-events:auto;margin:6px;width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}.scene-media-anim-fade{animation-name:sceneTextFade}.scene-media-anim-slide{animation-name:sceneTextSlide}.scene-media-anim-zoom{animation-name:sceneMediaZoom}.scene-media-anim-none{animation:none}@keyframes sceneMediaZoom{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:scale(1)}}\n' +
       '.screen-hotspot{position:absolute;transform:translate(-50%,-50%);z-index:45;display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(5,9,18,.82);color:#fff;padding:8px 10px;pointer-events:auto;cursor:pointer;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.35)}.screen-hotspot>span{font:700 10px system-ui;white-space:nowrap}.screen-hotspot:hover{border-color:#7c8cff;transform:translate(-50%,-50%) scale(1.04)}\n' +      '.guide-highlight{animation:guidePulse .8s ease-in-out infinite alternate!important;box-shadow:0 0 0 6px rgba(117,231,214,.25),0 0 30px rgba(117,231,214,.8)!important}@keyframes guidePulse{from{filter:brightness(1)}to{filter:brightness(1.8)}}\n' +
 
       '.tour-bottom-dock{position:fixed;z-index:65;right:12px;bottom:12px;display:flex;gap:7px}.tour-bottom-dock button{min-width:40px;height:40px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(6,10,18,.78);color:#fff;padding:0 12px;backdrop-filter:blur(12px);cursor:pointer;font:800 12px system-ui}.tour-bottom-dock button.active{border-color:rgba(31,214,187,.65);color:#75e7d6}.tour-bottom-dock button[hidden]{display:none}\n' +
@@ -3687,6 +3736,32 @@
         video.src = item.src; video.controls = true; video.playsInline = true;
         video.autoplay = Boolean(item.autoplay); video.muted = true; video.loop = Boolean(item.loop);
         el.appendChild(video);
+      } else if (item.type === 'audio' && item.src) {
+        const style = ['compact','large','hidden'].includes(item.audioStyle) ? item.audioStyle : 'compact';
+        const audio = document.createElement('audio');
+        audio.src = item.src;
+        audio.preload = 'metadata';
+        audio.loop = Boolean(item.loop);
+        audio.volume = clamp((item.volume ?? 80) / 100, 0, 1);
+        audio.dataset.mediaAutoplay = item.autoplay ? '1' : '0';
+        if (style === 'hidden') {
+          el.classList.add('scene-media-audio-hidden');
+        } else {
+          const player = document.createElement('div');
+          player.className = 'scene-audio-player ' + style;
+          const header = document.createElement('div');
+          header.className = 'scene-audio-header';
+          const icon = document.createElement('span');
+          icon.className = 'scene-audio-icon'; icon.textContent = '♪';
+          const title = document.createElement('span');
+          title.className = 'scene-audio-title'; title.textContent = item.title || item.filename || 'Аудио';
+          header.append(icon,title);
+          audio.controls = true;
+          player.append(header,audio);
+          el.appendChild(player);
+        }
+        if (style === 'hidden') el.appendChild(audio);
+        if (item.autoplay && userInteracted && musicEnabled) audio.play().catch(()=>{});
       } else if (item.type === 'pdf' && item.src) {
         const card = document.createElement('button');
         card.type = 'button'; card.className = 'scene-document-card';
@@ -3738,6 +3813,34 @@
       btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
       btn.addEventListener('click', () => runHotspotAction(hotspot));
       overlay.appendChild(btn);
+    });
+  };
+
+  const renderDynamicHotspots = (id, state = null, projector = null) => {
+    if (!overlay) return;
+    const meta = config.sceneMeta?.[id] || {};
+    overlay.querySelectorAll('.screen-hotspot').forEach((element) => element.remove());
+    (meta.screenHotspots || []).forEach((hotspot) => {
+      if (!screenHotspotVisible(hotspot, meta, state, projector)) return;
+      const pos = screenHotspotPosition(hotspot, meta, state, projector);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      btn.dataset.screenHotspotId = hotspot.id || '';
+      btn.style.left = pos.x + '%';
+      btn.style.top = pos.y + '%';
+      btn.style.zIndex = String(Number(hotspot.zIndex) || 30);
+      btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
+      btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+      btn.addEventListener('click', () => runHotspotAction(hotspot));
+      overlay.appendChild(btn);
+    });
+  };
+
+  const playAutoplayMedia = () => {
+    if (!overlay || !userInteracted || !musicEnabled) return;
+    overlay.querySelectorAll('audio[data-media-autoplay="1"]').forEach((audio) => {
+      audio.play().catch(()=>{});
     });
   };
 
@@ -3835,6 +3938,7 @@
     (meta.mediaObjects || []).forEach((item) => {
       if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; }
       if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
+      if (item.type === 'audio' && item.src) { const a = new Audio(); a.preload='metadata'; a.src=item.src; }
     });
     [meta.audio?.music?.src,meta.audio?.narration?.src].filter(Boolean).forEach((src)=>{ const a=new Audio(); a.preload='metadata'; a.src=src; });
   };
@@ -3852,7 +3956,7 @@
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
     if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
-      updateMenu(id); updateBackButton(); renderOverlay(id); configureAudio(id); return;
+      updateMenu(id); updateBackButton(); renderOverlay(id); configureAudio(id); playAutoplayMedia(); return;
     }
     const previous = currentSceneId;
     if (pushHistory && previous && previous !== id) historyStack.push(previous);
@@ -3864,12 +3968,13 @@
       updateBackButton();
       renderOverlay(id);
       configureAudio(id);
+      playAutoplayMedia();
 
       if (meta.sceneType === 'object360') {
         const data = config.object360Scenes?.[id];
         if (!data || !window.Object360Viewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
-        objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderOverlay(id,state)});
-        renderOverlay(id,objectViewer.getState());
+        objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderDynamicHotspots(id,state)});
+        renderDynamicHotspots(id,objectViewer.getState());
         return;
       }
       if (meta.sceneType === 'stl') {
@@ -3878,9 +3983,9 @@
         stlViewer = new StlViewer(host,{
           source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
           autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
-          onChange:(state)=>renderOverlay(id,state,stlViewer)
+          onChange:(state)=>renderDynamicHotspots(id,state,stlViewer)
         });
-        renderOverlay(id,stlViewer.getState(),stlViewer);
+        renderDynamicHotspots(id,stlViewer.getState(),stlViewer);
         stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
@@ -3893,7 +3998,7 @@
         if (!sceneId || sceneId===currentSceneId) return;
         if (currentSceneId) historyStack.push(currentSceneId);
         currentSceneId = sceneId;
-        updateMenu(sceneId); updateBackButton(); renderOverlay(sceneId); configureAudio(sceneId); preloadNeighbors(sceneId);
+        updateMenu(sceneId); updateBackButton(); renderOverlay(sceneId); configureAudio(sceneId); playAutoplayMedia(); preloadNeighbors(sceneId);
       });
     };
 
@@ -3955,7 +4060,10 @@
     if (config.exportSettings?.kioskMode) {
       try { await document.documentElement.requestFullscreen?.(); } catch (_) {}
     }
-    if (withSound) await tryPlayMusic();
+    if (withSound) {
+      await tryPlayMusic();
+      playAutoplayMedia();
+    }
   };
 
   const setupStartScreen = () => {
@@ -4011,7 +4119,7 @@
     startSound?.addEventListener('click',()=>enterTour(true));
     startSilent?.addEventListener('click',()=>enterTour(false));
 
-    const unlockAudio=()=>{userInteracted=true;if(startScreen.hidden)tryPlayMusic();};
+    const unlockAudio=()=>{userInteracted=true;if(startScreen.hidden){tryPlayMusic();playAutoplayMedia();}};
     document.addEventListener('pointerdown',unlockAudio,{once:true,capture:true});
     document.addEventListener('keydown',unlockAudio,{once:true,capture:true});
 
@@ -4893,7 +5001,7 @@
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
-        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
+        onFrameChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
       });
       renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
@@ -4912,7 +5020,7 @@
         color: data.color,
         backgroundMode: data.backgroundMode,
         backgroundImage: stlBackgroundImageForData(data),
-        onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
+        onChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
       renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
       previewStlViewer.ready.catch(console.error);
@@ -5458,6 +5566,9 @@
       if (card) openMediaObjectDialog(card.dataset.mediaObjectId);
     });
     els.mediaObjectType.addEventListener('change', updateMediaDialogUi);
+    els.mediaObjectVolume.addEventListener('input', () => {
+      els.mediaObjectVolumeValue.textContent = els.mediaObjectVolume.value + '%';
+    });
     els.mediaObjectFile.addEventListener('change', async () => {
       const file = els.mediaObjectFile.files?.[0];
       if (!file) return;
