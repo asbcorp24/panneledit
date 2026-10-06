@@ -7,7 +7,7 @@
   <title>Pannellum Tour Editor</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css">
-  <link rel="stylesheet" href="assets/app.css?v=20261006-1">
+  <link rel="stylesheet" href="assets/app.css?v=20261006-2">
 </head>
 <body>
   <div class="app-shell">
@@ -360,7 +360,7 @@
           <div class="panel-head">
             <div>
               <h2>Медиа</h2>
-              <p>Фото, галерея, видео, PDF, кнопки</p>
+              <p>Фото, галерея, видео, аудио, PDF, кнопки</p>
             </div>
             <button class="icon-btn" id="btnAddMediaObject" title="Добавить медиа" disabled>＋</button>
           </div>
@@ -483,6 +483,7 @@
           <option value="image">Фото</option>
           <option value="gallery">Галерея</option>
           <option value="video">Видео</option>
+          <option value="audio">Аудио</option>
           <option value="pdf">PDF / документ</option>
           <option value="button">Кнопка</option>
         </select>
@@ -492,9 +493,9 @@
         <input id="mediaObjectTitle" type="text" placeholder="Подробнее">
       </label>
       <label class="upload-box" id="mediaUploadBox">
-        <input id="mediaObjectFile" type="file" accept="image/*,video/mp4,video/webm,application/pdf">
+        <input id="mediaObjectFile" type="file" accept="image/*,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav,audio/x-wav,application/pdf,.mp3,.ogg,.wav">
         <b>Выбрать файл</b>
-        <span id="mediaObjectFilename">JPG/PNG/WEBP, MP4/WEBM или PDF</span>
+        <span id="mediaObjectFilename">JPG/PNG/WEBP, MP4/WEBM, MP3/OGG/WAV или PDF</span>
       </label>
       <label class="upload-box" id="mediaGalleryUploadBox" hidden>
         <input id="mediaGalleryFiles" type="file" accept="image/*" multiple>
@@ -528,12 +529,24 @@
           </select>
         </label>
       </div>
+      <label class="field" id="mediaAudioStyleRow" hidden>
+        <span>Вид аудиоплеера</span>
+        <select id="mediaObjectAudioStyle">
+          <option value="compact">Компактный</option>
+          <option value="large">Большой</option>
+          <option value="hidden">Скрытый фон</option>
+        </select>
+      </label>
+      <label class="range-field" id="mediaVolumeRow" hidden>
+        <span>Громкость <b id="mediaObjectVolumeValue">80%</b></span>
+        <input id="mediaObjectVolume" type="range" min="0" max="100" step="1" value="80">
+      </label>
       <label class="switch-row" id="mediaAutoplayRow">
-        <span><b>Автовоспроизведение</b><small>Для видео; браузер может потребовать muted</small></span>
+        <span><b>Автовоспроизведение</b><small>Для видео и аудио; браузер может ограничить автозапуск</small></span>
         <input id="mediaObjectAutoplay" type="checkbox">
       </label>
       <label class="switch-row" id="mediaLoopRow">
-        <span><b>Повторять</b><small>Loop для видео</small></span>
+        <span><b>Повторять</b><small>Loop для видео и аудио</small></span>
         <input id="mediaObjectLoop" type="checkbox">
       </label>
 
@@ -900,6 +913,6 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="assets/object360.js?v=20261005-1"></script>
   <script src="assets/stl-viewer.js?v=20261006-1"></script>
-  <script src="assets/app.js?v=20261006-1"></script>
+  <script src="assets/app.js?v=20261006-2"></script>
 </body>
 </html>
