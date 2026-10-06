@@ -2608,8 +2608,8 @@
       anchorY: pendingHotspotAnchor?.anchorY ?? 50,
       anchorSector: pendingHotspotAnchor?.anchorSector ?? 0,
       anchorRow: pendingHotspotAnchor?.anchorRow ?? 0,
-      anchorYaw: pendingHotspotAnchor?.anchorYaw ?? Number(yaw) || 0,
-      anchorPitch: pendingHotspotAnchor?.anchorPitch ?? Number(pitch) || 0,
+      anchorYaw: pendingHotspotAnchor?.anchorYaw ?? (Number(yaw) || 0),
+      anchorPitch: pendingHotspotAnchor?.anchorPitch ?? (Number(pitch) || 0),
       visible: hotspot.visible !== false,
       locked: Boolean(hotspot.locked)
     });
@@ -4521,6 +4521,19 @@
   }
 
   function setupEvents() {
+    els.btnUndo.addEventListener('click', undoProject);
+    els.btnRedo.addEventListener('click', redoProject);
+    window.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undoProject();
+      } else if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        redoProject();
+      }
+    });
+
     els.btnAddScene.addEventListener('click', openSceneDialog);
     els.btnAddSceneCenter.addEventListener('click', openSceneDialog);
 
@@ -4600,6 +4613,60 @@
       if (card) openTextObjectDialog(card.dataset.textObjectId);
     });
 
+    els.btnAddMediaObject.addEventListener('click', () => openMediaObjectDialog());
+    els.mediaObjectList.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-media-object-id]');
+      if (card) openMediaObjectDialog(card.dataset.mediaObjectId);
+    });
+    els.mediaObjectType.addEventListener('change', updateMediaDialogUi);
+    els.mediaObjectFile.addEventListener('change', async () => {
+      const file = els.mediaObjectFile.files?.[0];
+      if (!file) return;
+      try {
+        pendingMediaData = await fileToDataURL(file);
+        pendingMediaFilename = file.name;
+        els.mediaObjectFilename.textContent = file.name;
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось прочитать медиафайл');
+      }
+    });
+    els.mediaGalleryFiles.addEventListener('change', async () => {
+      const files = [...els.mediaGalleryFiles.files || []];
+      if (!files.length) return;
+      try {
+        pendingMediaGallery = [];
+        for (const file of files.slice(0, 30)) {
+          pendingMediaGallery.push({ data: await fileToDataURL(file), filename:file.name });
+        }
+        els.mediaGalleryCount.textContent = pendingMediaGallery.length + ' изображений';
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось прочитать галерею');
+      }
+    });
+    els.mediaObjectForm.addEventListener('submit', async (event) => {
+      if (event.submitter?.value === 'cancel') return;
+      event.preventDefault();
+      await saveMediaObjectFromDialog();
+    });
+    els.btnDeleteMediaObject.addEventListener('click', () => {
+      const id = els.mediaObjectEditId.value;
+      if (id && confirm('Удалить этот медиа-объект?')) deleteMediaObject(id);
+    });
+
+    els.layerList.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-layer-action]');
+      const card = event.target.closest('[data-layer-kind]');
+      if (!action || !card) return;
+      const item = findLayerItem(card.dataset.layerKind, card.dataset.layerId);
+      if (!item) return;
+      if (action.dataset.layerAction === 'visible') item.visible = item.visible === false;
+      if (action.dataset.layerAction === 'locked') item.locked = !item.locked;
+      markDirty({ rerenderViewer: card.dataset.layerKind === 'hotspot' && getScene()?.sceneType === 'panorama' });
+      renderCompositeOverlay(getScene(), els.sceneOverlay, null, { editor:true });
+    });
+
     els.textObjectForm.addEventListener('submit', (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
@@ -4650,6 +4717,59 @@
       openTextObjectDialog(element.dataset.textObjectId);
     });
 
+    els.sceneOverlay.addEventListener('click', (event) => {
+      const hotspot = event.target.closest('[data-screen-hotspot-id]');
+      if (!hotspot) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const scene = getScene();
+      const item = scene?.hotspots?.find((entry) => entry.id === hotspot.dataset.screenHotspotId);
+      if (item) openHotspotDialog(item.pitch || 0, item.yaw || 0, item.id);
+    });
+
+    let draggedMediaElement = null;
+    let mediaDragOffsetX = 0;
+    let mediaDragOffsetY = 0;
+    els.sceneOverlay.addEventListener('pointerdown', (event) => {
+      const element = event.target.closest('[data-media-object-id]');
+      if (!element || element.classList.contains('is-locked')) return;
+      const scene = getScene();
+      const item = scene?.mediaObjects?.find((entry) => entry.id === element.dataset.mediaObjectId);
+      if (!item || item.locked) return;
+      event.preventDefault();
+      event.stopPropagation();
+      draggedMediaElement = element;
+      const box = element.getBoundingClientRect();
+      mediaDragOffsetX = event.clientX - box.left;
+      mediaDragOffsetY = event.clientY - box.top;
+      try { element.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    els.sceneOverlay.addEventListener('pointermove', (event) => {
+      if (!draggedMediaElement) return;
+      const scene = getScene();
+      const item = scene?.mediaObjects?.find((entry) => entry.id === draggedMediaElement.dataset.mediaObjectId);
+      if (!item) return;
+      const rect = els.sceneOverlay.getBoundingClientRect();
+      item.x = Number(clampNumber(((event.clientX - mediaDragOffsetX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100, item.x).toFixed(2));
+      item.y = Number(clampNumber(((event.clientY - mediaDragOffsetY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100, item.y).toFixed(2));
+      draggedMediaElement.style.left = item.x + '%';
+      draggedMediaElement.style.top = item.y + '%';
+    });
+    const finishMediaDrag = () => {
+      if (!draggedMediaElement) return;
+      draggedMediaElement = null;
+      markDirty();
+    };
+    els.sceneOverlay.addEventListener('pointerup', finishMediaDrag);
+    els.sceneOverlay.addEventListener('pointercancel', finishMediaDrag);
+    els.sceneOverlay.addEventListener('dblclick', (event) => {
+      const element = event.target.closest('[data-media-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openMediaObjectDialog(element.dataset.mediaObjectId);
+    });
+
     els.hotspotList.addEventListener('click', (event) => {
       const card = event.target.closest('[data-hotspot-id]');
       if (!card) return;
@@ -4659,17 +4779,56 @@
     });
 
     els.btnAddHotspot.addEventListener('click', () => {
-      if (!viewer) return;
-      openHotspotDialog(viewer.getPitch(), viewer.getYaw());
+      const scene = getScene();
+      if (!scene) return;
+      if (viewer) {
+        openHotspotDialog(viewer.getPitch(), viewer.getYaw());
+        return;
+      }
+      if (objectViewer) {
+        const state = objectViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'object360', anchorX:50, anchorY:50,
+          anchorSector:state.sector, anchorRow:state.row, anchorYaw:0, anchorPitch:0
+        });
+        return;
+      }
+      if (stlViewer) {
+        const state = stlViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'stl-screen', anchorX:50, anchorY:50,
+          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
+        });
+      }
     });
 
     els.panorama.addEventListener('dblclick', (event) => {
-      if (!viewer || !getScene()) return;
-      try {
-        const [pitch, yaw] = viewer.mouseEventToCoords(event);
-        openHotspotDialog(pitch, yaw);
-      } catch (error) {
-        console.warn(error);
+      const scene = getScene();
+      if (!scene) return;
+      if (viewer) {
+        try {
+          const [pitch, yaw] = viewer.mouseEventToCoords(event);
+          openHotspotDialog(pitch, yaw);
+        } catch (error) {
+          console.warn(error);
+        }
+        return;
+      }
+      const rect = els.panorama.getBoundingClientRect();
+      const x = clampNumber(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100, 50);
+      const y = clampNumber(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100, 50);
+      if (objectViewer) {
+        const state = objectViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'object360', anchorX:x, anchorY:y,
+          anchorSector:state.sector, anchorRow:state.row, anchorYaw:0, anchorPitch:0
+        });
+      } else if (stlViewer) {
+        const state = stlViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'stl-screen', anchorX:x, anchorY:y,
+          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
+        });
       }
     });
 
@@ -4780,6 +4939,7 @@
       applyProjectSettingChange();
       renderViewer();
     });
+    els.defaultTransition.addEventListener('change', applyProjectSettingChange);
     els.autoRotateEnabled.addEventListener('change', () => {
       applyProjectSettingChange();
       renderViewer();
@@ -5110,6 +5270,7 @@
       destroyViewer();
       project = createEmptyProject();
       currentSceneId = null;
+      resetHistory();
       await clearPersistedProject();
       await persistProject();
       renderAll();
@@ -5193,6 +5354,7 @@
     }
 
     currentSceneId = project.firstScene || project.scenes[0]?.id || null;
+    resetHistory();
     renderAll();
     setSaveState('saved');
   }
