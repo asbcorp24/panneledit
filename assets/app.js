@@ -1953,6 +1953,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
@@ -2009,6 +2010,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
@@ -2126,6 +2128,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
