@@ -820,7 +820,7 @@
         url: hotspot.url ? String(hotspot.url) : '',
         info: hotspot.info ? String(hotspot.info) : '',
         transition: ['fade','zoom','blur','portal','glitch','black'].includes(hotspot.transition) ? hotspot.transition : 'fade',
-        anchorMode: ['panorama','object360','stl-screen'].includes(hotspot.anchorMode)
+        anchorMode: ['panorama','object360','stl-screen','stl-3d'].includes(hotspot.anchorMode)
           ? hotspot.anchorMode
           : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : ((scene.sceneType === 'stl' || scene.stl) ? 'stl-screen' : 'panorama')),
         anchorX: clampNumber(hotspot.anchorX, 0, 100, 50),
@@ -829,6 +829,9 @@
         anchorRow: Math.max(0, Number(hotspot.anchorRow) || 0),
         anchorYaw: Number(hotspot.anchorYaw) || 0,
         anchorPitch: Number(hotspot.anchorPitch) || 0,
+        modelPoint: Array.isArray(hotspot.modelPoint) && hotspot.modelPoint.length >= 3
+          ? hotspot.modelPoint.slice(0,3).map((v)=>Number(v)||0)
+          : null,
         visible: hotspot.visible !== false,
         locked: Boolean(hotspot.locked),
         zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
@@ -1101,7 +1104,7 @@
     else target.innerHTML = markup;
   }
 
-  function screenHotspotVisible(hotspot, scene, state = null) {
+  function screenHotspotVisible(hotspot, scene, state = null, projector = null) {
     if (hotspot.visible === false) return false;
     if (scene.sceneType === 'object360') {
       if (!state) return true;
@@ -1112,6 +1115,9 @@
         Number(state.row || 0) === Number(hotspot.anchorRow || 0);
     }
     if (scene.sceneType === 'stl') {
+      if (hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+        return Boolean(projector.projectPoint(hotspot.modelPoint)?.visible);
+      }
       if (!state) return true;
       const dy = Math.abs((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
       const dp = Math.abs((Number(state.pitch) || 0) - hotspot.anchorPitch);
@@ -1120,9 +1126,13 @@
     return false;
   }
 
-  function screenHotspotPosition(hotspot, scene, state = null) {
+  function screenHotspotPosition(hotspot, scene, state = null, projector = null) {
     let x = hotspot.anchorX;
     let y = hotspot.anchorY;
+    if (scene.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+      const projected = projector.projectPoint(hotspot.modelPoint);
+      if (projected) return { x:projected.x, y:projected.y };
+    }
     if (scene.sceneType === 'stl' && state) {
       const dy = ((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
       const dp = (Number(state.pitch) || 0) - hotspot.anchorPitch;
@@ -1132,9 +1142,9 @@
     return { x: clampNumber(x, -20, 120, hotspot.anchorX), y: clampNumber(y, -20, 120, hotspot.anchorY) };
   }
 
-  function screenHotspotMarkup(hotspot, scene, state = null, { editor = false } = {}) {
-    if (!screenHotspotVisible(hotspot, scene, state)) return '';
-    const pos = screenHotspotPosition(hotspot, scene, state);
+  function screenHotspotMarkup(hotspot, scene, state = null, { editor = false, projector = null } = {}) {
+    if (!screenHotspotVisible(hotspot, scene, state, projector)) return '';
+    const pos = screenHotspotPosition(hotspot, scene, state, projector);
     const label = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Инфо');
     return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor' : '') +
       ' hotspot-' + escapeHtml(hotspot.type) + '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
@@ -1143,15 +1153,15 @@
       '<span>' + escapeHtml(label) + '</span></button>';
   }
 
-  function renderScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, append = true } = {}) {
+  function renderScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, append = true, projector = null } = {}) {
     if (!target || !scene || scene.sceneType === 'panorama') return;
     const hotspots = Array.isArray(scene.hotspots) ? scene.hotspots : [];
-    const markup = hotspots.map((hotspot) => screenHotspotMarkup(hotspot, scene, state, { editor })).join('');
+    const markup = hotspots.map((hotspot) => screenHotspotMarkup(hotspot, scene, state, { editor, projector })).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
   }
 
-  function renderCompositeOverlay(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true } = {}) {
+  function renderCompositeOverlay(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, projector = null } = {}) {
     if (!target) return;
     target.innerHTML = '';
     if (!scene) {
@@ -1160,7 +1170,7 @@
     }
     renderSceneTextOverlay(scene, target, { editor, append: true });
     renderSceneMediaOverlay(scene, target, { editor, append: true });
-    renderScreenHotspots(scene, target, state, { editor, append: true });
+    renderScreenHotspots(scene, target, state, { editor, append: true, projector });
     target.hidden = !target.children.length;
   }
 
@@ -1803,7 +1813,7 @@
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
               '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
-            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
           }
         });
         renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
@@ -1839,10 +1849,10 @@
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
               '° · zoom ' + Number(state.zoom).toFixed(2);
-            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
           }
         });
-        renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true });
+        renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true, projector:stlViewer });
         stlViewer.ready.catch((error) => {
           console.error(error);
           showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
@@ -2495,7 +2505,8 @@
           anchorSector: hotspot.anchorSector,
           anchorRow: hotspot.anchorRow,
           anchorYaw: hotspot.anchorYaw,
-          anchorPitch: hotspot.anchorPitch
+          anchorPitch: hotspot.anchorPitch,
+          modelPoint: Array.isArray(hotspot.modelPoint) ? hotspot.modelPoint.slice(0,3) : null
         }
       : (anchor || (scene.sceneType === 'object360'
         ? { anchorMode:'object360', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
@@ -2530,6 +2541,11 @@
         ', ряд ' + ((pendingHotspotAnchor.anchorRow || 0) + 1) +
         ', позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
         Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else if (pendingHotspotAnchor?.anchorMode === 'stl-3d') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'STL: точка закреплена на поверхности модели · ' +
+        (pendingHotspotAnchor.modelPoint || []).map((v)=>Number(v).toFixed(3)).join(' / ');
     } else if (pendingHotspotAnchor?.anchorMode === 'stl-screen') {
       els.hotspotAnchorInfo.hidden = false;
       els.hotspotAnchorInfo.textContent =
@@ -2624,6 +2640,7 @@
       anchorRow: pendingHotspotAnchor?.anchorRow ?? 0,
       anchorYaw: pendingHotspotAnchor?.anchorYaw ?? (Number(yaw) || 0),
       anchorPitch: pendingHotspotAnchor?.anchorPitch ?? (Number(pitch) || 0),
+      modelPoint: Array.isArray(pendingHotspotAnchor?.modelPoint) ? pendingHotspotAnchor.modelPoint.slice(0,3) : null,
       visible: hotspot.visible !== false,
       locked: Boolean(hotspot.locked),
       zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
@@ -4810,7 +4827,7 @@
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
-        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
+        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
       renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
@@ -4829,9 +4846,9 @@
         color: data.color,
         backgroundMode: data.backgroundMode,
         backgroundImage: stlBackgroundImageForData(data),
-        onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
+        onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
-      renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false });
+      renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
       previewStlViewer.ready.catch(console.error);
       return;
     }
