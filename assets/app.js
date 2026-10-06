@@ -3139,6 +3139,7 @@
     const tileCanvas = document.createElement('canvas');
     const fallbackCanvas = document.createElement('canvas');
     const fallbackSize = Math.min(1024, spec.cubeResolution);
+    const generatedFiles = [];
     fallbackCanvas.width = fallbackSize;
     fallbackCanvas.height = fallbackSize;
     const fallbackCtx = fallbackCanvas.getContext('2d', { alpha: false });
@@ -3175,10 +3176,9 @@
               tileCtx.drawImage(levelCanvas, sx, sy, width, height, 0, 0, width, height);
 
               const blob = await canvasToBlob(tileCanvas, 'image/jpeg', spec.quality);
-              root.file(
-                'multires/' + sceneDir + '/' + level + '/' + face + y + '_' + x + '.jpg',
-                blob
-              );
+              const tilePath = 'multires/' + sceneDir + '/' + level + '/' + face + y + '_' + x + '.jpg';
+              root.file(tilePath, blob);
+              generatedFiles.push(tilePath);
             }
           }
         }
@@ -3186,7 +3186,9 @@
         fallbackCtx.clearRect(0, 0, fallbackSize, fallbackSize);
         fallbackCtx.drawImage(faceCanvas, 0, 0, fallbackSize, fallbackSize);
         const fallbackBlob = await canvasToBlob(fallbackCanvas, 'image/jpeg', spec.quality);
-        root.file('multires/' + sceneDir + '/fallback/' + face + '.jpg', fallbackBlob);
+        const fallbackPath = 'multires/' + sceneDir + '/fallback/' + face + '.jpg';
+        root.file(fallbackPath, fallbackBlob);
+        generatedFiles.push(fallbackPath);
 
         await yieldToBrowser();
       }
@@ -3199,7 +3201,8 @@
       tileResolution: spec.tileResolution,
       maxLevel: spec.maxLevel,
       cubeResolution: spec.cubeResolution,
-      thumbnail: makeMultiresThumbnail(image)
+      thumbnail: makeMultiresThumbnail(image),
+      files: generatedFiles
     };
   }
 
@@ -3259,6 +3262,7 @@
     config.guide = normalizeGuide(project.guide || {}, project.scenes);
     config.exportSettings = normalizeExportSettings(project.exportSettings || {});
     config.defaultTransition = project.settings.defaultTransition || 'fade';
+    config.offlineAssets = [...multiresScenes.values()].flatMap((item) => item.files || []);
     return config;
   }
 
@@ -3856,7 +3860,7 @@
       }
       if (!window.pannellum) { host.innerHTML='<div class="viewer-error">Pannellum не загрузился</div>'; return; }
       const panoConfig = {...config,default:{...(config.default||{}),firstScene:id}};
-      ['object360Scenes','stlScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition'].forEach((key)=>delete panoConfig[key]);
+      ['object360Scenes','stlScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition','offlineAssets'].forEach((key)=>delete panoConfig[key]);
       decorateUniversalHotspots(panoConfig);
       panoViewer = pannellum.viewer('panorama',panoConfig);
       panoViewer.on('scenechange',(sceneId)=>{
@@ -4491,6 +4495,7 @@
     });
     if (config.projectAudio?.music?.src) assets.add(config.projectAudio.music.src);
     if (config.startScreen?.coverData) assets.add(config.startScreen.coverData);
+    (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
     return "const CACHE='pannellum-tour-v6';\n" +
