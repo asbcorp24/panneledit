@@ -4734,7 +4734,7 @@
     if (!scene) return;
 
     destroyPreviewViewers();
-    renderSceneTextOverlay(scene, els.previewSceneOverlay, { editor: false });
+    renderCompositeOverlay(scene, els.previewSceneOverlay, null, { editor: false });
     configurePreviewAudio(scene);
 
     if (scene.sceneType === 'object360') {
@@ -4746,7 +4746,8 @@
         frames: data.frames,
         startSector: data.startSector,
         startRow: data.startRow,
-        autoplay: data.autoplay
+        autoplay: data.autoplay,
+        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
       return;
     }
@@ -4763,7 +4764,8 @@
         autoRotate: data.autoplay,
         color: data.color,
         backgroundMode: data.backgroundMode,
-        backgroundImage: stlBackgroundImageForData(data)
+        backgroundImage: stlBackgroundImageForData(data),
+        onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
       previewStlViewer.ready.catch(console.error);
       return;
@@ -4778,7 +4780,7 @@
     previewViewer.on('scenechange', (nextSceneId) => {
       const nextScene = getScene(nextSceneId);
       if (!nextScene) return;
-      renderSceneTextOverlay(nextScene, els.previewSceneOverlay, { editor: false });
+      renderCompositeOverlay(nextScene, els.previewSceneOverlay, null, { editor: false });
       configurePreviewAudio(nextScene);
     });
   }
@@ -5934,6 +5936,25 @@
         console.warn(error);
       }
     });
+    els.previewSceneOverlay.addEventListener('click', (event) => {
+      const scene = getScene();
+      const hotspotEl = event.target.closest('[data-screen-hotspot-id]');
+      if (hotspotEl && scene) {
+        const hotspot = (scene.hotspots || []).find((item) => item.id === hotspotEl.dataset.screenHotspotId);
+        if (hotspot?.type === 'scene' && hotspot.targetSceneId) renderPreviewScene(hotspot.targetSceneId);
+        else if (hotspot?.type === 'url' && hotspot.url) window.open(hotspot.url, '_blank', 'noopener');
+        else if (hotspot?.type === 'info') showToast(hotspot.info || hotspot.text || 'Информация', 4200);
+        return;
+      }
+      const mediaEl = event.target.closest('[data-media-object-id]');
+      if (!mediaEl || !scene) return;
+      const item = (scene.mediaObjects || []).find((entry) => entry.id === mediaEl.dataset.mediaObjectId);
+      if (!item) return;
+      if (item.type === 'button' && item.targetSceneId) renderPreviewScene(item.targetSceneId);
+      else if (item.type === 'button' && item.url) window.open(item.url, '_blank', 'noopener');
+      else if (item.type === 'pdf' && item.data) window.open(item.data, '_blank', 'noopener');
+    });
+
     els.previewNarrationButton.addEventListener('click', async () => {
       if (!previewNarrationAudio) return;
       try {
