@@ -3441,7 +3441,8 @@
     css +=
       '.scene-text-overlay{position:fixed;inset:0;z-index:35;pointer-events:none;overflow:hidden}\n' +
       '.scene-media-object{position:absolute;pointer-events:auto;border-radius:14px;overflow:hidden;animation-duration:.48s;animation-fill-mode:both}.scene-media-object img,.scene-media-object video{width:100%;height:100%;display:block}.scene-media-object img{object-position:center}.scene-media-video video{background:#000}.scene-media-pdf,.scene-media-button{height:auto!important}.scene-document-card,.scene-action-button{width:100%;height:100%;min-height:48px;border:1px solid rgba(255,255,255,.15);border-radius:14px;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px)}.scene-document-card{display:flex;align-items:center;gap:10px;padding:12px}.scene-document-card b{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#d94b4b}.scene-action-button{padding:12px 18px;font-weight:800;cursor:pointer}.scene-gallery-frame{position:relative;width:100%;height:100%}.scene-gallery-frame span{position:absolute;right:8px;bottom:8px;padding:4px 7px;border-radius:8px;background:rgba(0,0,0,.65);font-size:10px}.scene-gallery-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none}.scene-gallery-nav button{pointer-events:auto;margin:6px;width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}.scene-media-anim-fade{animation-name:sceneTextFade}.scene-media-anim-slide{animation-name:sceneTextSlide}.scene-media-anim-zoom{animation-name:sceneMediaZoom}.scene-media-anim-none{animation:none}@keyframes sceneMediaZoom{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:scale(1)}}\n' +
-      '.screen-hotspot{position:absolute;transform:translate(-50%,-50%);z-index:45;display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(5,9,18,.82);color:#fff;padding:8px 10px;pointer-events:auto;cursor:pointer;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.35)}.screen-hotspot>span{font:700 10px system-ui;white-space:nowrap}.screen-hotspot:hover{border-color:#7c8cff;transform:translate(-50%,-50%) scale(1.04)}\n' +
+      '.screen-hotspot{position:absolute;transform:translate(-50%,-50%);z-index:45;display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(5,9,18,.82);color:#fff;padding:8px 10px;pointer-events:auto;cursor:pointer;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.35)}.screen-hotspot>span{font:700 10px system-ui;white-space:nowrap}.screen-hotspot:hover{border-color:#7c8cff;transform:translate(-50%,-50%) scale(1.04)}\n' +      '.guide-highlight{animation:guidePulse .8s ease-in-out infinite alternate!important;box-shadow:0 0 0 6px rgba(117,231,214,.25),0 0 30px rgba(117,231,214,.8)!important}@keyframes guidePulse{from{filter:brightness(1)}to{filter:brightness(1.8)}}\n' +
+
       '.tour-bottom-dock{position:fixed;z-index:65;right:12px;bottom:12px;display:flex;gap:7px}.tour-bottom-dock button{min-width:40px;height:40px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(6,10,18,.78);color:#fff;padding:0 12px;backdrop-filter:blur(12px);cursor:pointer;font:800 12px system-ui}.tour-bottom-dock button.active{border-color:rgba(31,214,187,.65);color:#75e7d6}.tour-bottom-dock button[hidden]{display:none}\n' +
       '.tour-transition-layer{position:fixed;inset:0;z-index:90;pointer-events:none;opacity:0;background:#05070c}.tour-transition-layer.active{animation-duration:.62s;animation-fill-mode:both}.tour-transition-layer.t-fade.active{animation-name:tFade}.tour-transition-layer.t-black.active{animation-name:tBlack}.tour-transition-layer.t-blur.active{animation-name:tBlur;background:rgba(5,7,12,.88);backdrop-filter:blur(20px)}.tour-transition-layer.t-zoom.active{animation-name:tZoom;background:radial-gradient(circle,rgba(124,140,255,.14),#05070c)}.tour-transition-layer.t-portal.active{animation-name:tPortal;background:radial-gradient(circle at center,transparent 0 12%,#7c8cff 13%,#05070c 58%)}.tour-transition-layer.t-glitch.active{animation-name:tGlitch;background:repeating-linear-gradient(0deg,rgba(124,140,255,.16) 0 2px,#05070c 3px 7px)}@keyframes tFade{0%,100%{opacity:0}45%,60%{opacity:1}}@keyframes tBlack{0%,100%{opacity:0}35%,65%{opacity:1}}@keyframes tBlur{0%,100%{opacity:0}45%,60%{opacity:1}}@keyframes tZoom{0%,100%{opacity:0;transform:scale(1.25)}48%,58%{opacity:1;transform:scale(1)}}@keyframes tPortal{0%,100%{opacity:0;transform:scale(2)}48%,58%{opacity:1;transform:scale(.8)}}@keyframes tGlitch{0%,100%{opacity:0;transform:none}42%{opacity:1;transform:translateX(-8px)}48%{transform:translateX(10px)}55%{transform:translateX(-4px)}62%{opacity:1;transform:none}}\n' +
       '.tour-start-screen{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background-position:center;background-size:cover}.tour-start-screen[hidden]{display:none}.tour-start-shade{position:absolute;inset:0;background:linear-gradient(135deg,rgba(2,5,12,.9),rgba(7,11,24,.55),rgba(2,5,12,.88))}.tour-start-card{position:relative;z-index:1;width:min(720px,calc(100vw - 36px));padding:44px;border:1px solid rgba(255,255,255,.14);border-radius:28px;background:rgba(5,9,18,.62);backdrop-filter:blur(22px);color:#fff;box-shadow:0 30px 100px rgba(0,0,0,.42)}.tour-start-kicker{font:800 11px system-ui;letter-spacing:.16em;color:#75e7d6}.tour-start-card h1{margin:14px 0 10px;font:900 clamp(34px,6vw,76px)/.96 system-ui;letter-spacing:-.05em}.tour-start-card p{max-width:620px;margin:0 0 28px;color:#c0cadc;font:500 clamp(14px,2vw,20px)/1.5 system-ui}.tour-start-actions{display:flex;gap:10px;flex-wrap:wrap}.tour-start-actions button{border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:13px 18px;background:#7c8cff;color:#fff;font-weight:900;cursor:pointer}.tour-start-actions button+button{background:rgba(255,255,255,.08)}\n' +
@@ -3599,6 +3600,7 @@
       el.style.fontSize = Number(item.fontSize || 20) + 'px';
       el.style.color = item.color || '#fff';
       el.style.textAlign = item.align || 'left';
+      el.style.zIndex = String(Number(item.zIndex) || 10);
       const inner = document.createElement('div');
       inner.className = 'scene-text-inner';
       inner.textContent = item.text || '';
@@ -3614,6 +3616,7 @@
       el.style.top = Number(item.y || 0) + '%';
       el.style.width = Number(item.width || 36) + '%';
       el.style.height = Number(item.height || 32) + '%';
+      el.style.zIndex = String(Number(item.zIndex) || 20);
 
       if (item.type === 'image' && item.src) {
         const img = document.createElement('img');
@@ -3667,8 +3670,10 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      btn.dataset.screenHotspotId = hotspot.id || '';
       btn.style.left = pos.x + '%';
       btn.style.top = pos.y + '%';
+      btn.style.zIndex = String(Number(hotspot.zIndex) || 30);
       btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
       btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
       btn.addEventListener('click', () => runHotspotAction(hotspot));
@@ -3840,6 +3845,15 @@
     if (previous) showScene(previous,false,'fade');
   };
 
+  const highlightGuideHotspot = (hotspotId) => {
+    document.querySelectorAll('.guide-highlight').forEach((el)=>el.classList.remove('guide-highlight'));
+    if (!hotspotId) return;
+    const token = String(hotspotId).replace(/[^a-zA-Z0-9_-]/g,'');
+    const el = document.querySelector('.tour-hotspot-' + token) ||
+      document.querySelector('[data-screen-hotspot-id="' + CSS.escape(String(hotspotId)) + '"]');
+    if (el) el.classList.add('guide-highlight');
+  };
+
   const stopGuide = () => {
     clearTimeout(guideTimer);
     guideTimer = 0; guideRunning = false; guideIndex = -1;
@@ -3854,6 +3868,8 @@
     const step = steps[index];
     await showScene(step.sceneId,false,index===0?'fade':config.defaultTransition||'fade');
     if (!guideRunning) return;
+    await delay(180);
+    highlightGuideHotspot(step.highlightHotspotId);
     if (step.narrationAuto && config.sceneMeta?.[step.sceneId]?.audio?.narration?.src) {
       await playNarration();
     }
