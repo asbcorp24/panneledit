@@ -1284,7 +1284,7 @@
   }
 
   function hotspotStyleClass(hotspot) {
-    return 'hotspot-style-' + hotspotCssToken(hotspot.id) + ' tour-hotspot-' + hotspotCssToken(hotspot.id);
+    return 'hotspot-style-' + hotspotCssToken(hotspot.id);
   }
 
   function normalizedGlow(hotspot) {
@@ -1679,14 +1679,14 @@
           sceneId: hotspot.targetSceneId,
           tourTargetSceneId: hotspot.targetSceneId,
           tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
-          cssClass
+          cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id)
         };
       }
 
       return {
         ...base,
         type: 'info',
-        cssClass,
+        cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id),
         tourTargetSceneId: hotspot.targetSceneId,
         tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
         clickHandlerFunc: () => {
@@ -1903,6 +1903,9 @@
     currentSceneId = sceneId;
     renderSceneList();
     renderSceneSettings();
+    renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
     updateToolbarState();
 
@@ -2469,6 +2472,7 @@
 
     document.querySelector('.hotspot-scene-field').hidden = type !== 'scene';
     document.querySelector('.hotspot-icon-field').hidden = type !== 'scene';
+    document.querySelector('.hotspot-transition-field').hidden = type !== 'scene';
     document.querySelector('.hotspot-info-field').hidden = type !== 'info';
     document.querySelector('.hotspot-url-field').hidden = type !== 'url';
   }
@@ -4421,12 +4425,40 @@
       '</svg>';
   }
 
-  function exportedServiceWorker() {
+  function exportedServiceWorker(config) {
+    const assets = new Set([
+      './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js',
+      'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
+    ]);
+
+    Object.values(config.scenes || {}).forEach((scene) => {
+      if (scene.panorama) assets.add(scene.panorama);
+      if (scene.multiRes?.equirectangularThumbnail) assets.add(scene.multiRes.equirectangularThumbnail);
+    });
+    Object.values(config.object360Scenes || {}).forEach((scene) => {
+      (scene.frames || []).forEach((row) => (row || []).forEach((src) => { if (src) assets.add(src); }));
+    });
+    Object.values(config.stlScenes || {}).forEach((scene) => {
+      if (scene.source) assets.add(scene.source);
+      if (scene.backgroundImage) assets.add(scene.backgroundImage);
+    });
+    Object.values(config.sceneMeta || {}).forEach((meta) => {
+      (meta.mediaObjects || []).forEach((item) => {
+        if (item.src) assets.add(item.src);
+        (item.gallery || []).forEach((entry) => { if (entry.src) assets.add(entry.src); });
+      });
+      if (meta.audio?.music?.src) assets.add(meta.audio.music.src);
+      if (meta.audio?.narration?.src) assets.add(meta.audio.narration.src);
+    });
+    if (config.projectAudio?.music?.src) assets.add(config.projectAudio.music.src);
+    if (config.startScreen?.coverData) assets.add(config.startScreen.coverData);
+
+    const list = JSON.stringify([...assets]);
     return "const CACHE='pannellum-tour-v6';\n" +
-      "const CORE=['./','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest'];\n" +
-      "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));\n" +
-      "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));\n" +
-      "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>hit)));});\n";
+      "const CORE=" + list + ";\n" +
+      "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
+      "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
+      "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>new Response('Offline',{status:503}))));});\n";
   }
 
   function qrDataUrlForUrl(url) {
@@ -4637,7 +4669,7 @@
       root.file('tour.json', JSON.stringify(config, null, 2));
       if (config.exportSettings?.pwaEnabled) {
         root.file('manifest.webmanifest', exportedManifest());
-        root.file('sw.js', exportedServiceWorker());
+        root.file('sw.js', exportedServiceWorker(config));
         root.file('icons/app-icon.svg', exportedAppIconSvg());
       }
       if (config.exportSettings?.publicUrl) {
