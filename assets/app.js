@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 6;
+  const PROJECT_VERSION = 7;
 
   const $ = (id) => document.getElementById(id);
 
@@ -1065,7 +1065,7 @@
 
   function mediaObjectMarkup(item, { editor = false } = {}) {
     if (item.visible === false) return '';
-    const cls = [
+    let cls = [
       'scene-media-object',
       'scene-media-' + item.type,
       'scene-media-anim-' + item.animation,
@@ -1853,7 +1853,7 @@
             renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true });
           }
         });
-        renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
+        renderDynamicScreenHotspots(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
         els.coords.textContent =
           'угол ' + formatNum(objectFrameAngle(data, data.startSector)) + '° · кадр ' +
           (data.startSector + 1) + '/' + data.sectors;
@@ -1889,7 +1889,7 @@
             renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
           }
         });
-        renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true, projector:stlViewer });
+        renderDynamicScreenHotspots(scene, els.sceneOverlay, stlViewer.getState(), { editor:true, projector:stlViewer });
         stlViewer.ready.catch((error) => {
           console.error(error);
           showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
@@ -4637,7 +4637,7 @@
     (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
-    return "const CACHE='pannellum-tour-v6';\n" +
+    return "const CACHE='pannellum-tour-v7';\n" +
       "const CORE=" + list + ";\n" +
       "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
       "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
@@ -5003,7 +5003,7 @@
         autoplay: data.autoplay,
         onFrameChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
       });
-      renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
+      renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
     }
 
@@ -5022,7 +5022,7 @@
         backgroundImage: stlBackgroundImageForData(data),
         onChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
-      renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
+      renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
       previewStlViewer.ready.catch(console.error);
       return;
     }
