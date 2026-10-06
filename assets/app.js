@@ -2307,6 +2307,129 @@
     }
   }
 
+  function updateMediaDialogUi() {
+    const type = els.mediaObjectType.value;
+    els.mediaUploadBox.hidden = type === 'gallery' || type === 'button';
+    els.mediaGalleryUploadBox.hidden = type !== 'gallery';
+    els.mediaUrlRow.hidden = type !== 'button';
+    els.mediaTargetRow.hidden = type !== 'button';
+    els.mediaAutoplayRow.hidden = type !== 'video';
+    els.mediaLoopRow.hidden = type !== 'video';
+    if (type === 'button') {
+      populateSceneSelect(els.mediaObjectTargetScene, getScene()?.id || '');
+    }
+  }
+
+  function populateSceneSelect(select, excludeId = '') {
+    const scenes = project.scenes.filter((scene) => scene.id !== excludeId);
+    select.innerHTML = '<option value="">— не выбрано —</option>' +
+      scenes.map((scene) => '<option value="' + escapeHtml(scene.id) + '">' +
+        sceneTypeMeta(scene).icon + ' ' + escapeHtml(scene.title) + '</option>').join('');
+  }
+
+  function openMediaObjectDialog(mediaObjectId = '') {
+    const scene = getScene();
+    if (!scene) return;
+    scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    const existing = mediaObjectId ? scene.mediaObjects.find((item) => item.id === mediaObjectId) : null;
+    const item = normalizeMediaObject(existing || { type:'image', x:10, y:20, width:36, height:32 });
+
+    pendingMediaData = item.data || '';
+    pendingMediaFilename = item.filename || '';
+    pendingMediaGallery = Array.isArray(item.gallery) ? item.gallery.map((entry) => ({...entry})) : [];
+
+    els.mediaObjectForm.reset();
+    els.mediaObjectEditId.value = existing?.id || '';
+    els.mediaObjectDialogTitle.textContent = existing ? 'Редактировать медиа' : 'Новый медиа-объект';
+    els.mediaObjectType.value = item.type;
+    els.mediaObjectTitle.value = item.title;
+    els.mediaObjectFilename.textContent = item.filename || 'Файл не выбран';
+    els.mediaGalleryCount.textContent = pendingMediaGallery.length ? (pendingMediaGallery.length + ' изображений') : 'Файлы не выбраны';
+    els.mediaObjectUrl.value = item.url;
+    populateSceneSelect(els.mediaObjectTargetScene, scene.id);
+    els.mediaObjectTargetScene.value = item.targetSceneId || '';
+    els.mediaObjectX.value = String(item.x);
+    els.mediaObjectY.value = String(item.y);
+    els.mediaObjectWidth.value = String(item.width);
+    els.mediaObjectHeight.value = String(item.height);
+    els.mediaObjectFit.value = item.fit;
+    els.mediaObjectAnimation.value = item.animation;
+    els.mediaObjectAutoplay.checked = Boolean(item.autoplay);
+    els.mediaObjectLoop.checked = Boolean(item.loop);
+    els.btnDeleteMediaObject.hidden = !existing;
+    updateMediaDialogUi();
+    els.mediaObjectDialog.showModal();
+  }
+
+  async function saveMediaObjectFromDialog() {
+    const scene = getScene();
+    if (!scene) return;
+    const type = els.mediaObjectType.value;
+
+    if (type === 'gallery' && !pendingMediaGallery.length) {
+      showToast('Добавьте изображения галереи');
+      return;
+    }
+    if (['image','video','pdf'].includes(type) && !pendingMediaData) {
+      showToast('Выберите файл');
+      return;
+    }
+    if (type === 'button' && !els.mediaObjectUrl.value.trim() && !els.mediaObjectTargetScene.value) {
+      showToast('Для кнопки укажите URL или сцену');
+      return;
+    }
+
+    scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    const existingId = els.mediaObjectEditId.value;
+    let item = existingId ? scene.mediaObjects.find((entry) => entry.id === existingId) : null;
+    if (!item) {
+      item = { id: uid('media') };
+      scene.mediaObjects.push(item);
+    }
+
+    const normalized = normalizeMediaObject({
+      ...item,
+      id: item.id,
+      type,
+      title: els.mediaObjectTitle.value.trim(),
+      data: type === 'gallery' || type === 'button' ? '' : pendingMediaData,
+      filename: type === 'gallery' || type === 'button' ? '' : pendingMediaFilename,
+      gallery: type === 'gallery' ? pendingMediaGallery : [],
+      url: type === 'button' ? els.mediaObjectUrl.value.trim() : '',
+      targetSceneId: type === 'button' ? els.mediaObjectTargetScene.value : '',
+      x: els.mediaObjectX.value,
+      y: els.mediaObjectY.value,
+      width: els.mediaObjectWidth.value,
+      height: els.mediaObjectHeight.value,
+      fit: els.mediaObjectFit.value,
+      animation: els.mediaObjectAnimation.value,
+      autoplay: type === 'video' && els.mediaObjectAutoplay.checked,
+      loop: type === 'video' && els.mediaObjectLoop.checked
+    });
+    Object.assign(item, normalized);
+    els.mediaObjectDialog.close();
+    markDirty();
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor:true });
+  }
+
+  function deleteMediaObject(id) {
+    const scene = getScene();
+    if (!scene) return;
+    scene.mediaObjects = (scene.mediaObjects || []).filter((item) => item.id !== id);
+    if (els.mediaObjectDialog.open) els.mediaObjectDialog.close();
+    markDirty();
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor:true });
+  }
+
+  function findLayerItem(kind, id) {
+    const scene = getScene();
+    if (!scene) return null;
+    if (kind === 'text') return (scene.textObjects || []).find((item) => item.id === id) || null;
+    if (kind === 'media') return (scene.mediaObjects || []).find((item) => item.id === id) || null;
+    if (kind === 'hotspot') return (scene.hotspots || []).find((item) => item.id === id) || null;
+    return null;
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
     const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
