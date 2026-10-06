@@ -15,6 +15,7 @@
         android:layout_height="match_parent" />
 
     <LinearLayout
+        android:id="@+id/arTopPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
@@ -127,6 +128,16 @@
                     android:textColor="#FFFFFF" />
 
                 <Button
+                    android:id="@+id/btnArOrientation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="ОРИЕНТАЦИЯ: АВТО"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp" />
+
+                <Button
                     android:id="@+id/btnArSetCenter"
                     android:layout_width="wrap_content"
                     android:layout_height="44dp"
@@ -139,6 +150,7 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/arMapPanel"
         android:layout_width="148dp"
         android:layout_height="330dp"
         android:layout_gravity="center_vertical|start"
@@ -179,6 +191,7 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/arRowPanel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical|end"
@@ -216,6 +229,7 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/arBottomPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
