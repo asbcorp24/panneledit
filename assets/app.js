@@ -3474,34 +3474,41 @@
   let narrationAudio = null;
   let musicEnabled = true;
   let userInteracted = false;
+  let guideTimer = 0;
+  let guideIndex = -1;
+  let guideRunning = false;
   const historyStack = [];
+  const galleryIndexes = new Map();
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
   const backButton = document.getElementById('tourBackButton');
   const overlay = document.getElementById('sceneTextOverlay');
+  const transitionLayer = document.getElementById('tourTransitionLayer');
+  const infoPanel = document.getElementById('tourInfoPanel');
+  const infoContent = document.getElementById('tourInfoContent');
+  const infoClose = document.getElementById('tourInfoClose');
   const musicButton = document.getElementById('tourMusicButton');
   const narrationButton = document.getElementById('tourNarrationButton');
+  const fullscreenButton = document.getElementById('tourFullscreenButton');
+  const guideButton = document.getElementById('tourGuideButton');
+  const startScreen = document.getElementById('tourStartScreen');
+  const startTitle = document.getElementById('tourStartTitle');
+  const startSubtitle = document.getElementById('tourStartSubtitle');
+  const startSound = document.getElementById('tourStartSound');
+  const startSilent = document.getElementById('tourStartSilent');
+
+  const clamp = (v,min,max) => Math.min(max,Math.max(min,Number(v)||0));
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const destroyViewer = () => {
-    if (panoViewer) {
-      try { panoViewer.destroy(); } catch (_) {}
-      panoViewer = null;
-    }
-    if (objectViewer) {
-      try { objectViewer.destroy(); } catch (_) {}
-      objectViewer = null;
-    }
-    if (stlViewer) {
-      try { stlViewer.destroy(); } catch (_) {}
-      stlViewer = null;
-    }
+    if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
+    if (objectViewer) { try { objectViewer.destroy(); } catch (_) {} objectViewer = null; }
+    if (stlViewer) { try { stlViewer.destroy(); } catch (_) {} stlViewer = null; }
     host.innerHTML = '';
   };
 
-  const updateMenu = (id) => {
-    if (menu) menu.value = id || '';
-  };
+  const updateMenu = (id) => { if (menu) menu.value = id || ''; };
 
   const updateBackButton = () => {
     if (!backButton) return;
@@ -3510,15 +3517,66 @@
     const previousId = historyStack[historyStack.length - 1];
     const previous = config.sceneMeta?.[previousId];
     backButton.textContent = previous?.title ? '← ' + previous.title : '← Назад';
-    backButton.title = previous?.title ? 'Вернуться: ' + previous.title : 'Вернуться назад';
   };
 
-  const renderTextOverlay = (id) => {
+  const showInfo = (text) => {
+    if (!infoPanel || !infoContent) return;
+    infoContent.textContent = text || '';
+    infoPanel.hidden = !text;
+  };
+
+  const screenHotspotVisible = (hotspot, meta, state) => {
+    if (hotspot.visible === false) return false;
+    if (meta.sceneType === 'object360') {
+      if (!state) return true;
+      const sectors = Math.max(1, Number(config.object360Scenes?.[currentSceneId]?.sectors) || 1);
+      const d = ((Number(state.sector)||0) - (Number(hotspot.anchorSector)||0) + sectors) % sectors;
+      const distance = Math.min(d, sectors - d);
+      return distance <= Math.max(1, Math.round(sectors / 18)) &&
+        Number(state.row||0) === Number(hotspot.anchorRow||0);
+    }
+    if (meta.sceneType === 'stl') {
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0));
+      return dy <= 65 && dp <= 55;
+    }
+    return false;
+  };
+
+  const screenHotspotPosition = (hotspot, meta, state) => {
+    let x = Number(hotspot.anchorX)||50;
+    let y = Number(hotspot.anchorY)||50;
+    if (meta.sceneType === 'stl' && state) {
+      const dy = (((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180;
+      const dp = (Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0);
+      x -= dy * .55;
+      y -= dp * .65;
+    }
+    return {x:clamp(x,-20,120), y:clamp(y,-20,120)};
+  };
+
+  const runHotspotAction = (hotspot) => {
+    if (!hotspot) return;
+    if (hotspot.type === 'scene' && hotspot.targetSceneId) {
+      showScene(hotspot.targetSceneId, true, hotspot.transition || config.defaultTransition || 'fade');
+      return;
+    }
+    if (hotspot.type === 'url' && hotspot.url) {
+      window.open(hotspot.url, '_blank', 'noopener');
+      return;
+    }
+    if (hotspot.type === 'info') {
+      showInfo((hotspot.text ? hotspot.text + '\n\n' : '') + (hotspot.info || ''));
+    }
+  };
+
+  const renderOverlay = (id, state = null) => {
     if (!overlay) return;
     overlay.innerHTML = '';
-    const items = config.sceneMeta?.[id]?.textObjects || [];
+    const meta = config.sceneMeta?.[id] || {};
 
-    items.forEach((item) => {
+    (meta.textObjects || []).filter((item) => item.visible !== false).forEach((item) => {
       const el = document.createElement('div');
       el.className = [
         'scene-text-object',
@@ -3526,19 +3584,86 @@
         'scene-text-bg-' + (item.background || 'none'),
         'scene-text-anim-' + (item.animation || 'fade')
       ].join(' ');
-
       el.style.left = Number(item.x || 0) + '%';
       el.style.top = Number(item.y || 0) + '%';
       el.style.width = Number(item.width || 40) + '%';
       el.style.fontSize = Number(item.fontSize || 20) + 'px';
-      el.style.color = item.color || '#ffffff';
+      el.style.color = item.color || '#fff';
       el.style.textAlign = item.align || 'left';
-
       const inner = document.createElement('div');
       inner.className = 'scene-text-inner';
       inner.textContent = item.text || '';
       el.appendChild(inner);
       overlay.appendChild(el);
+    });
+
+    (meta.mediaObjects || []).filter((item) => item.visible !== false).forEach((item) => {
+      const el = document.createElement('div');
+      el.className = 'scene-media-object scene-media-' + item.type + ' scene-media-anim-' + (item.animation || 'fade');
+      el.dataset.mediaId = item.id || '';
+      el.style.left = Number(item.x || 0) + '%';
+      el.style.top = Number(item.y || 0) + '%';
+      el.style.width = Number(item.width || 36) + '%';
+      el.style.height = Number(item.height || 32) + '%';
+
+      if (item.type === 'image' && item.src) {
+        const img = document.createElement('img');
+        img.src = item.src; img.alt = item.title || ''; img.style.objectFit = item.fit || 'contain';
+        el.appendChild(img);
+      } else if (item.type === 'video' && item.src) {
+        const video = document.createElement('video');
+        video.src = item.src; video.controls = true; video.playsInline = true;
+        video.autoplay = Boolean(item.autoplay); video.muted = true; video.loop = Boolean(item.loop);
+        el.appendChild(video);
+      } else if (item.type === 'pdf' && item.src) {
+        const card = document.createElement('button');
+        card.type = 'button'; card.className = 'scene-document-card';
+        card.innerHTML = '<b>PDF</b><span></span>';
+        card.querySelector('span').textContent = item.title || item.filename || 'Документ';
+        card.addEventListener('click', () => window.open(item.src, '_blank', 'noopener'));
+        el.appendChild(card);
+      } else if (item.type === 'button') {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'scene-action-button'; btn.textContent = item.title || 'Подробнее';
+        btn.addEventListener('click', () => {
+          if (item.targetSceneId) showScene(item.targetSceneId, true, config.defaultTransition || 'fade');
+          else if (item.url) window.open(item.url, '_blank', 'noopener');
+        });
+        el.appendChild(btn);
+      } else if (item.type === 'gallery' && item.gallery?.length) {
+        const index = galleryIndexes.get(item.id) || 0;
+        const frame = document.createElement('div');
+        frame.className = 'scene-gallery-frame';
+        const img = document.createElement('img');
+        img.src = item.gallery[index % item.gallery.length].src;
+        img.style.objectFit = item.fit || 'contain';
+        const count = document.createElement('span');
+        count.textContent = (index + 1) + ' / ' + item.gallery.length;
+        frame.append(img, count);
+        const nav = document.createElement('div');
+        nav.className = 'scene-gallery-nav';
+        const prev = document.createElement('button'); prev.type='button'; prev.textContent='‹';
+        const next = document.createElement('button'); next.type='button'; next.textContent='›';
+        prev.addEventListener('click', () => { galleryIndexes.set(item.id,(index - 1 + item.gallery.length)%item.gallery.length); renderOverlay(id,state); });
+        next.addEventListener('click', () => { galleryIndexes.set(item.id,(index + 1)%item.gallery.length); renderOverlay(id,state); });
+        nav.append(prev,next);
+        el.append(frame,nav);
+      }
+      overlay.appendChild(el);
+    });
+
+    (meta.screenHotspots || []).forEach((hotspot) => {
+      if (!screenHotspotVisible(hotspot, meta, state)) return;
+      const pos = screenHotspotPosition(hotspot, meta, state);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      btn.style.left = pos.x + '%';
+      btn.style.top = pos.y + '%';
+      btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
+      btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+      btn.addEventListener('click', () => runHotspotAction(hotspot));
+      overlay.appendChild(btn);
     });
   };
 
@@ -3549,52 +3674,39 @@
 
   const stopNarration = () => {
     if (narrationAudio) {
-      try {
-        narrationAudio.pause();
-        narrationAudio.currentTime = 0;
-      } catch (_) {}
+      try { narrationAudio.pause(); narrationAudio.currentTime = 0; } catch (_) {}
     }
     narrationAudio = null;
-    if (narrationButton) narrationButton.classList.remove('active');
+    narrationButton?.classList.remove('active');
     if (musicAudio) {
       const desired = desiredMusic(currentSceneId);
-      musicAudio.volume = Math.max(0, Math.min(1, Number(desired?.volume ?? 50) / 100));
+      musicAudio.volume = clamp((desired?.volume ?? 50) / 100,0,1);
     }
   };
 
   const tryPlayMusic = async () => {
     if (!musicAudio || !musicEnabled || !userInteracted) return;
-    try {
-      await musicAudio.play();
-      musicButton?.classList.add('active');
-    } catch (_) {}
+    try { await musicAudio.play(); musicButton?.classList.add('active'); } catch (_) {}
   };
 
   const configureAudio = (id) => {
     stopNarration();
-
     const music = desiredMusic(id);
     if (musicButton) musicButton.hidden = !music?.src;
-
     const nextKey = music?.src || '';
     if (nextKey !== musicKey) {
-      if (musicAudio) {
-        try { musicAudio.pause(); } catch (_) {}
-      }
-      musicAudio = null;
-      musicKey = nextKey;
-
+      if (musicAudio) { try { musicAudio.pause(); } catch (_) {} }
+      musicAudio = null; musicKey = nextKey;
       if (music?.src) {
         musicAudio = new Audio(music.src);
         musicAudio.loop = Boolean(music.loop);
+        musicAudio.preload = 'auto';
       }
     }
-
     if (musicAudio && music) {
-      musicAudio.volume = Math.max(0, Math.min(1, Number(music.volume ?? 50) / 100));
+      musicAudio.volume = clamp((music.volume ?? 50) / 100,0,1);
       tryPlayMusic();
     }
-
     const narration = config.sceneMeta?.[id]?.audio?.narration;
     if (narrationButton) narrationButton.hidden = !narration?.src;
   };
@@ -3602,35 +3714,23 @@
   const playNarration = async () => {
     const narration = config.sceneMeta?.[currentSceneId]?.audio?.narration;
     if (!narration?.src) return;
-
-    if (narrationAudio && !narrationAudio.paused) {
-      stopNarration();
-      return;
-    }
-
+    if (narrationAudio && !narrationAudio.paused) { stopNarration(); return; }
     stopNarration();
     narrationAudio = new Audio(narration.src);
-    narrationAudio.volume = Math.max(0, Math.min(1, Number(narration.volume ?? 80) / 100));
-
-    if (musicAudio && !musicAudio.paused) {
-      musicAudio.volume *= 0.28;
-    }
-
-    narrationAudio.addEventListener('ended', stopNarration, { once: true });
-
-    try {
-      await narrationAudio.play();
-      narrationButton?.classList.add('active');
-    } catch (_) {
-      stopNarration();
-    }
+    narrationAudio.volume = clamp((narration.volume ?? 80) / 100,0,1);
+    if (musicAudio && !musicAudio.paused) musicAudio.volume *= .28;
+    narrationAudio.addEventListener('ended', stopNarration, {once:true});
+    try { await narrationAudio.play(); narrationButton?.classList.add('active'); } catch (_) { stopNarration(); }
   };
 
-  const applySceneUi = (id) => {
-    renderTextOverlay(id);
-    configureAudio(id);
-    updateMenu(id);
-    updateBackButton();
+  const applyTransition = async (name, switchFn) => {
+    const transition = ['fade','zoom','blur','portal','glitch','black'].includes(name) ? name : 'fade';
+    if (!transitionLayer || !currentSceneId) { switchFn(); return; }
+    transitionLayer.className = 'tour-transition-layer t-' + transition + ' active';
+    await delay(250);
+    switchFn();
+    await delay(390);
+    transitionLayer.className = 'tour-transition-layer';
   };
 
   const decorateUniversalHotspots = (panoConfig) => {
@@ -3638,156 +3738,199 @@
       (scene.hotSpots || []).forEach((hotspot) => {
         const target = hotspot.tourTargetSceneId;
         if (!target) return;
-        hotspot.clickHandlerFunc = () => showScene(target, true);
+        hotspot.type = 'info';
+        delete hotspot.sceneId;
+        hotspot.clickHandlerFunc = () => showScene(target, true, hotspot.tourTransition || config.defaultTransition || 'fade');
       });
     });
   };
 
-  const showScene = (id, pushHistory = true) => {
+  const preloadScene = (id) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
+    if (meta.sceneType === 'panorama') {
+      const p = config.scenes?.[id]?.panorama || config.scenes?.[id]?.multiRes?.equirectangularThumbnail;
+      if (p) { const img = new Image(); img.src = p; }
+    } else if (meta.sceneType === 'object360') {
+      const frames = config.object360Scenes?.[id]?.frames || [];
+      (frames[0] || []).slice(0,4).forEach((src) => { if (src) { const img=new Image(); img.src=src; } });
+    } else if (meta.sceneType === 'stl') {
+      const src = config.stlScenes?.[id]?.source;
+      if (src) fetch(src).catch(()=>{});
+    }
+    (meta.mediaObjects || []).forEach((item) => {
+      if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; }
+      if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
+    });
+    [meta.audio?.music?.src,meta.audio?.narration?.src].filter(Boolean).forEach((src)=>{ const a=new Audio(); a.preload='metadata'; a.src=src; });
+  };
 
+  const preloadNeighbors = (id) => {
+    const targets = new Set();
+    (config.scenes?.[id]?.hotSpots || []).forEach((h)=>{ if(h.tourTargetSceneId) targets.add(h.tourTargetSceneId); });
+    (config.sceneMeta?.[id]?.screenHotspots || []).forEach((h)=>{ if(h.targetSceneId) targets.add(h.targetSceneId); });
+    const gi = config.guide?.steps?.findIndex((step)=>step.sceneId===id);
+    if (gi >= 0 && config.guide.steps[gi+1]) targets.add(config.guide.steps[gi+1].sceneId);
+    [...targets].slice(0,4).forEach(preloadScene);
+  };
+
+  const showScene = async (id, pushHistory = true, transition = null) => {
+    const meta = config.sceneMeta?.[id];
+    if (!meta) return;
     if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
-      applySceneUi(id);
-      return;
+      updateMenu(id); updateBackButton(); renderOverlay(id); configureAudio(id); return;
     }
+    const previous = currentSceneId;
+    if (pushHistory && previous && previous !== id) historyStack.push(previous);
 
-    if (pushHistory && currentSceneId && currentSceneId !== id) {
-      historyStack.push(currentSceneId);
-    }
+    const switchScene = () => {
+      currentSceneId = id;
+      destroyViewer();
+      updateMenu(id);
+      updateBackButton();
+      renderOverlay(id);
+      configureAudio(id);
 
-    currentSceneId = id;
-    destroyViewer();
-    applySceneUi(id);
-
-    if (meta.sceneType === 'object360') {
-      const data = config.object360Scenes?.[id];
-      if (!data || !window.Object360Viewer) {
-        host.innerHTML = '<div class="viewer-error">Object360 сцена недоступна</div>';
+      if (meta.sceneType === 'object360') {
+        const data = config.object360Scenes?.[id];
+        if (!data || !window.Object360Viewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
+        objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderOverlay(id,state)});
         return;
       }
-      objectViewer = new Object360Viewer(host, data);
-      return;
-    }
-
-    if (meta.sceneType === 'stl') {
-      const data = config.stlScenes?.[id];
-      if (!data || !window.StlViewer) {
-        host.innerHTML = '<div class="viewer-error">STL сцена недоступна</div>';
+      if (meta.sceneType === 'stl') {
+        const data = config.stlScenes?.[id];
+        if (!data || !window.StlViewer) { host.innerHTML='<div class="viewer-error">STL сцена недоступна</div>'; return; }
+        stlViewer = new StlViewer(host,{
+          source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
+          autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
+          onChange:(state)=>renderOverlay(id,state)
+        });
+        stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
-      stlViewer = new StlViewer(host, {
-        source: data.source,
-        yaw: data.yaw,
-        pitch: data.pitch,
-        zoom: data.zoom,
-        wireframe: data.wireframe,
-        autoRotate: data.autoplay,
-        color: data.color,
-        backgroundMode: data.backgroundMode,
-        backgroundImage: data.backgroundImage || ''
+      if (!window.pannellum) { host.innerHTML='<div class="viewer-error">Pannellum не загрузился</div>'; return; }
+      const panoConfig = {...config,default:{...(config.default||{}),firstScene:id}};
+      ['object360Scenes','stlScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition'].forEach((key)=>delete panoConfig[key]);
+      decorateUniversalHotspots(panoConfig);
+      panoViewer = pannellum.viewer('panorama',panoConfig);
+      panoViewer.on('scenechange',(sceneId)=>{
+        if (!sceneId || sceneId===currentSceneId) return;
+        if (currentSceneId) historyStack.push(currentSceneId);
+        currentSceneId = sceneId;
+        updateMenu(sceneId); updateBackButton(); renderOverlay(sceneId); configureAudio(sceneId); preloadNeighbors(sceneId);
       });
-      stlViewer.ready.catch((error) => {
-        console.error(error);
-        host.innerHTML = '<div class="viewer-error">Ошибка загрузки STL</div>';
-      });
-      return;
-    }
-
-    if (!window.pannellum) {
-      host.innerHTML = '<div class="viewer-error">Pannellum не загрузился</div>';
-      return;
-    }
-
-    const panoConfig = {
-      ...config,
-      default: {
-        ...(config.default || {}),
-        firstScene: id
-      }
     };
 
-    delete panoConfig.object360Scenes;
-    delete panoConfig.stlScenes;
-    delete panoConfig.sceneMeta;
-    delete panoConfig.sceneOrder;
-    delete panoConfig.tourFirstScene;
-    delete panoConfig.projectAudio;
-
-    decorateUniversalHotspots(panoConfig);
-
-    panoViewer = pannellum.viewer('panorama', panoConfig);
-    panoViewer.on('scenechange', (sceneId) => {
-      if (!sceneId) return;
-
-      if (currentSceneId && sceneId !== currentSceneId) {
-        historyStack.push(currentSceneId);
-      }
-
-      currentSceneId = sceneId;
-      applySceneUi(sceneId);
-    });
+    await applyTransition(transition || config.defaultTransition || 'fade', switchScene);
+    preloadNeighbors(id);
   };
 
   const goBack = () => {
     const previous = historyStack.pop();
     updateBackButton();
-    if (previous) showScene(previous, false);
+    if (previous) showScene(previous,false,'fade');
+  };
+
+  const stopGuide = () => {
+    clearTimeout(guideTimer);
+    guideTimer = 0; guideRunning = false; guideIndex = -1;
+    guideButton?.classList.remove('active');
+    if (guideButton) guideButton.textContent = '▶ Гид';
+  };
+
+  const runGuideStep = async (index) => {
+    const steps = config.guide?.steps || [];
+    if (!guideRunning || !steps[index]) { stopGuide(); return; }
+    guideIndex = index;
+    const step = steps[index];
+    await showScene(step.sceneId,false,index===0?'fade':config.defaultTransition||'fade');
+    if (!guideRunning) return;
+    if (step.narrationAuto && config.sceneMeta?.[step.sceneId]?.audio?.narration?.src) {
+      await playNarration();
+    }
+    guideTimer = setTimeout(()=>runGuideStep(index+1),Math.max(2,Number(step.duration)||12)*1000);
+  };
+
+  const toggleGuide = () => {
+    userInteracted = true;
+    if (guideRunning) { stopGuide(); return; }
+    if (!config.guide?.enabled || !config.guide?.steps?.length) return;
+    guideRunning = true;
+    guideButton?.classList.add('active');
+    if (guideButton) guideButton.textContent = '■ Стоп';
+    runGuideStep(0);
+  };
+
+  const enterTour = async (withSound) => {
+    userInteracted = true;
+    musicEnabled = Boolean(withSound);
+    startScreen.hidden = true;
+    if (config.exportSettings?.kioskMode) {
+      try { await document.documentElement.requestFullscreen?.(); } catch (_) {}
+    }
+    if (withSound) await tryPlayMusic();
+  };
+
+  const setupStartScreen = () => {
+    const s = config.startScreen || {};
+    if (!s.enabled) { startScreen.hidden = true; return; }
+    startTitle.textContent = s.title || config.sceneMeta?.[config.tourFirstScene]?.title || 'Виртуальная экскурсия';
+    startSubtitle.textContent = s.subtitle || '';
+    startSubtitle.hidden = !s.subtitle;
+    if (s.coverData) startScreen.style.backgroundImage = 'url("' + String(s.coverData).replace(/"/g,'%22') + '")';
+    startSilent.hidden = s.allowSilent === false;
+    startScreen.hidden = false;
   };
 
   const start = () => {
     const order = config.sceneOrder || Object.keys(config.sceneMeta || {});
+    if (config.exportSettings?.kioskMode) document.body.classList.add('kiosk');
 
     if (menu) {
-      menu.innerHTML = order.map((id) => {
-        const meta = config.sceneMeta?.[id] || {};
-        const icon = meta.sceneType === 'object360'
-          ? '◉ '
-          : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
-        const option = document.createElement('option');
-        option.value = id;
-        option.textContent = icon + (meta.title || id);
-        return option.outerHTML;
-      }).join('');
-      menu.addEventListener('change', () => showScene(menu.value, true));
+      menu.innerHTML = '';
+      order.forEach((id)=>{
+        const meta=config.sceneMeta?.[id]||{};
+        const option=document.createElement('option');
+        option.value=id;
+        option.textContent=(meta.sceneType==='object360'?'◉ ':meta.sceneType==='stl'?'◆ ':'◌ ')+(meta.title||id);
+        menu.appendChild(option);
+      });
+      menu.addEventListener('change',()=>showScene(menu.value,true,config.defaultTransition||'fade'));
     }
 
-    backButton?.addEventListener('click', goBack);
-
-    musicButton?.addEventListener('click', async () => {
-      userInteracted = true;
-      musicEnabled = !musicEnabled;
-      if (!musicEnabled) {
-        musicAudio?.pause();
-        musicButton.classList.remove('active');
-      } else {
-        await tryPlayMusic();
-      }
+    backButton?.addEventListener('click',goBack);
+    infoClose?.addEventListener('click',()=>{infoPanel.hidden=true;});
+    fullscreenButton?.addEventListener('click',async()=>{
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch (_) {}
     });
-
-    narrationButton?.addEventListener('click', async () => {
-      userInteracted = true;
-      await playNarration();
+    musicButton?.addEventListener('click',async()=>{
+      userInteracted=true; musicEnabled=!musicEnabled;
+      if (!musicEnabled) { musicAudio?.pause(); musicButton.classList.remove('active'); }
+      else await tryPlayMusic();
     });
+    narrationButton?.addEventListener('click',async()=>{userInteracted=true;await playNarration();});
+    guideButton.hidden = !(config.guide?.enabled && config.guide?.steps?.length);
+    guideButton?.addEventListener('click',toggleGuide);
+    startSound?.addEventListener('click',()=>enterTour(true));
+    startSilent?.addEventListener('click',()=>enterTour(false));
 
-    const unlockAudio = () => {
-      userInteracted = true;
-      tryPlayMusic();
-    };
-    document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
-    document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
+    const unlockAudio=()=>{userInteracted=true;if(startScreen.hidden)tryPlayMusic();};
+    document.addEventListener('pointerdown',unlockAudio,{once:true,capture:true});
+    document.addEventListener('keydown',unlockAudio,{once:true,capture:true});
 
-    showScene(config.tourFirstScene || order[0], false);
+    showScene(config.tourFirstScene||order[0],false,'fade');
+    setupStartScreen();
+    preloadNeighbors(config.tourFirstScene||order[0]);
   };
 
-  window.showTourScene = (id) => showScene(id, true);
-  window.tourBack = goBack;
+  window.showTourScene=(id)=>showScene(id,true,config.defaultTransition||'fade');
+  window.tourBack=goBack;
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start, { once: true });
-  } else {
-    start();
-  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
 })();
 `;
   }
