@@ -7,7 +7,7 @@
   <title>Pannellum Tour Editor</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css">
-  <link rel="stylesheet" href="assets/app.css?v=20261005-2">
+  <link rel="stylesheet" href="assets/app.css?v=20261006-1">
 </head>
 <body>
   <div class="app-shell">
@@ -20,6 +20,11 @@
         </div>
       </div>
       <div class="topbar-actions">
+        <button class="btn btn-ghost" id="btnUndo" title="Отменить (Ctrl+Z)" disabled>↶</button>
+        <button class="btn btn-ghost" id="btnRedo" title="Повторить (Ctrl+Y)" disabled>↷</button>
+        <button class="btn btn-ghost" id="btnSceneGraph">Схема</button>
+        <button class="btn btn-ghost" id="btnGuideEditor">Гид</button>
+        <button class="btn btn-ghost" id="btnAdvancedSettings">Публикация</button>
         <button class="btn btn-ghost" id="btnNew">Новый</button>
         <label class="btn btn-ghost file-btn">Импорт проекта<input id="projectImport" type="file" accept=".json,application/json"></label>
         <button class="btn btn-primary" id="btnExportProject">Экспорт проекта</button>
@@ -84,6 +89,17 @@
           <label class="field inline-field">
             <span>Длительность, мс</span>
             <input id="sceneFadeDuration" type="number" value="900" min="0" max="5000" step="100">
+          </label>
+          <label class="field">
+            <span>Переход по умолчанию</span>
+            <select id="defaultTransition">
+              <option value="fade">Fade</option>
+              <option value="zoom">Zoom</option>
+              <option value="blur">Blur dissolve</option>
+              <option value="portal">Portal</option>
+              <option value="glitch">Digital glitch</option>
+              <option value="black">Cinematic black</option>
+            </select>
           </label>
           <label class="switch-row">
             <span>
@@ -343,6 +359,32 @@
         <section class="panel">
           <div class="panel-head">
             <div>
+              <h2>Медиа</h2>
+              <p>Фото, галерея, видео, PDF, кнопки</p>
+            </div>
+            <button class="icon-btn" id="btnAddMediaObject" title="Добавить медиа" disabled>＋</button>
+          </div>
+          <div id="mediaObjectList" class="media-object-list empty">
+            <div class="empty-state">Нет медиа</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Слои</h2>
+              <p>Видимость и блокировка</p>
+            </div>
+            <span class="badge" id="layerCount">0</span>
+          </div>
+          <div id="layerList" class="layer-list empty">
+            <div class="empty-state">Нет слоёв</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
               <h2>Текст</h2>
               <p>Заголовки и описания</p>
             </div>
@@ -420,6 +462,86 @@
       <div class="modal-actions">
         <button class="btn" value="cancel">Отмена</button>
         <button class="btn btn-primary" id="confirmAddScene" value="default">Добавить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mediaObjectDialog" class="modal">
+    <form method="dialog" id="mediaObjectForm">
+      <input id="mediaObjectEditId" type="hidden">
+      <div class="modal-head">
+        <div>
+          <h2 id="mediaObjectDialogTitle">Медиа-объект</h2>
+          <p>Размещается поверх любой сцены</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Закрыть">×</button>
+      </div>
+
+      <label class="field">
+        <span>Тип</span>
+        <select id="mediaObjectType">
+          <option value="image">Фото</option>
+          <option value="gallery">Галерея</option>
+          <option value="video">Видео</option>
+          <option value="pdf">PDF / документ</option>
+          <option value="button">Кнопка</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Название / подпись</span>
+        <input id="mediaObjectTitle" type="text" placeholder="Подробнее">
+      </label>
+      <label class="upload-box" id="mediaUploadBox">
+        <input id="mediaObjectFile" type="file" accept="image/*,video/mp4,video/webm,application/pdf">
+        <b>Выбрать файл</b>
+        <span id="mediaObjectFilename">JPG/PNG/WEBP, MP4/WEBM или PDF</span>
+      </label>
+      <label class="upload-box" id="mediaGalleryUploadBox" hidden>
+        <input id="mediaGalleryFiles" type="file" accept="image/*" multiple>
+        <b>Выбрать изображения галереи</b>
+        <span id="mediaGalleryCount">Файлы не выбраны</span>
+      </label>
+      <label class="field" id="mediaUrlRow" hidden>
+        <span>URL кнопки</span>
+        <input id="mediaObjectUrl" type="url" placeholder="https://...">
+      </label>
+      <label class="field" id="mediaTargetRow" hidden>
+        <span>Или перейти в сцену</span>
+        <select id="mediaObjectTargetScene"></select>
+      </label>
+
+      <div class="field-grid">
+        <label class="field"><span>X, %</span><input id="mediaObjectX" type="number" min="0" max="100" step="0.5" value="10"></label>
+        <label class="field"><span>Y, %</span><input id="mediaObjectY" type="number" min="0" max="100" step="0.5" value="20"></label>
+        <label class="field"><span>Ширина, %</span><input id="mediaObjectWidth" type="number" min="8" max="95" step="1" value="36"></label>
+        <label class="field"><span>Высота, %</span><input id="mediaObjectHeight" type="number" min="6" max="90" step="1" value="32"></label>
+      </div>
+      <div class="field-grid">
+        <label class="field">
+          <span>Заполнение</span>
+          <select id="mediaObjectFit"><option value="contain">Contain</option><option value="cover">Cover</option></select>
+        </label>
+        <label class="field">
+          <span>Анимация</span>
+          <select id="mediaObjectAnimation">
+            <option value="fade">Fade</option><option value="slide">Slide</option><option value="zoom">Zoom</option><option value="none">Нет</option>
+          </select>
+        </label>
+      </div>
+      <label class="switch-row" id="mediaAutoplayRow">
+        <span><b>Автовоспроизведение</b><small>Для видео; браузер может потребовать muted</small></span>
+        <input id="mediaObjectAutoplay" type="checkbox">
+      </label>
+      <label class="switch-row" id="mediaLoopRow">
+        <span><b>Повторять</b><small>Loop для видео</small></span>
+        <input id="mediaObjectLoop" type="checkbox">
+      </label>
+
+      <div class="modal-actions split">
+        <button type="button" class="btn btn-danger" id="btnDeleteMediaObject" hidden>Удалить</button>
+        <span></span>
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn btn-primary" value="default">Сохранить</button>
       </div>
     </form>
   </dialog>
@@ -531,6 +653,20 @@
         <span>Подпись</span>
         <input id="hotspotText" type="text" placeholder="Куда ведёт эта точка?">
       </label>
+
+      <label class="field hotspot-transition-field">
+        <span>Эффект перехода</span>
+        <select id="hotspotTransition">
+          <option value="fade">Fade</option>
+          <option value="zoom">Zoom</option>
+          <option value="blur">Blur dissolve</option>
+          <option value="portal">Portal</option>
+          <option value="glitch">Digital glitch</option>
+          <option value="black">Cinematic black</option>
+        </select>
+      </label>
+
+      <div id="hotspotAnchorInfo" class="object360-import-note" hidden></div>
 
       <label class="field hotspot-scene-field">
         <span>Перейти в сцену</span>
@@ -656,6 +792,71 @@
     </form>
   </dialog>
 
+  <dialog id="sceneGraphDialog" class="preview-modal graph-modal">
+    <div class="preview-head">
+      <strong>Схема связей сцен</strong>
+      <button class="icon-btn" id="closeSceneGraph">×</button>
+    </div>
+    <div class="graph-toolbar">
+      <span id="graphSummary">—</span>
+      <button class="btn btn-small" id="btnGraphAutoLayout">Автораскладка</button>
+    </div>
+    <div id="sceneGraph" class="scene-graph"></div>
+  </dialog>
+
+  <dialog id="guideDialog" class="modal wide-modal">
+    <div class="modal-head">
+      <div><h2>Экскурсия с гидом</h2><p>Заданный маршрут с таймингом и озвучкой</p></div>
+      <button class="icon-btn" id="closeGuideDialog">×</button>
+    </div>
+    <label class="switch-row">
+      <span><b>Включить режим гида</b><small>В готовом туре появится кнопка ▶ Гид</small></span>
+      <input id="guideEnabled" type="checkbox">
+    </label>
+    <div id="guideStepList" class="guide-step-list"></div>
+    <button class="btn btn-primary btn-full" id="btnAddGuideStep" type="button">＋ Добавить шаг</button>
+  </dialog>
+
+  <dialog id="advancedSettingsDialog" class="modal wide-modal">
+    <div class="modal-head">
+      <div><h2>Публикация и запуск</h2><p>Стартовый экран, оптимизация, PWA, kiosk и QR</p></div>
+      <button class="icon-btn" id="closeAdvancedSettings">×</button>
+    </div>
+
+    <div class="settings-columns">
+      <section>
+        <div class="mini-section-title">Стартовый экран</div>
+        <label class="switch-row"><span><b>Показывать стартовый экран</b><small>Решает autoplay звука и красиво открывает тур</small></span><input id="startScreenEnabled" type="checkbox" checked></label>
+        <label class="field"><span>Заголовок</span><input id="startScreenTitle" type="text"></label>
+        <label class="field"><span>Подзаголовок</span><textarea id="startScreenSubtitle" rows="3"></textarea></label>
+        <div class="file-line">
+          <span id="startScreenCoverName">Без обложки</span>
+          <label class="btn btn-small file-btn">Обложка<input id="startScreenCoverFile" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        </div>
+        <label class="switch-row"><span><b>Разрешить запуск без звука</b><small>Отдельная кнопка на старте</small></span><input id="startScreenAllowSilent" type="checkbox" checked></label>
+      </section>
+
+      <section>
+        <div class="mini-section-title">Оптимизация экспорта</div>
+        <label class="switch-row"><span><b>Автооптимизация</b><small>Пережимать растровые изображения при ZIP-экспорте</small></span><input id="optimizeEnabled" type="checkbox" checked></label>
+        <label class="field"><span>JPEG качество</span><input id="optimizeQuality" type="number" min="45" max="100" value="84"></label>
+        <label class="field"><span>Макс. ширина панорамы</span><input id="optimizeMaxImageWidth" type="number" min="1024" max="16384" step="512" value="8192"></label>
+        <label class="field"><span>Ширина кадра Object360</span><input id="optimizeObjectFrameWidth" type="number" min="480" max="4096" step="160" value="1280"></label>
+        <button class="btn btn-small btn-full" id="btnAnalyzeProject" type="button">Анализ размера проекта</button>
+        <div id="projectSizeReport" class="size-report">Нажмите «Анализ размера проекта»</div>
+      </section>
+
+      <section>
+        <div class="mini-section-title">PWA / kiosk / QR</div>
+        <label class="switch-row"><span><b>PWA</b><small>manifest + service worker в экспортированном туре</small></span><input id="pwaEnabled" type="checkbox" checked></label>
+        <label class="switch-row"><span><b>Kiosk</b><small>Скрыть меню сцен и оставить управляемый просмотр</small></span><input id="kioskMode" type="checkbox"></label>
+        <label class="field"><span>Публичный URL экскурсии</span><input id="publicTourUrl" type="url" placeholder="https://example.ru/tour/"></label>
+        <div id="qrPreview" class="qr-preview"><span>Укажите URL</span></div>
+        <button class="btn btn-small btn-full" id="btnDownloadQr" type="button">Скачать QR PNG</button>
+      </section>
+    </div>
+  </dialog>
+
   <dialog id="previewDialog" class="preview-modal">
     <div class="preview-head">
       <strong>Предпросмотр тура</strong>
@@ -696,8 +897,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="assets/object360.js?v=20261005-1"></script>
-  <script src="assets/stl-viewer.js?v=20261005-2"></script>
-  <script src="assets/app.js?v=20261005-9"></script>
+  <script src="assets/stl-viewer.js?v=20261006-1"></script>
+  <script src="assets/app.js?v=20261006-1"></script>
 </body>
 </html>

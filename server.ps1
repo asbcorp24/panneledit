@@ -36,6 +36,10 @@ function Get-MimeType {
         '.wasm' { return 'application/wasm' }
         '.zip'  { return 'application/zip' }
         '.stl'  { return 'model/stl' }
+        '.webmanifest' { return 'application/manifest+json; charset=utf-8' }
+        '.pdf'  { return 'application/pdf' }
+        '.webm' { return 'video/webm' }
+        '.mp4'  { return 'video/mp4' }
         '.wav'  { return 'audio/wav' }
         '.ogg'  { return 'audio/ogg' }
         '.mp3'  { return 'audio/mpeg' }

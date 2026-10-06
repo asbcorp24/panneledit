@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 5;
+  const PROJECT_VERSION = 6;
 
   const $ = (id) => document.getElementById(id);
 
@@ -27,6 +27,7 @@
     btnRemoveProjectMusic: $('btnRemoveProjectMusic'),
     sceneFadeEnabled: $('sceneFadeEnabled'),
     sceneFadeDuration: $('sceneFadeDuration'),
+    defaultTransition: $('defaultTransition'),
     autoRotateEnabled: $('autoRotateEnabled'),
     autoRotate: $('autoRotate'),
     multiresEnabled: $('multiresEnabled'),
@@ -34,6 +35,11 @@
     multiresTileSize: $('multiresTileSize'),
     multiresQuality: $('multiresQuality'),
     multiresMaxCubeSize: $('multiresMaxCubeSize'),
+    btnUndo: $('btnUndo'),
+    btnRedo: $('btnRedo'),
+    btnSceneGraph: $('btnSceneGraph'),
+    btnGuideEditor: $('btnGuideEditor'),
+    btnAdvancedSettings: $('btnAdvancedSettings'),
     btnNew: $('btnNew'),
     btnAddScene: $('btnAddScene'),
     btnAddSceneCenter: $('btnAddSceneCenter'),
@@ -125,6 +131,37 @@
     textObjectBackground: $('textObjectBackground'),
     textObjectAnimation: $('textObjectAnimation'),
     btnDeleteTextObject: $('btnDeleteTextObject'),
+    mediaObjectList: $('mediaObjectList'),
+    btnAddMediaObject: $('btnAddMediaObject'),
+    layerList: $('layerList'),
+    layerCount: $('layerCount'),
+    mediaObjectDialog: $('mediaObjectDialog'),
+    mediaObjectForm: $('mediaObjectForm'),
+    mediaObjectEditId: $('mediaObjectEditId'),
+    mediaObjectDialogTitle: $('mediaObjectDialogTitle'),
+    mediaObjectType: $('mediaObjectType'),
+    mediaObjectTitle: $('mediaObjectTitle'),
+    mediaUploadBox: $('mediaUploadBox'),
+    mediaObjectFile: $('mediaObjectFile'),
+    mediaObjectFilename: $('mediaObjectFilename'),
+    mediaGalleryUploadBox: $('mediaGalleryUploadBox'),
+    mediaGalleryFiles: $('mediaGalleryFiles'),
+    mediaGalleryCount: $('mediaGalleryCount'),
+    mediaUrlRow: $('mediaUrlRow'),
+    mediaTargetRow: $('mediaTargetRow'),
+    mediaObjectUrl: $('mediaObjectUrl'),
+    mediaObjectTargetScene: $('mediaObjectTargetScene'),
+    mediaObjectX: $('mediaObjectX'),
+    mediaObjectY: $('mediaObjectY'),
+    mediaObjectWidth: $('mediaObjectWidth'),
+    mediaObjectHeight: $('mediaObjectHeight'),
+    mediaObjectFit: $('mediaObjectFit'),
+    mediaObjectAnimation: $('mediaObjectAnimation'),
+    mediaAutoplayRow: $('mediaAutoplayRow'),
+    mediaLoopRow: $('mediaLoopRow'),
+    mediaObjectAutoplay: $('mediaObjectAutoplay'),
+    mediaObjectLoop: $('mediaObjectLoop'),
+    btnDeleteMediaObject: $('btnDeleteMediaObject'),
     hotspotDialog: $('hotspotDialog'),
     hotspotForm: $('hotspotForm'),
     hotspotDialogTitle: $('hotspotDialogTitle'),
@@ -133,6 +170,8 @@
     hotspotType: $('hotspotType'),
     hotspotTypeControl: $('hotspotTypeControl'),
     hotspotText: $('hotspotText'),
+    hotspotTransition: $('hotspotTransition'),
+    hotspotAnchorInfo: $('hotspotAnchorInfo'),
     hotspotTarget: $('hotspotTarget'),
     hotspotTargetTypeHint: $('hotspotTargetTypeHint'),
     hotspotIconPicker: $('hotspotIconPicker'),
@@ -169,6 +208,35 @@
     previewMusicButton: $('previewMusicButton'),
     previewNarrationButton: $('previewNarrationButton'),
     closePreview: $('closePreview'),
+    sceneGraphDialog: $('sceneGraphDialog'),
+    closeSceneGraph: $('closeSceneGraph'),
+    sceneGraph: $('sceneGraph'),
+    graphSummary: $('graphSummary'),
+    btnGraphAutoLayout: $('btnGraphAutoLayout'),
+    guideDialog: $('guideDialog'),
+    closeGuideDialog: $('closeGuideDialog'),
+    guideEnabled: $('guideEnabled'),
+    guideStepList: $('guideStepList'),
+    btnAddGuideStep: $('btnAddGuideStep'),
+    advancedSettingsDialog: $('advancedSettingsDialog'),
+    closeAdvancedSettings: $('closeAdvancedSettings'),
+    startScreenEnabled: $('startScreenEnabled'),
+    startScreenTitle: $('startScreenTitle'),
+    startScreenSubtitle: $('startScreenSubtitle'),
+    startScreenCoverName: $('startScreenCoverName'),
+    startScreenCoverFile: $('startScreenCoverFile'),
+    startScreenAllowSilent: $('startScreenAllowSilent'),
+    optimizeEnabled: $('optimizeEnabled'),
+    optimizeQuality: $('optimizeQuality'),
+    optimizeMaxImageWidth: $('optimizeMaxImageWidth'),
+    optimizeObjectFrameWidth: $('optimizeObjectFrameWidth'),
+    btnAnalyzeProject: $('btnAnalyzeProject'),
+    projectSizeReport: $('projectSizeReport'),
+    pwaEnabled: $('pwaEnabled'),
+    kioskMode: $('kioskMode'),
+    publicTourUrl: $('publicTourUrl'),
+    qrPreview: $('qrPreview'),
+    btnDownloadQr: $('btnDownloadQr'),
     downloadDialog: $('downloadDialog'),
     downloadReadyInfo: $('downloadReadyInfo'),
     downloadZipFilename: $('downloadZipFilename'),
@@ -187,6 +255,7 @@
   let previewViewer = null;
   let previewObjectViewer = null;
   let previewStlViewer = null;
+  let previewSceneId = null;
   let previewMusicAudio = null;
   let previewNarrationAudio = null;
   let dbPromise = null;
@@ -200,6 +269,15 @@
   let pendingZipDownloadUrl = '';
   let pendingZipBlob = null;
   let pendingZipFilename = '';
+  let pendingMediaData = '';
+  let pendingMediaFilename = '';
+  let pendingMediaGallery = [];
+  let pendingHotspotAnchor = null;
+  let undoStack = [];
+  let redoStack = [];
+  let historySnapshot = '';
+  let applyingHistory = false;
+  const HISTORY_LIMIT = 60;
 
   function createEmptyProject() {
     return {
@@ -209,6 +287,27 @@
       audio: {
         music: { data: '', filename: '', volume: 35, loop: true }
       },
+      startScreen: {
+        enabled: true,
+        title: 'Виртуальная экскурсия',
+        subtitle: '',
+        coverData: '',
+        coverFilename: '',
+        allowSilent: true
+      },
+      guide: {
+        enabled: false,
+        steps: []
+      },
+      exportSettings: {
+        optimizeEnabled: true,
+        jpegQuality: 84,
+        maxImageWidth: 8192,
+        objectFrameWidth: 1280,
+        pwaEnabled: true,
+        kioskMode: false,
+        publicUrl: ''
+      },
       settings: {
         fadeEnabled: true,
         fadeDuration: 900,
@@ -217,7 +316,8 @@
         multiresEnabled: false,
         multiresTileSize: 512,
         multiresQuality: 85,
-        multiresMaxCubeSize: 4096
+        multiresMaxCubeSize: 4096,
+        defaultTransition: 'fade'
       },
       scenes: []
     };
@@ -479,6 +579,7 @@
   }
 
   function markDirty({ rerenderViewer = false } = {}) {
+    rememberHistory();
     setSaveState('dirty');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persistProject, 350);
@@ -486,6 +587,9 @@
     renderSceneList();
     renderProjectSettings();
     renderSceneSettings();
+    renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
 
     if (rerenderViewer) {
@@ -522,8 +626,141 @@
       color: /^#[0-9a-f]{6}$/i.test(String(input.color || '')) ? String(input.color).toLowerCase() : '#ffffff',
       align: ['left','center','right'].includes(input.align) ? input.align : 'left',
       background: ['none','dark','light'].includes(input.background) ? input.background : (type === 'description' ? 'dark' : 'none'),
-      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade'
+      animation: ['none','fade','slide'].includes(input.animation) ? input.animation : 'fade',
+      visible: input.visible !== false,
+      locked: Boolean(input.locked),
+      zIndex: Number.isFinite(Number(input.zIndex)) ? Number(input.zIndex) : 10
     };
+  }
+
+  function normalizeLayerFlags(input = {}) {
+    return {
+      visible: input.visible !== false,
+      locked: Boolean(input.locked)
+    };
+  }
+
+  function normalizeMediaObject(input = {}) {
+    const type = ['image','gallery','video','pdf','button'].includes(input.type) ? input.type : 'image';
+    const flags = normalizeLayerFlags(input);
+    return {
+      id: String(input.id || uid('media')),
+      type,
+      title: String(input.title || ''),
+      data: String(input.data || ''),
+      filename: String(input.filename || ''),
+      gallery: Array.isArray(input.gallery) ? input.gallery.map((item) => ({
+        data: String(item?.data || ''),
+        filename: String(item?.filename || '')
+      })).filter((item) => item.data) : [],
+      url: String(input.url || ''),
+      targetSceneId: String(input.targetSceneId || ''),
+      x: clampNumber(input.x, 0, 100, 10),
+      y: clampNumber(input.y, 0, 100, 20),
+      width: clampNumber(input.width, 8, 95, type === 'button' ? 22 : 36),
+      height: clampNumber(input.height, 6, 90, type === 'button' ? 10 : 32),
+      fit: ['contain','cover'].includes(input.fit) ? input.fit : 'contain',
+      autoplay: Boolean(input.autoplay),
+      loop: Boolean(input.loop),
+      muted: input.muted !== false,
+      background: ['none','dark','light'].includes(input.background) ? input.background : 'dark',
+      animation: ['none','fade','slide','zoom'].includes(input.animation) ? input.animation : 'fade',
+      visible: flags.visible,
+      locked: flags.locked,
+      zIndex: Number.isFinite(Number(input.zIndex)) ? Number(input.zIndex) : 20
+    };
+  }
+
+  function normalizeGuide(input = {}, scenes = []) {
+    const ids = new Set(scenes.map((scene) => scene.id));
+    const steps = Array.isArray(input.steps) ? input.steps.map((step) => ({
+      id: String(step.id || uid('guide')),
+      sceneId: String(step.sceneId || ''),
+      duration: clampNumber(step.duration, 2, 600, 12),
+      narrationAuto: Boolean(step.narrationAuto),
+      highlightHotspotId: String(step.highlightHotspotId || '')
+    })).filter((step) => ids.has(step.sceneId)) : [];
+    return { enabled: Boolean(input.enabled), steps };
+  }
+
+  function normalizeStartScreen(input = {}, title = '') {
+    return {
+      enabled: input.enabled !== false,
+      title: String(input.title || title || 'Виртуальная экскурсия'),
+      subtitle: String(input.subtitle || ''),
+      coverData: String(input.coverData || ''),
+      coverFilename: String(input.coverFilename || ''),
+      allowSilent: input.allowSilent !== false
+    };
+  }
+
+  function normalizeExportSettings(input = {}) {
+    return {
+      optimizeEnabled: input.optimizeEnabled !== false,
+      jpegQuality: clampNumber(input.jpegQuality, 45, 100, 84),
+      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 8192),
+      objectFrameWidth: clampNumber(input.objectFrameWidth, 480, 4096, 1280),
+      pwaEnabled: input.pwaEnabled !== false,
+      kioskMode: Boolean(input.kioskMode),
+      publicUrl: String(input.publicUrl || '')
+    };
+  }
+
+  function snapshotProject() {
+    try { return JSON.stringify(project); } catch (_) { return ''; }
+  }
+
+  function resetHistory() {
+    undoStack = [];
+    redoStack = [];
+    historySnapshot = snapshotProject();
+  }
+
+  function rememberHistory() {
+    if (applyingHistory) return;
+    const next = snapshotProject();
+    if (!next || next === historySnapshot) return;
+    if (historySnapshot) {
+      undoStack.push(historySnapshot);
+      if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    }
+    historySnapshot = next;
+    redoStack = [];
+    updateHistoryButtons();
+  }
+
+  function updateHistoryButtons() {
+    if (els.btnUndo) els.btnUndo.disabled = undoStack.length === 0;
+    if (els.btnRedo) els.btnRedo.disabled = redoStack.length === 0;
+  }
+
+  async function applyHistorySnapshot(snapshot, targetStack) {
+    if (!snapshot) return;
+    const current = snapshotProject();
+    applyingHistory = true;
+    try {
+      if (current) targetStack.push(current);
+      project = normalizeProject(JSON.parse(snapshot));
+      currentSceneId = project.scenes.some((scene) => scene.id === currentSceneId)
+        ? currentSceneId
+        : (project.firstScene || project.scenes[0]?.id || null);
+      historySnapshot = snapshotProject();
+      await persistProject();
+      renderAll();
+    } finally {
+      applyingHistory = false;
+      updateHistoryButtons();
+    }
+  }
+
+  async function undoProject() {
+    const snapshot = undoStack.pop();
+    await applyHistorySnapshot(snapshot, redoStack);
+  }
+
+  async function redoProject() {
+    const snapshot = redoStack.pop();
+    await applyHistorySnapshot(snapshot, undoStack);
   }
 
   function normalizeProject(input) {
@@ -534,7 +771,12 @@
     next.audio = {
       music: normalizeAudioSlot(input.audio?.music || {}, { volume: 35, loop: true })
     };
+    next.startScreen = normalizeStartScreen(input.startScreen || {}, next.title);
+    next.exportSettings = normalizeExportSettings(input.exportSettings || {});
     next.settings = { ...next.settings, ...(input.settings || {}) };
+    next.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(next.settings.defaultTransition)
+      ? next.settings.defaultTransition
+      : 'fade';
     next.scenes = Array.isArray(input.scenes) ? input.scenes.map((scene, index) => ({
       id: String(scene.id || uid('scene')),
       title: String(scene.title || 'Сцена ' + (index + 1)),
@@ -559,6 +801,7 @@
       hfov: Number.isFinite(Number(scene.hfov)) ? Number(scene.hfov) : 100,
       audio: normalizeSceneAudio(scene.audio || {}),
       textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+      mediaObjects: Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [],
       hotspots: Array.isArray(scene.hotspots) ? scene.hotspots.map((hotspot) => ({
         id: String(hotspot.id || uid('hotspot')),
         type: ['scene', 'info', 'url'].includes(hotspot.type) ? hotspot.type : 'info',
@@ -576,13 +819,30 @@
         glowPulse: Boolean(hotspot.glowPulse),
         glowPulseSpeed: clampNumber(hotspot.glowPulseSpeed, 0.5, 4, 1.6),
         url: hotspot.url ? String(hotspot.url) : '',
-        info: hotspot.info ? String(hotspot.info) : ''
+        info: hotspot.info ? String(hotspot.info) : '',
+        transition: ['fade','zoom','blur','portal','glitch','black'].includes(hotspot.transition) ? hotspot.transition : 'fade',
+        anchorMode: ['panorama','object360','stl-screen','stl-3d'].includes(hotspot.anchorMode)
+          ? hotspot.anchorMode
+          : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : ((scene.sceneType === 'stl' || scene.stl) ? 'stl-screen' : 'panorama')),
+        anchorX: clampNumber(hotspot.anchorX, 0, 100, 50),
+        anchorY: clampNumber(hotspot.anchorY, 0, 100, 50),
+        anchorSector: Math.max(0, Number(hotspot.anchorSector) || 0),
+        anchorRow: Math.max(0, Number(hotspot.anchorRow) || 0),
+        anchorYaw: Number(hotspot.anchorYaw) || 0,
+        anchorPitch: Number(hotspot.anchorPitch) || 0,
+        modelPoint: Array.isArray(hotspot.modelPoint) && hotspot.modelPoint.length >= 3
+          ? hotspot.modelPoint.slice(0,3).map((v)=>Number(v)||0)
+          : null,
+        visible: hotspot.visible !== false,
+        locked: Boolean(hotspot.locked),
+        zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
       })) : []
     })) : [];
 
     next.firstScene = next.scenes.some((scene) => scene.id === input.firstScene)
       ? String(input.firstScene)
       : (next.scenes[0]?.id || null);
+    next.guide = normalizeGuide(input.guide || {}, next.scenes);
 
     return next;
   }
@@ -592,9 +852,12 @@
     renderProjectSettings();
     renderSceneSettings();
     renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
     updateToolbarState();
     renderViewer();
+    updateHistoryButtons();
   }
 
   function renderSceneList() {
@@ -644,6 +907,8 @@
     els.projectMusicLoop.checked = Boolean(projectMusic.loop);
     els.sceneFadeEnabled.checked = Boolean(project.settings.fadeEnabled);
     els.sceneFadeDuration.value = Number(project.settings.fadeDuration ?? 900);
+    els.defaultTransition.value = ['fade','zoom','blur','portal','glitch','black'].includes(project.settings.defaultTransition)
+      ? project.settings.defaultTransition : 'fade';
     els.autoRotateEnabled.checked = Boolean(project.settings.autoRotateEnabled);
     els.autoRotate.value = Number(project.settings.autoRotate ?? -2);
     els.multiresEnabled.checked = Boolean(project.settings.multiresEnabled);
@@ -749,7 +1014,8 @@
       'width:' + item.width + '%',
       'font-size:' + item.fontSize + 'px',
       'color:' + item.color,
-      'text-align:' + item.align
+      'text-align:' + item.align,
+      'z-index:' + (Number(item.zIndex) || 10)
     ].join(';');
 
     return '<div class="' + classes + '" data-text-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
@@ -758,12 +1024,16 @@
       '</div>';
   }
 
-  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true } = {}) {
+  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = false } = {}) {
     if (!target) return;
     const items = Array.isArray(scene?.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
     if (scene) scene.textObjects = items;
-    target.innerHTML = items.map((item) => textObjectMarkup(item, { editor })).join('');
-    target.hidden = !scene || !items.length;
+    const markup = items.filter((item) => item.visible !== false).map((item) => {
+      const html = textObjectMarkup(item, { editor: editor && !item.locked });
+      return item.locked && editor ? html.replace('scene-text-object ', 'scene-text-object is-locked ') : html;
+    }).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
   }
 
   function renderTextObjectList() {
@@ -784,6 +1054,170 @@
         '<em>' + Math.round(item.x) + '% / ' + Math.round(item.y) + '%</em>' +
         '</article>';
     }).join('');
+  }
+
+  function mediaObjectMarkup(item, { editor = false } = {}) {
+    if (item.visible === false) return '';
+    const cls = [
+      'scene-media-object',
+      'scene-media-' + item.type,
+      'scene-media-anim-' + item.animation,
+      editor && !item.locked ? 'is-editor' : '',
+      editor && item.locked ? 'is-locked' : ''
+    ].filter(Boolean).join(' ');
+    const style = [
+      'left:' + item.x + '%',
+      'top:' + item.y + '%',
+      'width:' + item.width + '%',
+      'height:' + item.height + '%',
+      'z-index:' + (Number(item.zIndex) || 20)
+    ].join(';');
+
+    let body = '';
+    if (item.type === 'image' && item.data) {
+      body = '<img src="' + escapeHtml(item.data) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
+    } else if (item.type === 'gallery') {
+      const first = item.gallery?.[0]?.data || '';
+      body = first
+        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(first) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
+        : '<div class="scene-media-placeholder">Галерея</div>';
+    } else if (item.type === 'video' && item.data) {
+      body = '<video src="' + escapeHtml(item.data) + '" controls playsinline ' +
+        (item.autoplay ? 'autoplay muted ' : '') + (item.loop ? 'loop ' : '') + '></video>';
+    } else if (item.type === 'pdf') {
+      body = '<div class="scene-document-card"><b>PDF</b><span>' + escapeHtml(item.title || item.filename || 'Документ') + '</span></div>';
+    } else if (item.type === 'button') {
+      body = '<button type="button" class="scene-action-button">' + escapeHtml(item.title || 'Подробнее') + '</button>';
+    } else {
+      body = '<div class="scene-media-placeholder">' + escapeHtml(item.title || item.type) + '</div>';
+    }
+
+    return '<div class="' + cls + '" data-media-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
+      body + (editor && !item.locked ? '<span class="scene-media-drag-hint">перетащить</span>' : '') + '</div>';
+  }
+
+  function renderSceneMediaOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = true } = {}) {
+    if (!target) return;
+    const items = Array.isArray(scene?.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    if (scene) scene.mediaObjects = items;
+    const markup = items.map((item) => mediaObjectMarkup(item, { editor })).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
+  }
+
+  function screenHotspotVisible(hotspot, scene, state = null, projector = null) {
+    if (hotspot.visible === false) return false;
+    if (scene.sceneType === 'object360') {
+      if (!state) return true;
+      const sectors = Math.max(1, Number(scene.object360?.sectors) || 1);
+      const a = ((Number(state.sector) || 0) - hotspot.anchorSector + sectors) % sectors;
+      const distance = Math.min(a, sectors - a);
+      return distance <= Math.max(1, Math.round(sectors / 18)) &&
+        Number(state.row || 0) === Number(hotspot.anchorRow || 0);
+    }
+    if (scene.sceneType === 'stl') {
+      if (hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+        return Boolean(projector.projectPoint(hotspot.modelPoint)?.visible);
+      }
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch) || 0) - hotspot.anchorPitch);
+      return dy <= 65 && dp <= 55;
+    }
+    return false;
+  }
+
+  function screenHotspotPosition(hotspot, scene, state = null, projector = null) {
+    let x = hotspot.anchorX;
+    let y = hotspot.anchorY;
+    if (scene.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+      const projected = projector.projectPoint(hotspot.modelPoint);
+      if (projected) return { x:projected.x, y:projected.y };
+    }
+    if (scene.sceneType === 'stl' && state) {
+      const dy = ((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
+      const dp = (Number(state.pitch) || 0) - hotspot.anchorPitch;
+      x = hotspot.anchorX - dy * 0.55;
+      y = hotspot.anchorY - dp * 0.65;
+    }
+    return { x: clampNumber(x, -20, 120, hotspot.anchorX), y: clampNumber(y, -20, 120, hotspot.anchorY) };
+  }
+
+  function screenHotspotMarkup(hotspot, scene, state = null, { editor = false, projector = null } = {}) {
+    if (!screenHotspotVisible(hotspot, scene, state, projector)) return '';
+    const pos = screenHotspotPosition(hotspot, scene, state, projector);
+    const label = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Инфо');
+    return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor' : '') +
+      ' hotspot-' + escapeHtml(hotspot.type) + '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
+      '" style="left:' + pos.x + '%;top:' + pos.y + '%;z-index:' + (Number(hotspot.zIndex) || 30) + '" title="' + escapeHtml(label) + '">' +
+      (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') +
+      '<span>' + escapeHtml(label) + '</span></button>';
+  }
+
+  function renderScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, append = true, projector = null } = {}) {
+    if (!target || !scene || scene.sceneType === 'panorama') return;
+    const hotspots = Array.isArray(scene.hotspots) ? scene.hotspots : [];
+    const markup = hotspots.map((hotspot) => screenHotspotMarkup(hotspot, scene, state, { editor, projector })).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
+  }
+
+  function renderCompositeOverlay(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, projector = null } = {}) {
+    if (!target) return;
+    target.innerHTML = '';
+    if (!scene) {
+      target.hidden = true;
+      return;
+    }
+    renderSceneTextOverlay(scene, target, { editor, append: true });
+    renderSceneMediaOverlay(scene, target, { editor, append: true });
+    renderScreenHotspots(scene, target, state, { editor, append: true, projector });
+    target.hidden = !target.children.length;
+  }
+
+  function renderMediaObjectList() {
+    const scene = getScene();
+    const items = scene?.mediaObjects || [];
+    if (!items.length) {
+      els.mediaObjectList.className = 'media-object-list empty';
+      els.mediaObjectList.innerHTML = '<div class="empty-state">Нет медиа</div>';
+      return;
+    }
+    const labels = { image:'Фото', gallery:'Галерея', video:'Видео', pdf:'PDF', button:'Кнопка' };
+    els.mediaObjectList.className = 'media-object-list';
+    els.mediaObjectList.innerHTML = items.map((item) =>
+      '<article class="media-object-card" data-media-object-id="' + escapeHtml(item.id) + '">' +
+      '<span class="media-object-kind">' + ({image:'▧',gallery:'▦',video:'▶',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
+      '<div><b>' + escapeHtml(labels[item.type] || item.type) + '</b><span>' + escapeHtml(item.title || item.filename || 'Без названия') + '</span></div>' +
+      '<em>' + (item.visible === false ? 'скрыт' : (item.locked ? '🔒' : '')) + '</em></article>'
+    ).join('');
+  }
+
+  function renderLayerList() {
+    const scene = getScene();
+    const layers = [];
+    if (scene) {
+      (scene.textObjects || []).forEach((item) => layers.push({ kind:'text', id:item.id, label:item.text || 'Текст', item }));
+      (scene.mediaObjects || []).forEach((item) => layers.push({ kind:'media', id:item.id, label:item.title || item.filename || item.type, item }));
+      (scene.hotspots || []).forEach((item) => layers.push({ kind:'hotspot', id:item.id, label:item.text || 'Hotspot', item }));
+    }
+    els.layerCount.textContent = String(layers.length);
+    if (!layers.length) {
+      els.layerList.className = 'layer-list empty';
+      els.layerList.innerHTML = '<div class="empty-state">Нет слоёв</div>';
+      return;
+    }
+    layers.sort((a,b) => (Number(b.item.zIndex)||0) - (Number(a.item.zIndex)||0));
+    els.layerList.className = 'layer-list';
+    els.layerList.innerHTML = layers.map((layer) =>
+      '<article class="layer-card" data-layer-kind="' + layer.kind + '" data-layer-id="' + escapeHtml(layer.id) + '">' +
+      '<button type="button" data-layer-action="visible" title="Показать / скрыть">' + (layer.item.visible === false ? '○' : '👁') + '</button>' +
+      '<button type="button" data-layer-action="locked" title="Заблокировать">' + (layer.item.locked ? '🔒' : '🔓') + '</button>' +
+      '<button type="button" data-layer-action="up" title="Выше">↑</button>' +
+      '<button type="button" data-layer-action="down" title="Ниже">↓</button>' +
+      '<div><b>' + escapeHtml(layer.kind === 'text' ? 'Текст' : layer.kind === 'media' ? 'Медиа' : 'Hotspot') + '</b><span>' + escapeHtml(layer.label) + '</span></div>' +
+      '</article>'
+    ).join('');
   }
 
   function renderHotspotList() {
@@ -828,15 +1262,16 @@
     const hasScene = Boolean(scene);
     const isObject = scene?.sceneType === 'object360';
     const isStl = scene?.sceneType === 'stl';
-    els.btnAddHotspot.disabled = !hasScene || isObject || isStl;
+    els.btnAddHotspot.disabled = !hasScene;
     els.btnSetInitialView.disabled = !hasScene;
     els.btnSetInitialView.textContent = isObject
       ? 'Сохранить текущий кадр'
       : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
     els.btnAddTextObject.disabled = !hasScene;
+    els.btnAddMediaObject.disabled = !hasScene;
     els.viewerPlaceholder.hidden = hasScene;
-    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor: true });
   }
 
   function clampNumber(value, min, max, fallback) {
@@ -1253,15 +1688,18 @@
           ...base,
           type: 'scene',
           sceneId: hotspot.targetSceneId,
-          cssClass
+          tourTargetSceneId: hotspot.targetSceneId,
+          tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
+          cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id)
         };
       }
 
       return {
         ...base,
         type: 'info',
-        cssClass,
+        cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id),
         tourTargetSceneId: hotspot.targetSceneId,
+        tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
         clickHandlerFunc: () => {
           if (typeof universalSceneHandler === 'function') {
             universalSceneHandler(hotspot.targetSceneId);
@@ -1306,6 +1744,7 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
+          .filter((hotspot) => hotspot.visible !== false)
           .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
           .map((hotspot) => hotspotToPannellum(hotspot, universalSceneHandler))
       };
@@ -1375,8 +1814,10 @@
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
               '/' + data.sectors + (data.rows > 1 ? ' · ряд ' + (state.row + 1) + '/' + data.rows : '');
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true });
           }
         });
+        renderCompositeOverlay(scene, els.sceneOverlay, objectViewer.getState(), { editor:true });
         els.coords.textContent =
           'угол ' + formatNum(objectFrameAngle(data, data.startSector)) + '° · кадр ' +
           (data.startSector + 1) + '/' + data.sectors;
@@ -1409,8 +1850,10 @@
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
               '° · zoom ' + Number(state.zoom).toFixed(2);
+            renderCompositeOverlay(scene, els.sceneOverlay, state, { editor:true, projector:stlViewer });
           }
         });
+        renderCompositeOverlay(scene, els.sceneOverlay, stlViewer.getState(), { editor:true, projector:stlViewer });
         stlViewer.ready.catch((error) => {
           console.error(error);
           showToast('Не удалось открыть STL: ' + (error?.message || 'ошибка'));
@@ -1473,6 +1916,9 @@
     currentSceneId = sceneId;
     renderSceneList();
     renderSceneSettings();
+    renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
     updateToolbarState();
 
@@ -1536,6 +1982,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
@@ -1592,6 +2039,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
@@ -1709,6 +2157,7 @@
       hfov: 100,
       audio: normalizeSceneAudio({}),
       textObjects: [],
+      mediaObjects: [],
       hotspots: []
     };
 
@@ -1887,6 +2336,129 @@
     }
   }
 
+  function updateMediaDialogUi() {
+    const type = els.mediaObjectType.value;
+    els.mediaUploadBox.hidden = type === 'gallery' || type === 'button';
+    els.mediaGalleryUploadBox.hidden = type !== 'gallery';
+    els.mediaUrlRow.hidden = type !== 'button';
+    els.mediaTargetRow.hidden = type !== 'button';
+    els.mediaAutoplayRow.hidden = type !== 'video';
+    els.mediaLoopRow.hidden = type !== 'video';
+    if (type === 'button') {
+      populateSceneSelect(els.mediaObjectTargetScene, getScene()?.id || '');
+    }
+  }
+
+  function populateSceneSelect(select, excludeId = '') {
+    const scenes = project.scenes.filter((scene) => scene.id !== excludeId);
+    select.innerHTML = '<option value="">— не выбрано —</option>' +
+      scenes.map((scene) => '<option value="' + escapeHtml(scene.id) + '">' +
+        sceneTypeMeta(scene).icon + ' ' + escapeHtml(scene.title) + '</option>').join('');
+  }
+
+  function openMediaObjectDialog(mediaObjectId = '') {
+    const scene = getScene();
+    if (!scene) return;
+    scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    const existing = mediaObjectId ? scene.mediaObjects.find((item) => item.id === mediaObjectId) : null;
+    const item = normalizeMediaObject(existing || { type:'image', x:10, y:20, width:36, height:32 });
+
+    pendingMediaData = item.data || '';
+    pendingMediaFilename = item.filename || '';
+    pendingMediaGallery = Array.isArray(item.gallery) ? item.gallery.map((entry) => ({...entry})) : [];
+
+    els.mediaObjectForm.reset();
+    els.mediaObjectEditId.value = existing?.id || '';
+    els.mediaObjectDialogTitle.textContent = existing ? 'Редактировать медиа' : 'Новый медиа-объект';
+    els.mediaObjectType.value = item.type;
+    els.mediaObjectTitle.value = item.title;
+    els.mediaObjectFilename.textContent = item.filename || 'Файл не выбран';
+    els.mediaGalleryCount.textContent = pendingMediaGallery.length ? (pendingMediaGallery.length + ' изображений') : 'Файлы не выбраны';
+    els.mediaObjectUrl.value = item.url;
+    populateSceneSelect(els.mediaObjectTargetScene, scene.id);
+    els.mediaObjectTargetScene.value = item.targetSceneId || '';
+    els.mediaObjectX.value = String(item.x);
+    els.mediaObjectY.value = String(item.y);
+    els.mediaObjectWidth.value = String(item.width);
+    els.mediaObjectHeight.value = String(item.height);
+    els.mediaObjectFit.value = item.fit;
+    els.mediaObjectAnimation.value = item.animation;
+    els.mediaObjectAutoplay.checked = Boolean(item.autoplay);
+    els.mediaObjectLoop.checked = Boolean(item.loop);
+    els.btnDeleteMediaObject.hidden = !existing;
+    updateMediaDialogUi();
+    els.mediaObjectDialog.showModal();
+  }
+
+  async function saveMediaObjectFromDialog() {
+    const scene = getScene();
+    if (!scene) return;
+    const type = els.mediaObjectType.value;
+
+    if (type === 'gallery' && !pendingMediaGallery.length) {
+      showToast('Добавьте изображения галереи');
+      return;
+    }
+    if (['image','video','pdf'].includes(type) && !pendingMediaData) {
+      showToast('Выберите файл');
+      return;
+    }
+    if (type === 'button' && !els.mediaObjectUrl.value.trim() && !els.mediaObjectTargetScene.value) {
+      showToast('Для кнопки укажите URL или сцену');
+      return;
+    }
+
+    scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    const existingId = els.mediaObjectEditId.value;
+    let item = existingId ? scene.mediaObjects.find((entry) => entry.id === existingId) : null;
+    if (!item) {
+      item = { id: uid('media') };
+      scene.mediaObjects.push(item);
+    }
+
+    const normalized = normalizeMediaObject({
+      ...item,
+      id: item.id,
+      type,
+      title: els.mediaObjectTitle.value.trim(),
+      data: type === 'gallery' || type === 'button' ? '' : pendingMediaData,
+      filename: type === 'gallery' || type === 'button' ? '' : pendingMediaFilename,
+      gallery: type === 'gallery' ? pendingMediaGallery : [],
+      url: type === 'button' ? els.mediaObjectUrl.value.trim() : '',
+      targetSceneId: type === 'button' ? els.mediaObjectTargetScene.value : '',
+      x: els.mediaObjectX.value,
+      y: els.mediaObjectY.value,
+      width: els.mediaObjectWidth.value,
+      height: els.mediaObjectHeight.value,
+      fit: els.mediaObjectFit.value,
+      animation: els.mediaObjectAnimation.value,
+      autoplay: type === 'video' && els.mediaObjectAutoplay.checked,
+      loop: type === 'video' && els.mediaObjectLoop.checked
+    });
+    Object.assign(item, normalized);
+    els.mediaObjectDialog.close();
+    markDirty();
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor:true });
+  }
+
+  function deleteMediaObject(id) {
+    const scene = getScene();
+    if (!scene) return;
+    scene.mediaObjects = (scene.mediaObjects || []).filter((item) => item.id !== id);
+    if (els.mediaObjectDialog.open) els.mediaObjectDialog.close();
+    markDirty();
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor:true });
+  }
+
+  function findLayerItem(kind, id) {
+    const scene = getScene();
+    if (!scene) return null;
+    if (kind === 'text') return (scene.textObjects || []).find((item) => item.id === id) || null;
+    if (kind === 'media') return (scene.mediaObjects || []).find((item) => item.id === id) || null;
+    if (kind === 'hotspot') return (scene.hotspots || []).find((item) => item.id === id) || null;
+    return null;
+  }
+
   function populateHotspotTargets(selectedId = '') {
     const current = getScene();
     const candidates = project.scenes.filter((scene) => scene.id !== current?.id);
@@ -1913,17 +2485,35 @@
 
     document.querySelector('.hotspot-scene-field').hidden = type !== 'scene';
     document.querySelector('.hotspot-icon-field').hidden = type !== 'scene';
+    document.querySelector('.hotspot-transition-field').hidden = type !== 'scene';
     document.querySelector('.hotspot-info-field').hidden = type !== 'info';
     document.querySelector('.hotspot-url-field').hidden = type !== 'url';
   }
 
-  function openHotspotDialog(pitch, yaw, hotspotId = null) {
+  function openHotspotDialog(pitch, yaw, hotspotId = null, anchor = null) {
     const scene = getScene();
     if (!scene) return;
 
     els.hotspotForm.reset();
     els.hotspotEditId.value = hotspotId || '';
     let hotspot = hotspotId ? scene.hotspots.find((item) => item.id === hotspotId) : null;
+
+    pendingHotspotAnchor = hotspot
+      ? {
+          anchorMode: hotspot.anchorMode,
+          anchorX: hotspot.anchorX,
+          anchorY: hotspot.anchorY,
+          anchorSector: hotspot.anchorSector,
+          anchorRow: hotspot.anchorRow,
+          anchorYaw: hotspot.anchorYaw,
+          anchorPitch: hotspot.anchorPitch,
+          modelPoint: Array.isArray(hotspot.modelPoint) ? hotspot.modelPoint.slice(0,3) : null
+        }
+      : (anchor || (scene.sceneType === 'object360'
+        ? { anchorMode:'object360', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
+        : scene.sceneType === 'stl'
+          ? { anchorMode:'stl-screen', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
+          : { anchorMode:'panorama', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:Number(yaw)||0, anchorPitch:Number(pitch)||0 }));
 
     const p = hotspot ? hotspot.pitch : pitch;
     const y = hotspot ? hotspot.yaw : yaw;
@@ -1933,6 +2523,7 @@
     els.hotspotPitch.value = formatNum(p);
     els.hotspotYaw.value = formatNum(y);
     els.hotspotText.value = hotspot?.text || '';
+    els.hotspotTransition.value = hotspot?.transition || project.settings.defaultTransition || 'fade';
     els.hotspotUrl.value = hotspot?.url || '';
     els.hotspotInfo.value = hotspot?.info || '';
     loadGlowControls(hotspot);
@@ -1944,6 +2535,29 @@
     els.hotspotIconFile.value = '';
 
     populateHotspotTargets(hotspot?.targetSceneId || '');
+    if (pendingHotspotAnchor?.anchorMode === 'object360') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'Object360: кадр ' + ((pendingHotspotAnchor.anchorSector || 0) + 1) +
+        ', ряд ' + ((pendingHotspotAnchor.anchorRow || 0) + 1) +
+        ', позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
+        Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else if (pendingHotspotAnchor?.anchorMode === 'stl-3d') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'STL: точка закреплена на поверхности модели · ' +
+        (pendingHotspotAnchor.modelPoint || []).map((v)=>Number(v).toFixed(3)).join(' / ');
+    } else if (pendingHotspotAnchor?.anchorMode === 'stl-screen') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'STL: привязка к ракурсу yaw ' + formatNum(pendingHotspotAnchor.anchorYaw) +
+        '° / pitch ' + formatNum(pendingHotspotAnchor.anchorPitch) +
+        '°, позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
+        Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else {
+      els.hotspotAnchorInfo.hidden = true;
+      els.hotspotAnchorInfo.textContent = '';
+    }
     const activeType = hotspot?.type || (project.scenes.length > 1 ? 'scene' : 'info');
     setHotspotType(activeType);
     setHotspotIconPreset(hotspot?.iconPreset || (activeType === 'scene' ? 'preview' : 'arrow'));
@@ -2018,7 +2632,19 @@
       glowPulse: els.hotspotGlowPulse.checked,
       glowPulseSpeed: clampNumber(els.hotspotGlowPulseSpeed.value, 0.5, 4, 1.6),
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
-      info: type === 'info' ? els.hotspotInfo.value.trim() : ''
+      info: type === 'info' ? els.hotspotInfo.value.trim() : '',
+      transition: els.hotspotTransition.value || project.settings.defaultTransition || 'fade',
+      anchorMode: pendingHotspotAnchor?.anchorMode || (scene.sceneType === 'panorama' ? 'panorama' : scene.sceneType === 'object360' ? 'object360' : 'stl-screen'),
+      anchorX: pendingHotspotAnchor?.anchorX ?? 50,
+      anchorY: pendingHotspotAnchor?.anchorY ?? 50,
+      anchorSector: pendingHotspotAnchor?.anchorSector ?? 0,
+      anchorRow: pendingHotspotAnchor?.anchorRow ?? 0,
+      anchorYaw: pendingHotspotAnchor?.anchorYaw ?? (Number(yaw) || 0),
+      anchorPitch: pendingHotspotAnchor?.anchorPitch ?? (Number(pitch) || 0),
+      modelPoint: Array.isArray(pendingHotspotAnchor?.modelPoint) ? pendingHotspotAnchor.modelPoint.slice(0,3) : null,
+      visible: hotspot.visible !== false,
+      locked: Boolean(hotspot.locked),
+      zIndex: Number.isFinite(Number(hotspot.zIndex)) ? Number(hotspot.zIndex) : 30
     });
 
     els.hotspotDialog.close();
@@ -2514,6 +3140,7 @@
     const tileCanvas = document.createElement('canvas');
     const fallbackCanvas = document.createElement('canvas');
     const fallbackSize = Math.min(1024, spec.cubeResolution);
+    const generatedFiles = [];
     fallbackCanvas.width = fallbackSize;
     fallbackCanvas.height = fallbackSize;
     const fallbackCtx = fallbackCanvas.getContext('2d', { alpha: false });
@@ -2550,10 +3177,9 @@
               tileCtx.drawImage(levelCanvas, sx, sy, width, height, 0, 0, width, height);
 
               const blob = await canvasToBlob(tileCanvas, 'image/jpeg', spec.quality);
-              root.file(
-                'multires/' + sceneDir + '/' + level + '/' + face + y + '_' + x + '.jpg',
-                blob
-              );
+              const tilePath = 'multires/' + sceneDir + '/' + level + '/' + face + y + '_' + x + '.jpg';
+              root.file(tilePath, blob);
+              generatedFiles.push(tilePath);
             }
           }
         }
@@ -2561,7 +3187,9 @@
         fallbackCtx.clearRect(0, 0, fallbackSize, fallbackSize);
         fallbackCtx.drawImage(faceCanvas, 0, 0, fallbackSize, fallbackSize);
         const fallbackBlob = await canvasToBlob(fallbackCanvas, 'image/jpeg', spec.quality);
-        root.file('multires/' + sceneDir + '/fallback/' + face + '.jpg', fallbackBlob);
+        const fallbackPath = 'multires/' + sceneDir + '/fallback/' + face + '.jpg';
+        root.file(fallbackPath, fallbackBlob);
+        generatedFiles.push(fallbackPath);
 
         await yieldToBrowser();
       }
@@ -2574,7 +3202,8 @@
       tileResolution: spec.tileResolution,
       maxLevel: spec.maxLevel,
       cubeResolution: spec.cubeResolution,
-      thumbnail: makeMultiresThumbnail(image)
+      thumbnail: makeMultiresThumbnail(image),
+      files: generatedFiles
     };
   }
 
@@ -2583,7 +3212,8 @@
     multiresScenes = new Map(),
     objectSceneFiles = new Map(),
     stlSceneFiles = new Map(),
-    audioConfig = { projectMusic: null, scenes: {} }
+    audioConfig = { projectMusic: null, scenes: {} },
+    mediaConfig = {}
   ) {
     const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
     const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
@@ -2620,13 +3250,95 @@
         title: scene.title,
         sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
         textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
+        mediaObjects: mediaConfig[scene.id] || [],
+        screenHotspots: scene.sceneType === 'panorama' ? [] : (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
         audio: audioConfig.scenes?.[scene.id] || { music: null, narration: null }
       }
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
     config.stlScenes = Object.fromEntries(stlSceneFiles);
     config.projectAudio = { music: audioConfig.projectMusic || null };
+    config.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
+    if (config.startScreen.coverData) {
+      config.startScreen.coverData = 'images/start-cover' +
+        (project.startScreen?.__exportCoverExt || extensionForDataUrl(config.startScreen.coverData, '.jpg'));
+    }
+    config.guide = normalizeGuide(project.guide || {}, project.scenes);
+    config.exportSettings = normalizeExportSettings(project.exportSettings || {});
+    config.defaultTransition = project.settings.defaultTransition || 'fade';
+    config.offlineAssets = [...multiresScenes.values()].flatMap((item) => item.files || []);
     return config;
+  }
+
+  function extensionForDataUrl(data, fallback = '.bin') {
+    const mime = String(data || '').match(/^data:([^;,]+)/i)?.[1]?.toLowerCase() || '';
+    if (mime.includes('jpeg')) return '.jpg';
+    if (mime.includes('png')) return '.png';
+    if (mime.includes('webp')) return '.webp';
+    if (mime.includes('mp4')) return '.mp4';
+    if (mime.includes('webm')) return '.webm';
+    if (mime.includes('pdf')) return '.pdf';
+    if (mime.includes('mpeg')) return '.mp3';
+    if (mime.includes('ogg')) return '.ogg';
+    if (mime.includes('wav')) return '.wav';
+    return fallback;
+  }
+
+  function bundleDataUrlFile(root, data, path) {
+    if (!data) return '';
+    const payload = dataUrlPayload(data);
+    if (payload.base64) root.file(path, payload.data, { base64:true });
+    else root.file(path, decodeURIComponent(payload.data));
+    return path;
+  }
+
+  async function bundleMediaObjects(root) {
+    const output = {};
+    for (const scene of project.scenes) {
+      const dir = 'media/' + safeFilename(scene.id || scene.title, 'scene');
+      const sourceItems = (scene.mediaObjects || []).filter((item) => item.visible !== false);
+      output[scene.id] = [];
+      for (let index = 0; index < sourceItems.length; index++) {
+        const item = normalizeMediaObject(sourceItems[index]);
+        const base = safeFilename(item.title || item.id || ('media-' + (index + 1)), 'media-' + (index + 1));
+        const exported = { ...item, data:'', gallery:[] };
+        const settings = normalizeExportSettings(project.exportSettings || {});
+
+        if (item.data && ['image','video','pdf'].includes(item.type)) {
+          let fileData = item.data;
+          if (item.type === 'image' && settings.optimizeEnabled) {
+            fileData = await optimizeImageDataUrl(
+              item.data,
+              Math.min(settings.maxImageWidth, 2560),
+              settings.jpegQuality,
+              /^data:image\/(png|webp)/i.test(item.data)
+            );
+          }
+          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.jpg');
+          exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
+        }
+        if (item.type === 'gallery') {
+          for (let galleryIndex = 0; galleryIndex < (item.gallery || []).length; galleryIndex++) {
+            const entry = item.gallery[galleryIndex];
+            let fileData = entry.data;
+            if (settings.optimizeEnabled) {
+              fileData = await optimizeImageDataUrl(
+                entry.data,
+                Math.min(settings.maxImageWidth, 2560),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(entry.data)
+              );
+            }
+            const ext = extensionForDataUrl(fileData, '.jpg');
+            const path = dir + '/' + base + '-' + String(galleryIndex + 1).padStart(2, '0') + ext;
+            bundleDataUrlFile(root, fileData, path);
+            exported.gallery.push({ src:path, filename:entry.filename || '' });
+          }
+        }
+        output[scene.id].push(exported);
+      }
+    }
+    return output;
   }
 
   function bundleAudioSlot(root, slot, baseName) {
@@ -2650,12 +3362,16 @@
 
   function exportedViewerHtml() {
     const title = escapeHtml(project.title || 'Виртуальная экскурсия');
+    const pwa = normalizeExportSettings(project.exportSettings || {}).pwaEnabled;
     return '<!doctype html>\n' +
       '<html lang="ru">\n<head>\n' +
       '  <meta charset="utf-8">\n' +
       '  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' +
       '  <meta name="theme-color" content="#05070c">\n' +
+      '  <meta name="mobile-web-app-capable" content="yes">\n' +
+      '  <meta name="apple-mobile-web-app-capable" content="yes">\n' +
       '  <title>' + title + '</title>\n' +
+      (pwa ? '  <link rel="manifest" href="manifest.webmanifest">\n' : '') +
       '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
       '  <link rel="stylesheet" href="assets/tour.css">\n' +
       '</head>\n<body>\n' +
@@ -2665,15 +3381,32 @@
       '  </div>\n' +
       '  <div id="panorama"></div>\n' +
       '  <div id="sceneTextOverlay" class="scene-text-overlay"></div>\n' +
-      '  <div id="tourAudioControls" class="tour-audio-controls">\n' +
+      '  <div id="tourTransitionLayer" class="tour-transition-layer"></div>\n' +
+      '  <div id="tourInfoPanel" class="tour-info-panel" hidden><button id="tourInfoClose" type="button">×</button><div id="tourInfoContent"></div></div>\n' +
+      '  <div id="tourBottomDock" class="tour-bottom-dock">\n' +
+      '    <button id="tourGuideButton" type="button" title="Экскурсия с гидом" hidden>▶ Гид</button>\n' +
+      '    <button id="tourFullscreenButton" type="button" title="На весь экран">⛶</button>\n' +
       '    <button id="tourMusicButton" type="button" title="Музыка">♪</button>\n' +
       '    <button id="tourNarrationButton" type="button" title="Озвучка" hidden>🔊</button>\n' +
+      '  </div>\n' +
+      '  <div id="tourStartScreen" class="tour-start-screen" hidden>\n' +
+      '    <div class="tour-start-shade"></div>\n' +
+      '    <div class="tour-start-card">\n' +
+      '      <span class="tour-start-kicker">360° · OBJECT · 3D</span>\n' +
+      '      <h1 id="tourStartTitle"></h1>\n' +
+      '      <p id="tourStartSubtitle"></p>\n' +
+      '      <div class="tour-start-actions">\n' +
+      '        <button id="tourStartSound" type="button">Начать со звуком</button>\n' +
+      '        <button id="tourStartSilent" type="button">Без звука</button>\n' +
+      '      </div>\n' +
+      '    </div>\n' +
       '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
+      (pwa ? '  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>\n' : '') +
       '</body>\n</html>\n';
   }
 
@@ -2758,6 +3491,18 @@
       '.tour-audio-controls{position:fixed;right:12px;bottom:12px;z-index:60;display:flex;gap:7px}.tour-audio-controls button{width:40px;height:40px;border:1px solid rgba(255,255,255,.15);border-radius:50%;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px);cursor:pointer;font-size:16px;font-weight:900}.tour-audio-controls button.active{border-color:rgba(31,214,187,.65);box-shadow:0 0 0 3px rgba(31,214,187,.12);color:#75e7d6}.tour-audio-controls button[hidden]{display:none}\n' +
       '@media(max-width:640px){#tourNavBar{right:12px;max-width:none}#sceneMenuExport{min-width:0;flex:1}.scene-text-object{max-width:92%!important}.tour-audio-controls{bottom:10px;right:10px}}\n';
 
+    css +=
+      '.scene-text-overlay{position:fixed;inset:0;z-index:35;pointer-events:none;overflow:hidden}\n' +
+      '.scene-media-object{position:absolute;pointer-events:auto;border-radius:14px;overflow:hidden;animation-duration:.48s;animation-fill-mode:both}.scene-media-object img,.scene-media-object video{width:100%;height:100%;display:block}.scene-media-object img{object-position:center}.scene-media-video video{background:#000}.scene-media-pdf,.scene-media-button{height:auto!important}.scene-document-card,.scene-action-button{width:100%;height:100%;min-height:48px;border:1px solid rgba(255,255,255,.15);border-radius:14px;background:rgba(6,10,18,.78);color:#fff;backdrop-filter:blur(12px)}.scene-document-card{display:flex;align-items:center;gap:10px;padding:12px}.scene-document-card b{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#d94b4b}.scene-action-button{padding:12px 18px;font-weight:800;cursor:pointer}.scene-gallery-frame{position:relative;width:100%;height:100%}.scene-gallery-frame span{position:absolute;right:8px;bottom:8px;padding:4px 7px;border-radius:8px;background:rgba(0,0,0,.65);font-size:10px}.scene-gallery-nav{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none}.scene-gallery-nav button{pointer-events:auto;margin:6px;width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer}.scene-media-anim-fade{animation-name:sceneTextFade}.scene-media-anim-slide{animation-name:sceneTextSlide}.scene-media-anim-zoom{animation-name:sceneMediaZoom}.scene-media-anim-none{animation:none}@keyframes sceneMediaZoom{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:scale(1)}}\n' +
+      '.screen-hotspot{position:absolute;transform:translate(-50%,-50%);z-index:45;display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(5,9,18,.82);color:#fff;padding:8px 10px;pointer-events:auto;cursor:pointer;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.35)}.screen-hotspot>span{font:700 10px system-ui;white-space:nowrap}.screen-hotspot:hover{border-color:#7c8cff;transform:translate(-50%,-50%) scale(1.04)}\n' +      '.guide-highlight{animation:guidePulse .8s ease-in-out infinite alternate!important;box-shadow:0 0 0 6px rgba(117,231,214,.25),0 0 30px rgba(117,231,214,.8)!important}@keyframes guidePulse{from{filter:brightness(1)}to{filter:brightness(1.8)}}\n' +
+
+      '.tour-bottom-dock{position:fixed;z-index:65;right:12px;bottom:12px;display:flex;gap:7px}.tour-bottom-dock button{min-width:40px;height:40px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(6,10,18,.78);color:#fff;padding:0 12px;backdrop-filter:blur(12px);cursor:pointer;font:800 12px system-ui}.tour-bottom-dock button.active{border-color:rgba(31,214,187,.65);color:#75e7d6}.tour-bottom-dock button[hidden]{display:none}\n' +
+      '.tour-transition-layer{position:fixed;inset:0;z-index:90;pointer-events:none;opacity:0;background:#05070c}.tour-transition-layer.active{animation-duration:.62s;animation-fill-mode:both}.tour-transition-layer.t-fade.active{animation-name:tFade}.tour-transition-layer.t-black.active{animation-name:tBlack}.tour-transition-layer.t-blur.active{animation-name:tBlur;background:rgba(5,7,12,.88);backdrop-filter:blur(20px)}.tour-transition-layer.t-zoom.active{animation-name:tZoom;background:radial-gradient(circle,rgba(124,140,255,.14),#05070c)}.tour-transition-layer.t-portal.active{animation-name:tPortal;background:radial-gradient(circle at center,transparent 0 12%,#7c8cff 13%,#05070c 58%)}.tour-transition-layer.t-glitch.active{animation-name:tGlitch;background:repeating-linear-gradient(0deg,rgba(124,140,255,.16) 0 2px,#05070c 3px 7px)}@keyframes tFade{0%,100%{opacity:0}45%,60%{opacity:1}}@keyframes tBlack{0%,100%{opacity:0}35%,65%{opacity:1}}@keyframes tBlur{0%,100%{opacity:0}45%,60%{opacity:1}}@keyframes tZoom{0%,100%{opacity:0;transform:scale(1.25)}48%,58%{opacity:1;transform:scale(1)}}@keyframes tPortal{0%,100%{opacity:0;transform:scale(2)}48%,58%{opacity:1;transform:scale(.8)}}@keyframes tGlitch{0%,100%{opacity:0;transform:none}42%{opacity:1;transform:translateX(-8px)}48%{transform:translateX(10px)}55%{transform:translateX(-4px)}62%{opacity:1;transform:none}}\n' +
+      '.tour-start-screen{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background-position:center;background-size:cover}.tour-start-screen[hidden]{display:none}.tour-start-shade{position:absolute;inset:0;background:linear-gradient(135deg,rgba(2,5,12,.9),rgba(7,11,24,.55),rgba(2,5,12,.88))}.tour-start-card{position:relative;z-index:1;width:min(720px,calc(100vw - 36px));padding:44px;border:1px solid rgba(255,255,255,.14);border-radius:28px;background:rgba(5,9,18,.62);backdrop-filter:blur(22px);color:#fff;box-shadow:0 30px 100px rgba(0,0,0,.42)}.tour-start-kicker{font:800 11px system-ui;letter-spacing:.16em;color:#75e7d6}.tour-start-card h1{margin:14px 0 10px;font:900 clamp(34px,6vw,76px)/.96 system-ui;letter-spacing:-.05em}.tour-start-card p{max-width:620px;margin:0 0 28px;color:#c0cadc;font:500 clamp(14px,2vw,20px)/1.5 system-ui}.tour-start-actions{display:flex;gap:10px;flex-wrap:wrap}.tour-start-actions button{border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:13px 18px;background:#7c8cff;color:#fff;font-weight:900;cursor:pointer}.tour-start-actions button+button{background:rgba(255,255,255,.08)}\n' +
+      '.tour-info-panel{position:fixed;z-index:80;right:16px;top:70px;width:min(380px,calc(100vw - 32px));padding:18px;border:1px solid rgba(255,255,255,.14);border-radius:18px;background:rgba(5,9,18,.9);color:#fff;backdrop-filter:blur(18px);box-shadow:0 20px 70px rgba(0,0,0,.38)}.tour-info-panel[hidden]{display:none}.tour-info-panel>button{position:absolute;right:8px;top:8px;width:30px;height:30px;border:0;border-radius:50%;background:rgba(255,255,255,.08);color:#fff;cursor:pointer}.tour-info-panel #tourInfoContent{padding-right:25px;white-space:pre-line;line-height:1.5}\n' +
+      'body.kiosk #tourNavBar{display:none}body.kiosk .pnlm-controls{opacity:.35}body.kiosk .tour-bottom-dock{left:50%;right:auto;transform:translateX(-50%)}\n' +
+      '@media(max-width:640px){#tourNavBar{left:8px;right:8px;top:8px;max-width:none}.tour-bottom-dock{left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom));justify-content:center}.tour-bottom-dock button{flex:1;max-width:110px;padding:0 8px}.tour-start-card{padding:28px 22px;border-radius:22px}.scene-text-object{max-width:92%!important}.scene-media-object{max-width:94%}.screen-hotspot>span{display:none}}\n';
+
     customIconFiles.forEach((filename, hotspotId) => {
       css += '.hotspot-custom-' + hotspotCssToken(hotspotId) +
         '{background-image:url("../images/icons/' + filename.replace(/"/g, '%22') + '")!important}\n';
@@ -2792,34 +3537,41 @@
   let narrationAudio = null;
   let musicEnabled = true;
   let userInteracted = false;
+  let guideTimer = 0;
+  let guideIndex = -1;
+  let guideRunning = false;
   const historyStack = [];
+  const galleryIndexes = new Map();
 
   const host = document.getElementById('panorama');
   const menu = document.getElementById('sceneMenuExport');
   const backButton = document.getElementById('tourBackButton');
   const overlay = document.getElementById('sceneTextOverlay');
+  const transitionLayer = document.getElementById('tourTransitionLayer');
+  const infoPanel = document.getElementById('tourInfoPanel');
+  const infoContent = document.getElementById('tourInfoContent');
+  const infoClose = document.getElementById('tourInfoClose');
   const musicButton = document.getElementById('tourMusicButton');
   const narrationButton = document.getElementById('tourNarrationButton');
+  const fullscreenButton = document.getElementById('tourFullscreenButton');
+  const guideButton = document.getElementById('tourGuideButton');
+  const startScreen = document.getElementById('tourStartScreen');
+  const startTitle = document.getElementById('tourStartTitle');
+  const startSubtitle = document.getElementById('tourStartSubtitle');
+  const startSound = document.getElementById('tourStartSound');
+  const startSilent = document.getElementById('tourStartSilent');
+
+  const clamp = (v,min,max) => Math.min(max,Math.max(min,Number(v)||0));
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const destroyViewer = () => {
-    if (panoViewer) {
-      try { panoViewer.destroy(); } catch (_) {}
-      panoViewer = null;
-    }
-    if (objectViewer) {
-      try { objectViewer.destroy(); } catch (_) {}
-      objectViewer = null;
-    }
-    if (stlViewer) {
-      try { stlViewer.destroy(); } catch (_) {}
-      stlViewer = null;
-    }
+    if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
+    if (objectViewer) { try { objectViewer.destroy(); } catch (_) {} objectViewer = null; }
+    if (stlViewer) { try { stlViewer.destroy(); } catch (_) {} stlViewer = null; }
     host.innerHTML = '';
   };
 
-  const updateMenu = (id) => {
-    if (menu) menu.value = id || '';
-  };
+  const updateMenu = (id) => { if (menu) menu.value = id || ''; };
 
   const updateBackButton = () => {
     if (!backButton) return;
@@ -2828,15 +3580,73 @@
     const previousId = historyStack[historyStack.length - 1];
     const previous = config.sceneMeta?.[previousId];
     backButton.textContent = previous?.title ? '← ' + previous.title : '← Назад';
-    backButton.title = previous?.title ? 'Вернуться: ' + previous.title : 'Вернуться назад';
   };
 
-  const renderTextOverlay = (id) => {
+  const showInfo = (text) => {
+    if (!infoPanel || !infoContent) return;
+    infoContent.textContent = text || '';
+    infoPanel.hidden = !text;
+  };
+
+  const screenHotspotVisible = (hotspot, meta, state, projector = null) => {
+    if (hotspot.visible === false) return false;
+    if (meta.sceneType === 'object360') {
+      if (!state) return true;
+      const sectors = Math.max(1, Number(config.object360Scenes?.[currentSceneId]?.sectors) || 1);
+      const d = ((Number(state.sector)||0) - (Number(hotspot.anchorSector)||0) + sectors) % sectors;
+      const distance = Math.min(d, sectors - d);
+      return distance <= Math.max(1, Math.round(sectors / 18)) &&
+        Number(state.row||0) === Number(hotspot.anchorRow||0);
+    }
+    if (meta.sceneType === 'stl') {
+      if (hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+        return Boolean(projector.projectPoint(hotspot.modelPoint)?.visible);
+      }
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0));
+      return dy <= 65 && dp <= 55;
+    }
+    return false;
+  };
+
+  const screenHotspotPosition = (hotspot, meta, state, projector = null) => {
+    let x = Number(hotspot.anchorX)||50;
+    let y = Number(hotspot.anchorY)||50;
+    if (meta.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
+      const projected = projector.projectPoint(hotspot.modelPoint);
+      if (projected) return {x:projected.x,y:projected.y};
+    }
+    if (meta.sceneType === 'stl' && state) {
+      const dy = (((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180;
+      const dp = (Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0);
+      x -= dy * .55;
+      y -= dp * .65;
+    }
+    return {x:clamp(x,-20,120), y:clamp(y,-20,120)};
+  };
+
+  const runHotspotAction = (hotspot) => {
+    if (!hotspot) return;
+    if (hotspot.type === 'scene' && hotspot.targetSceneId) {
+      showScene(hotspot.targetSceneId, true, hotspot.transition || config.defaultTransition || 'fade');
+      return;
+    }
+    if (hotspot.type === 'url' && hotspot.url) {
+      window.open(hotspot.url, '_blank', 'noopener');
+      return;
+    }
+    if (hotspot.type === 'info') {
+      showInfo((hotspot.text ? hotspot.text + '\\n\\n' : '') + (hotspot.info || ''));
+    }
+  };
+
+  const renderOverlay = (id, state = null, projector = null) => {
     if (!overlay) return;
     overlay.innerHTML = '';
-    const items = config.sceneMeta?.[id]?.textObjects || [];
+    const meta = config.sceneMeta?.[id] || {};
 
-    items.forEach((item) => {
+    (meta.textObjects || []).filter((item) => item.visible !== false).forEach((item) => {
       const el = document.createElement('div');
       el.className = [
         'scene-text-object',
@@ -2844,19 +3654,90 @@
         'scene-text-bg-' + (item.background || 'none'),
         'scene-text-anim-' + (item.animation || 'fade')
       ].join(' ');
-
       el.style.left = Number(item.x || 0) + '%';
       el.style.top = Number(item.y || 0) + '%';
       el.style.width = Number(item.width || 40) + '%';
       el.style.fontSize = Number(item.fontSize || 20) + 'px';
-      el.style.color = item.color || '#ffffff';
+      el.style.color = item.color || '#fff';
       el.style.textAlign = item.align || 'left';
-
+      el.style.zIndex = String(Number(item.zIndex) || 10);
       const inner = document.createElement('div');
       inner.className = 'scene-text-inner';
       inner.textContent = item.text || '';
       el.appendChild(inner);
       overlay.appendChild(el);
+    });
+
+    (meta.mediaObjects || []).filter((item) => item.visible !== false).forEach((item) => {
+      const el = document.createElement('div');
+      el.className = 'scene-media-object scene-media-' + item.type + ' scene-media-anim-' + (item.animation || 'fade');
+      el.dataset.mediaId = item.id || '';
+      el.style.left = Number(item.x || 0) + '%';
+      el.style.top = Number(item.y || 0) + '%';
+      el.style.width = Number(item.width || 36) + '%';
+      el.style.height = Number(item.height || 32) + '%';
+      el.style.zIndex = String(Number(item.zIndex) || 20);
+
+      if (item.type === 'image' && item.src) {
+        const img = document.createElement('img');
+        img.src = item.src; img.alt = item.title || ''; img.style.objectFit = item.fit || 'contain';
+        el.appendChild(img);
+      } else if (item.type === 'video' && item.src) {
+        const video = document.createElement('video');
+        video.src = item.src; video.controls = true; video.playsInline = true;
+        video.autoplay = Boolean(item.autoplay); video.muted = true; video.loop = Boolean(item.loop);
+        el.appendChild(video);
+      } else if (item.type === 'pdf' && item.src) {
+        const card = document.createElement('button');
+        card.type = 'button'; card.className = 'scene-document-card';
+        card.innerHTML = '<b>PDF</b><span></span>';
+        card.querySelector('span').textContent = item.title || item.filename || 'Документ';
+        card.addEventListener('click', () => window.open(item.src, '_blank', 'noopener'));
+        el.appendChild(card);
+      } else if (item.type === 'button') {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'scene-action-button'; btn.textContent = item.title || 'Подробнее';
+        btn.addEventListener('click', () => {
+          if (item.targetSceneId) showScene(item.targetSceneId, true, config.defaultTransition || 'fade');
+          else if (item.url) window.open(item.url, '_blank', 'noopener');
+        });
+        el.appendChild(btn);
+      } else if (item.type === 'gallery' && item.gallery?.length) {
+        const index = galleryIndexes.get(item.id) || 0;
+        const frame = document.createElement('div');
+        frame.className = 'scene-gallery-frame';
+        const img = document.createElement('img');
+        img.src = item.gallery[index % item.gallery.length].src;
+        img.style.objectFit = item.fit || 'contain';
+        const count = document.createElement('span');
+        count.textContent = (index + 1) + ' / ' + item.gallery.length;
+        frame.append(img, count);
+        const nav = document.createElement('div');
+        nav.className = 'scene-gallery-nav';
+        const prev = document.createElement('button'); prev.type='button'; prev.textContent='‹';
+        const next = document.createElement('button'); next.type='button'; next.textContent='›';
+        prev.addEventListener('click', () => { galleryIndexes.set(item.id,(index - 1 + item.gallery.length)%item.gallery.length); renderOverlay(id,state,projector); });
+        next.addEventListener('click', () => { galleryIndexes.set(item.id,(index + 1)%item.gallery.length); renderOverlay(id,state,projector); });
+        nav.append(prev,next);
+        el.append(frame,nav);
+      }
+      overlay.appendChild(el);
+    });
+
+    (meta.screenHotspots || []).forEach((hotspot) => {
+      if (!screenHotspotVisible(hotspot, meta, state, projector)) return;
+      const pos = screenHotspotPosition(hotspot, meta, state, projector);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      btn.dataset.screenHotspotId = hotspot.id || '';
+      btn.style.left = pos.x + '%';
+      btn.style.top = pos.y + '%';
+      btn.style.zIndex = String(Number(hotspot.zIndex) || 30);
+      btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
+      btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+      btn.addEventListener('click', () => runHotspotAction(hotspot));
+      overlay.appendChild(btn);
     });
   };
 
@@ -2867,52 +3748,39 @@
 
   const stopNarration = () => {
     if (narrationAudio) {
-      try {
-        narrationAudio.pause();
-        narrationAudio.currentTime = 0;
-      } catch (_) {}
+      try { narrationAudio.pause(); narrationAudio.currentTime = 0; } catch (_) {}
     }
     narrationAudio = null;
-    if (narrationButton) narrationButton.classList.remove('active');
+    narrationButton?.classList.remove('active');
     if (musicAudio) {
       const desired = desiredMusic(currentSceneId);
-      musicAudio.volume = Math.max(0, Math.min(1, Number(desired?.volume ?? 50) / 100));
+      musicAudio.volume = clamp((desired?.volume ?? 50) / 100,0,1);
     }
   };
 
   const tryPlayMusic = async () => {
     if (!musicAudio || !musicEnabled || !userInteracted) return;
-    try {
-      await musicAudio.play();
-      musicButton?.classList.add('active');
-    } catch (_) {}
+    try { await musicAudio.play(); musicButton?.classList.add('active'); } catch (_) {}
   };
 
   const configureAudio = (id) => {
     stopNarration();
-
     const music = desiredMusic(id);
     if (musicButton) musicButton.hidden = !music?.src;
-
     const nextKey = music?.src || '';
     if (nextKey !== musicKey) {
-      if (musicAudio) {
-        try { musicAudio.pause(); } catch (_) {}
-      }
-      musicAudio = null;
-      musicKey = nextKey;
-
+      if (musicAudio) { try { musicAudio.pause(); } catch (_) {} }
+      musicAudio = null; musicKey = nextKey;
       if (music?.src) {
         musicAudio = new Audio(music.src);
         musicAudio.loop = Boolean(music.loop);
+        musicAudio.preload = 'auto';
       }
     }
-
     if (musicAudio && music) {
-      musicAudio.volume = Math.max(0, Math.min(1, Number(music.volume ?? 50) / 100));
+      musicAudio.volume = clamp((music.volume ?? 50) / 100,0,1);
       tryPlayMusic();
     }
-
     const narration = config.sceneMeta?.[id]?.audio?.narration;
     if (narrationButton) narrationButton.hidden = !narration?.src;
   };
@@ -2920,35 +3788,23 @@
   const playNarration = async () => {
     const narration = config.sceneMeta?.[currentSceneId]?.audio?.narration;
     if (!narration?.src) return;
-
-    if (narrationAudio && !narrationAudio.paused) {
-      stopNarration();
-      return;
-    }
-
+    if (narrationAudio && !narrationAudio.paused) { stopNarration(); return; }
     stopNarration();
     narrationAudio = new Audio(narration.src);
-    narrationAudio.volume = Math.max(0, Math.min(1, Number(narration.volume ?? 80) / 100));
-
-    if (musicAudio && !musicAudio.paused) {
-      musicAudio.volume *= 0.28;
-    }
-
-    narrationAudio.addEventListener('ended', stopNarration, { once: true });
-
-    try {
-      await narrationAudio.play();
-      narrationButton?.classList.add('active');
-    } catch (_) {
-      stopNarration();
-    }
+    narrationAudio.volume = clamp((narration.volume ?? 80) / 100,0,1);
+    if (musicAudio && !musicAudio.paused) musicAudio.volume *= .28;
+    narrationAudio.addEventListener('ended', stopNarration, {once:true});
+    try { await narrationAudio.play(); narrationButton?.classList.add('active'); } catch (_) { stopNarration(); }
   };
 
-  const applySceneUi = (id) => {
-    renderTextOverlay(id);
-    configureAudio(id);
-    updateMenu(id);
-    updateBackButton();
+  const applyTransition = async (name, switchFn) => {
+    const transition = ['fade','zoom','blur','portal','glitch','black'].includes(name) ? name : 'fade';
+    if (!transitionLayer || !currentSceneId) { switchFn(); return; }
+    transitionLayer.className = 'tour-transition-layer t-' + transition + ' active';
+    await delay(250);
+    switchFn();
+    await delay(390);
+    transitionLayer.className = 'tour-transition-layer';
   };
 
   const decorateUniversalHotspots = (panoConfig) => {
@@ -2956,156 +3812,219 @@
       (scene.hotSpots || []).forEach((hotspot) => {
         const target = hotspot.tourTargetSceneId;
         if (!target) return;
-        hotspot.clickHandlerFunc = () => showScene(target, true);
+        hotspot.type = 'info';
+        delete hotspot.sceneId;
+        hotspot.clickHandlerFunc = () => showScene(target, true, hotspot.tourTransition || config.defaultTransition || 'fade');
       });
     });
   };
 
-  const showScene = (id, pushHistory = true) => {
+  const preloadScene = (id) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
+    if (meta.sceneType === 'panorama') {
+      const p = config.scenes?.[id]?.panorama || config.scenes?.[id]?.multiRes?.equirectangularThumbnail;
+      if (p) { const img = new Image(); img.src = p; }
+    } else if (meta.sceneType === 'object360') {
+      const frames = config.object360Scenes?.[id]?.frames || [];
+      (frames[0] || []).slice(0,4).forEach((src) => { if (src) { const img=new Image(); img.src=src; } });
+    } else if (meta.sceneType === 'stl') {
+      const src = config.stlScenes?.[id]?.source;
+      if (src) fetch(src).catch(()=>{});
+    }
+    (meta.mediaObjects || []).forEach((item) => {
+      if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; }
+      if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
+    });
+    [meta.audio?.music?.src,meta.audio?.narration?.src].filter(Boolean).forEach((src)=>{ const a=new Audio(); a.preload='metadata'; a.src=src; });
+  };
 
+  const preloadNeighbors = (id) => {
+    const targets = new Set();
+    (config.scenes?.[id]?.hotSpots || []).forEach((h)=>{ if(h.tourTargetSceneId) targets.add(h.tourTargetSceneId); });
+    (config.sceneMeta?.[id]?.screenHotspots || []).forEach((h)=>{ if(h.targetSceneId) targets.add(h.targetSceneId); });
+    const gi = config.guide?.steps?.findIndex((step)=>step.sceneId===id);
+    if (gi >= 0 && config.guide.steps[gi+1]) targets.add(config.guide.steps[gi+1].sceneId);
+    [...targets].slice(0,4).forEach(preloadScene);
+  };
+
+  const showScene = async (id, pushHistory = true, transition = null) => {
+    const meta = config.sceneMeta?.[id];
+    if (!meta) return;
     if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
-      applySceneUi(id);
-      return;
+      updateMenu(id); updateBackButton(); renderOverlay(id); configureAudio(id); return;
     }
+    const previous = currentSceneId;
+    if (pushHistory && previous && previous !== id) historyStack.push(previous);
 
-    if (pushHistory && currentSceneId && currentSceneId !== id) {
-      historyStack.push(currentSceneId);
-    }
+    const switchScene = () => {
+      currentSceneId = id;
+      destroyViewer();
+      updateMenu(id);
+      updateBackButton();
+      renderOverlay(id);
+      configureAudio(id);
 
-    currentSceneId = id;
-    destroyViewer();
-    applySceneUi(id);
-
-    if (meta.sceneType === 'object360') {
-      const data = config.object360Scenes?.[id];
-      if (!data || !window.Object360Viewer) {
-        host.innerHTML = '<div class="viewer-error">Object360 сцена недоступна</div>';
+      if (meta.sceneType === 'object360') {
+        const data = config.object360Scenes?.[id];
+        if (!data || !window.Object360Viewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
+        objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderOverlay(id,state)});
+        renderOverlay(id,objectViewer.getState());
         return;
       }
-      objectViewer = new Object360Viewer(host, data);
-      return;
-    }
-
-    if (meta.sceneType === 'stl') {
-      const data = config.stlScenes?.[id];
-      if (!data || !window.StlViewer) {
-        host.innerHTML = '<div class="viewer-error">STL сцена недоступна</div>';
+      if (meta.sceneType === 'stl') {
+        const data = config.stlScenes?.[id];
+        if (!data || !window.StlViewer) { host.innerHTML='<div class="viewer-error">STL сцена недоступна</div>'; return; }
+        stlViewer = new StlViewer(host,{
+          source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
+          autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
+          onChange:(state)=>renderOverlay(id,state,stlViewer)
+        });
+        renderOverlay(id,stlViewer.getState(),stlViewer);
+        stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
-      stlViewer = new StlViewer(host, {
-        source: data.source,
-        yaw: data.yaw,
-        pitch: data.pitch,
-        zoom: data.zoom,
-        wireframe: data.wireframe,
-        autoRotate: data.autoplay,
-        color: data.color,
-        backgroundMode: data.backgroundMode,
-        backgroundImage: data.backgroundImage || ''
+      if (!window.pannellum) { host.innerHTML='<div class="viewer-error">Pannellum не загрузился</div>'; return; }
+      const panoConfig = {...config,default:{...(config.default||{}),firstScene:id}};
+      ['object360Scenes','stlScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition','offlineAssets'].forEach((key)=>delete panoConfig[key]);
+      decorateUniversalHotspots(panoConfig);
+      panoViewer = pannellum.viewer('panorama',panoConfig);
+      panoViewer.on('scenechange',(sceneId)=>{
+        if (!sceneId || sceneId===currentSceneId) return;
+        if (currentSceneId) historyStack.push(currentSceneId);
+        currentSceneId = sceneId;
+        updateMenu(sceneId); updateBackButton(); renderOverlay(sceneId); configureAudio(sceneId); preloadNeighbors(sceneId);
       });
-      stlViewer.ready.catch((error) => {
-        console.error(error);
-        host.innerHTML = '<div class="viewer-error">Ошибка загрузки STL</div>';
-      });
-      return;
-    }
-
-    if (!window.pannellum) {
-      host.innerHTML = '<div class="viewer-error">Pannellum не загрузился</div>';
-      return;
-    }
-
-    const panoConfig = {
-      ...config,
-      default: {
-        ...(config.default || {}),
-        firstScene: id
-      }
     };
 
-    delete panoConfig.object360Scenes;
-    delete panoConfig.stlScenes;
-    delete panoConfig.sceneMeta;
-    delete panoConfig.sceneOrder;
-    delete panoConfig.tourFirstScene;
-    delete panoConfig.projectAudio;
-
-    decorateUniversalHotspots(panoConfig);
-
-    panoViewer = pannellum.viewer('panorama', panoConfig);
-    panoViewer.on('scenechange', (sceneId) => {
-      if (!sceneId) return;
-
-      if (currentSceneId && sceneId !== currentSceneId) {
-        historyStack.push(currentSceneId);
-      }
-
-      currentSceneId = sceneId;
-      applySceneUi(sceneId);
-    });
+    await applyTransition(transition || config.defaultTransition || 'fade', switchScene);
+    preloadNeighbors(id);
   };
 
   const goBack = () => {
     const previous = historyStack.pop();
     updateBackButton();
-    if (previous) showScene(previous, false);
+    if (previous) showScene(previous,false,'fade');
+  };
+
+  const highlightGuideHotspot = (hotspotId) => {
+    document.querySelectorAll('.guide-highlight').forEach((el)=>el.classList.remove('guide-highlight'));
+    if (!hotspotId) return;
+    const token = String(hotspotId).replace(/[^a-zA-Z0-9_-]/g,'');
+    const el = document.querySelector('.tour-hotspot-' + token) ||
+      document.querySelector('[data-screen-hotspot-id="' + CSS.escape(String(hotspotId)) + '"]');
+    if (el) el.classList.add('guide-highlight');
+  };
+
+  const stopGuide = () => {
+    clearTimeout(guideTimer);
+    guideTimer = 0; guideRunning = false; guideIndex = -1;
+    guideButton?.classList.remove('active');
+    if (guideButton) guideButton.textContent = '▶ Гид';
+  };
+
+  const runGuideStep = async (index) => {
+    const steps = config.guide?.steps || [];
+    if (!guideRunning || !steps[index]) { stopGuide(); return; }
+    guideIndex = index;
+    const step = steps[index];
+    await showScene(step.sceneId,false,index===0?'fade':config.defaultTransition||'fade');
+    if (!guideRunning) return;
+    await delay(180);
+    highlightGuideHotspot(step.highlightHotspotId);
+    if (step.narrationAuto && config.sceneMeta?.[step.sceneId]?.audio?.narration?.src) {
+      await playNarration();
+    }
+    guideTimer = setTimeout(()=>runGuideStep(index+1),Math.max(2,Number(step.duration)||12)*1000);
+  };
+
+  const toggleGuide = () => {
+    userInteracted = true;
+    if (guideRunning) { stopGuide(); return; }
+    if (!config.guide?.enabled || !config.guide?.steps?.length) return;
+    guideRunning = true;
+    guideButton?.classList.add('active');
+    if (guideButton) guideButton.textContent = '■ Стоп';
+    runGuideStep(0);
+  };
+
+  const enterTour = async (withSound) => {
+    userInteracted = true;
+    musicEnabled = Boolean(withSound);
+    startScreen.hidden = true;
+    if (config.exportSettings?.kioskMode) {
+      try { await document.documentElement.requestFullscreen?.(); } catch (_) {}
+    }
+    if (withSound) await tryPlayMusic();
+  };
+
+  const setupStartScreen = () => {
+    const s = config.startScreen || {};
+    if (!s.enabled) { startScreen.hidden = true; return; }
+    startTitle.textContent = s.title || config.sceneMeta?.[config.tourFirstScene]?.title || 'Виртуальная экскурсия';
+    startSubtitle.textContent = s.subtitle || '';
+    startSubtitle.hidden = !s.subtitle;
+    if (s.coverData) startScreen.style.backgroundImage = 'url("' + String(s.coverData).replace(/"/g,'%22') + '")';
+    startSilent.hidden = s.allowSilent === false;
+    startScreen.hidden = false;
   };
 
   const start = () => {
     const order = config.sceneOrder || Object.keys(config.sceneMeta || {});
-
-    if (menu) {
-      menu.innerHTML = order.map((id) => {
-        const meta = config.sceneMeta?.[id] || {};
-        const icon = meta.sceneType === 'object360'
-          ? '◉ '
-          : (meta.sceneType === 'stl' ? '◆ ' : '◌ ');
-        const option = document.createElement('option');
-        option.value = id;
-        option.textContent = icon + (meta.title || id);
-        return option.outerHTML;
-      }).join('');
-      menu.addEventListener('change', () => showScene(menu.value, true));
+    if (config.exportSettings?.kioskMode) {
+      document.body.classList.add('kiosk');
+      try {
+        history.pushState({kiosk:true},'',location.href);
+        window.addEventListener('popstate',()=>history.go(1));
+      } catch (_) {}
+      document.addEventListener('contextmenu',(event)=>event.preventDefault());
     }
 
-    backButton?.addEventListener('click', goBack);
+    if (menu) {
+      menu.innerHTML = '';
+      order.forEach((id)=>{
+        const meta=config.sceneMeta?.[id]||{};
+        const option=document.createElement('option');
+        option.value=id;
+        option.textContent=(meta.sceneType==='object360'?'◉ ':meta.sceneType==='stl'?'◆ ':'◌ ')+(meta.title||id);
+        menu.appendChild(option);
+      });
+      menu.addEventListener('change',()=>showScene(menu.value,true,config.defaultTransition||'fade'));
+    }
 
-    musicButton?.addEventListener('click', async () => {
-      userInteracted = true;
-      musicEnabled = !musicEnabled;
-      if (!musicEnabled) {
-        musicAudio?.pause();
-        musicButton.classList.remove('active');
-      } else {
-        await tryPlayMusic();
-      }
+    backButton?.addEventListener('click',goBack);
+    infoClose?.addEventListener('click',()=>{infoPanel.hidden=true;});
+    fullscreenButton?.addEventListener('click',async()=>{
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await document.documentElement.requestFullscreen();
+      } catch (_) {}
     });
-
-    narrationButton?.addEventListener('click', async () => {
-      userInteracted = true;
-      await playNarration();
+    musicButton?.addEventListener('click',async()=>{
+      userInteracted=true; musicEnabled=!musicEnabled;
+      if (!musicEnabled) { musicAudio?.pause(); musicButton.classList.remove('active'); }
+      else await tryPlayMusic();
     });
+    narrationButton?.addEventListener('click',async()=>{userInteracted=true;await playNarration();});
+    guideButton.hidden = !(config.guide?.enabled && config.guide?.steps?.length);
+    guideButton?.addEventListener('click',toggleGuide);
+    startSound?.addEventListener('click',()=>enterTour(true));
+    startSilent?.addEventListener('click',()=>enterTour(false));
 
-    const unlockAudio = () => {
-      userInteracted = true;
-      tryPlayMusic();
-    };
-    document.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
-    document.addEventListener('keydown', unlockAudio, { once: true, capture: true });
+    const unlockAudio=()=>{userInteracted=true;if(startScreen.hidden)tryPlayMusic();};
+    document.addEventListener('pointerdown',unlockAudio,{once:true,capture:true});
+    document.addEventListener('keydown',unlockAudio,{once:true,capture:true});
 
-    showScene(config.tourFirstScene || order[0], false);
+    showScene(config.tourFirstScene||order[0],false,'fade');
+    setupStartScreen();
+    preloadNeighbors(config.tourFirstScene||order[0]);
   };
 
-  window.showTourScene = (id) => showScene(id, true);
-  window.tourBack = goBack;
+  window.showTourScene=(id)=>showScene(id,true,config.defaultTransition||'fade');
+  window.tourBack=goBack;
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start, { once: true });
-  } else {
-    start();
-  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
 })();
 `;
   }
@@ -3156,6 +4075,10 @@
       "        '.wasm' { return 'application/wasm' }",
       "        '.zip'  { return 'application/zip' }",
       "        '.stl'  { return 'model/stl' }",
+      "        '.mp4'  { return 'video/mp4' }",
+      "        '.webm' { return 'video/webm' }",
+      "        '.pdf'  { return 'application/pdf' }",
+      "        '.webmanifest' { return 'application/manifest+json; charset=utf-8' }",
       "        '.mp3'  { return 'audio/mpeg' }",
       "        '.ogg'  { return 'audio/ogg' }",
       "        '.wav'  { return 'audio/wav' }",
@@ -3521,6 +4444,111 @@
     }));
   }
 
+  async function optimizeImageDataUrl(dataUrl, maxWidth, quality = 84, preserveAlpha = false) {
+    if (!dataUrl || !/^data:image\//i.test(dataUrl)) return dataUrl;
+    if (!normalizeExportSettings(project.exportSettings || {}).optimizeEnabled) return dataUrl;
+
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Не удалось прочитать изображение для оптимизации'));
+      img.src = dataUrl;
+    });
+
+    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 8192));
+    const ratio = targetWidth / Math.max(1, image.naturalWidth || image.width);
+    const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
+    if (ratio >= 0.999 && /image\/jpe?g/i.test(dataUrl) && quality >= 92) return dataUrl;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext('2d', { alpha:preserveAlpha });
+    if (!preserveAlpha) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0,0,targetWidth,targetHeight);
+    }
+    ctx.drawImage(image,0,0,targetWidth,targetHeight);
+    return canvas.toDataURL(
+      preserveAlpha ? 'image/webp' : 'image/jpeg',
+      clampNumber(quality,45,100,84) / 100
+    );
+  }
+
+  function exportedManifest() {
+    const title = project.title || 'Виртуальная экскурсия';
+    return JSON.stringify({
+      name:title,
+      short_name:title.slice(0,32),
+      start_url:'./',
+      display:'standalone',
+      background_color:'#05070c',
+      theme_color:'#05070c',
+      orientation:'any',
+      icons:[
+        {src:'icons/app-icon.svg',sizes:'any',type:'image/svg+xml',purpose:'any maskable'}
+      ]
+    },null,2);
+  }
+
+  function exportedAppIconSvg() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c8cff"/><stop offset="1" stop-color="#20d6bb"/></linearGradient></defs>' +
+      '<rect width="512" height="512" rx="110" fill="#05070c"/><circle cx="256" cy="256" r="166" fill="none" stroke="url(#g)" stroke-width="28"/>' +
+      '<path d="M145 256h222M256 145c68 58 68 164 0 222M256 145c-68 58-68 164 0 222" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round"/>' +
+      '</svg>';
+  }
+
+  function exportedServiceWorker(config) {
+    const assets = new Set([
+      './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js',
+      'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
+    ]);
+
+    Object.values(config.scenes || {}).forEach((scene) => {
+      if (scene.panorama) assets.add(scene.panorama);
+      if (scene.multiRes?.equirectangularThumbnail) assets.add(scene.multiRes.equirectangularThumbnail);
+    });
+    Object.values(config.object360Scenes || {}).forEach((scene) => {
+      (scene.frames || []).forEach((row) => (row || []).forEach((src) => { if (src) assets.add(src); }));
+    });
+    Object.values(config.stlScenes || {}).forEach((scene) => {
+      if (scene.source) assets.add(scene.source);
+      if (scene.backgroundImage) assets.add(scene.backgroundImage);
+    });
+    Object.values(config.sceneMeta || {}).forEach((meta) => {
+      (meta.mediaObjects || []).forEach((item) => {
+        if (item.src) assets.add(item.src);
+        (item.gallery || []).forEach((entry) => { if (entry.src) assets.add(entry.src); });
+      });
+      if (meta.audio?.music?.src) assets.add(meta.audio.music.src);
+      if (meta.audio?.narration?.src) assets.add(meta.audio.narration.src);
+    });
+    if (config.projectAudio?.music?.src) assets.add(config.projectAudio.music.src);
+    if (config.startScreen?.coverData) assets.add(config.startScreen.coverData);
+    (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
+
+    const list = JSON.stringify([...assets]);
+    return "const CACHE='pannellum-tour-v6';\n" +
+      "const CORE=" + list + ";\n" +
+      "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
+      "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
+      "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>new Response('Offline',{status:503}))));});\n";
+  }
+
+  function qrDataUrlForUrl(url) {
+    if (!url || !window.QRCode) return '';
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:256px;height:256px';
+    document.body.appendChild(host);
+    try {
+      new QRCode(host,{text:url,width:256,height:256,colorDark:'#06101f',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+      return host.querySelector('canvas')?.toDataURL?.('image/png') || host.querySelector('img')?.src || '';
+    } finally {
+      host.remove();
+    }
+  }
+
   async function exportTourPackage() {
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
@@ -3563,8 +4591,11 @@
           multiresScenes.set(scene.id, multi);
         }
       } else {
-        panoramaScenes.forEach((scene, index) => {
-          const ext = extensionForScene(scene);
+        for (let index = 0; index < panoramaScenes.length; index++) {
+          const scene = panoramaScenes[index];
+          const settings = normalizeExportSettings(project.exportSettings || {});
+          const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
+          const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
           const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
           let filename = baseName + '.' + ext;
           let suffix = 2;
@@ -3572,10 +4603,10 @@
           usedNames.add(filename.toLowerCase());
           sceneFiles.set(scene.id, filename);
 
-          const payload = dataUrlPayload(scene.imageData);
+          const payload = dataUrlPayload(optimized);
           if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
           else root.file('images/' + filename, decodeURIComponent(payload.data));
-        });
+        }
       }
 
       for (let sceneIndex = 0; sceneIndex < objectScenes.length; sceneIndex++) {
@@ -3588,9 +4619,11 @@
           for (let sector = 0; sector < data.sectors; sector++) {
             const frame = data.frames[row]?.[sector] || '';
             if (!frame) continue;
-            const payload = dataUrlPayload(frame);
+            const settings = normalizeExportSettings(project.exportSettings || {});
+            const optimizedFrame = await optimizeImageDataUrl(frame, settings.objectFrameWidth, settings.jpegQuality);
+            const payload = dataUrlPayload(optimizedFrame);
             const mime = String(payload.mime || '').toLowerCase();
-            const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+            const ext = settings.optimizeEnabled ? 'jpg' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
             const filename = 'frame_' + String(sector).padStart(3, '0') + '.' + ext;
             const path = 'object360/' + sceneDir + '/row_' + (row + 1) + '/' + filename;
             if (payload.base64) root.file(path, payload.data, { base64: true });
@@ -3632,7 +4665,16 @@
         let backgroundMode = data.backgroundMode || 'hitech';
 
         if (backgroundMode === 'image' && data.backgroundImageData) {
-          const bgPayload = dataUrlPayload(data.backgroundImageData);
+          const settings = normalizeExportSettings(project.exportSettings || {});
+          const bgData = settings.optimizeEnabled
+            ? await optimizeImageDataUrl(
+                data.backgroundImageData,
+                Math.min(settings.maxImageWidth, 4096),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(data.backgroundImageData)
+              )
+            : data.backgroundImageData;
+          const bgPayload = dataUrlPayload(bgData);
           const bgMime = String(bgPayload.mime || '').toLowerCase();
           const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
           const bgName = 'stl-bg-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
@@ -3642,7 +4684,11 @@
         } else if (backgroundMode === 'panorama' && data.backgroundSceneId) {
           const bgScene = getScene(data.backgroundSceneId);
           if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
-            const bgPayload = dataUrlPayload(bgScene.imageData);
+            const settings = normalizeExportSettings(project.exportSettings || {});
+            const bgData = settings.optimizeEnabled
+              ? await optimizeImageDataUrl(bgScene.imageData, settings.maxImageWidth, settings.jpegQuality, false)
+              : bgScene.imageData;
+            const bgPayload = dataUrlPayload(bgData);
             const bgMime = String(bgPayload.mime || '').toLowerCase();
             const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
             const bgName = 'stl-panorama-' + safeFilename(scene.id || scene.title, 'scene-' + (sceneIndex + 1)) + '.' + bgExt;
@@ -3685,13 +4731,27 @@
         };
       });
 
+      const mediaConfig = await bundleMediaObjects(root);
+
+      if (project.startScreen?.coverData) {
+        const settings = normalizeExportSettings(project.exportSettings || {});
+        const coverData = settings.optimizeEnabled
+          ? await optimizeImageDataUrl(project.startScreen.coverData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
+          : project.startScreen.coverData;
+        const coverExt = extensionForDataUrl(coverData, '.jpg');
+        bundleDataUrlFile(root, coverData, 'images/start-cover' + coverExt);
+        project.startScreen.__exportCoverExt = coverExt;
+      }
+
       const config = buildPortableTourConfig(
         sceneFiles,
         multiresScenes,
         objectSceneFiles,
         stlSceneFiles,
-        audioConfig
+        audioConfig,
+        mediaConfig
       );
+      if (project.startScreen && '__exportCoverExt' in project.startScreen) delete project.startScreen.__exportCoverExt;
       const customIconFiles = await bundleTransitionIcons(root);
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
@@ -3701,6 +4761,18 @@
       const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
       root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
+      if (config.exportSettings?.pwaEnabled) {
+        root.file('manifest.webmanifest', exportedManifest());
+        root.file('sw.js', exportedServiceWorker(config));
+        root.file('icons/app-icon.svg', exportedAppIconSvg());
+      }
+      if (config.exportSettings?.publicUrl) {
+        const qrData = qrDataUrlForUrl(config.exportSettings.publicUrl);
+        if (qrData) {
+          const qrPayload = dataUrlPayload(qrData);
+          root.file('qr-tour.png', qrPayload.data, { base64:true });
+        }
+      }
       root.file('README.txt',
         'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
         'Содержимое:\n' +
@@ -3712,6 +4784,9 @@
         '- models/ — STL-модели 3D-сцен\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- audio/ — музыка тура, музыка сцен и озвучка\n' +
+        '- media/ — фото, видео, PDF и галереи\n' +
+        '- manifest.webmanifest / sw.js — PWA (если включено)\n' +
+        '- qr-tour.png — QR публичной ссылки (если указан URL)\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
         '- vendor/pannellum/ — локальная копия Pannellum\n' +
@@ -3764,6 +4839,7 @@
 
       project = imported;
       currentSceneId = project.firstScene || project.scenes[0].id;
+      resetHistory();
       await persistProject();
       renderAll();
       showToast('Проект импортирован');
@@ -3794,14 +4870,17 @@
       previewStlViewer = null;
     }
     els.previewPanorama.innerHTML = '';
+    previewSceneId = null;
   }
 
   function renderPreviewScene(sceneId) {
     const scene = getScene(sceneId);
     if (!scene) return;
+    previewSceneId = scene.id;
 
     destroyPreviewViewers();
-    renderSceneTextOverlay(scene, els.previewSceneOverlay, { editor: false });
+    previewSceneId = scene.id;
+    renderCompositeOverlay(scene, els.previewSceneOverlay, null, { editor: false });
     configurePreviewAudio(scene);
 
     if (scene.sceneType === 'object360') {
@@ -3813,8 +4892,10 @@
         frames: data.frames,
         startSector: data.startSector,
         startRow: data.startRow,
-        autoplay: data.autoplay
+        autoplay: data.autoplay,
+        onFrameChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false })
       });
+      renderCompositeOverlay(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
       return;
     }
 
@@ -3830,8 +4911,10 @@
         autoRotate: data.autoplay,
         color: data.color,
         backgroundMode: data.backgroundMode,
-        backgroundImage: stlBackgroundImageForData(data)
+        backgroundImage: stlBackgroundImageForData(data),
+        onChange: (state) => renderCompositeOverlay(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
+      renderCompositeOverlay(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
       previewStlViewer.ready.catch(console.error);
       return;
     }
@@ -3845,9 +4928,257 @@
     previewViewer.on('scenechange', (nextSceneId) => {
       const nextScene = getScene(nextSceneId);
       if (!nextScene) return;
-      renderSceneTextOverlay(nextScene, els.previewSceneOverlay, { editor: false });
+      previewSceneId = nextScene.id;
+      renderCompositeOverlay(nextScene, els.previewSceneOverlay, null, { editor: false });
       configurePreviewAudio(nextScene);
     });
+  }
+
+  function renderSceneGraph() {
+    const scenes = project.scenes;
+    if (!scenes.length) {
+      els.sceneGraph.innerHTML = '<div class="empty-state tall">Нет сцен</div>';
+      els.graphSummary.textContent = '0 сцен';
+      return;
+    }
+
+    const width = Math.max(900, scenes.length * 190);
+    const columns = Math.max(2, Math.ceil(Math.sqrt(scenes.length)));
+    const nodeW = 150;
+    const nodeH = 74;
+    const gapX = 185;
+    const gapY = 135;
+    const positions = new Map();
+    scenes.forEach((scene, index) => {
+      positions.set(scene.id, {
+        x: 45 + (index % columns) * gapX,
+        y: 45 + Math.floor(index / columns) * gapY
+      });
+    });
+    const height = 110 + Math.ceil(scenes.length / columns) * gapY;
+
+    const edges = [];
+    let missing = 0;
+    scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        if (hotspot.type !== 'scene') return;
+        if (!positions.has(hotspot.targetSceneId)) {
+          missing++;
+          return;
+        }
+        edges.push({ from: scene.id, to: hotspot.targetSceneId });
+      });
+      (scene.mediaObjects || []).forEach((item) => {
+        if (item.type === 'button' && item.targetSceneId && positions.has(item.targetSceneId)) {
+          edges.push({ from: scene.id, to: item.targetSceneId });
+        }
+      });
+    });
+
+    const svgLines = edges.map((edge) => {
+      const a = positions.get(edge.from);
+      const b = positions.get(edge.to);
+      return '<path d="M ' + (a.x + nodeW) + ' ' + (a.y + nodeH/2) +
+        ' C ' + (a.x + nodeW + 45) + ' ' + (a.y + nodeH/2) + ', ' +
+        (b.x - 45) + ' ' + (b.y + nodeH/2) + ', ' +
+        b.x + ' ' + (b.y + nodeH/2) + '" marker-end="url(#graphArrow)"/>';
+    }).join('');
+
+    const nodes = scenes.map((scene) => {
+      const p = positions.get(scene.id);
+      const meta = sceneTypeMeta(scene);
+      const outgoing = (scene.hotspots || []).filter((h) => h.type === 'scene').length;
+      return '<button class="graph-node ' + (scene.id === project.firstScene ? 'is-start' : '') +
+        '" data-graph-scene="' + escapeHtml(scene.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px">' +
+        '<span>' + meta.icon + ' ' + escapeHtml(meta.label) + '</span>' +
+        '<b>' + escapeHtml(scene.title) + '</b>' +
+        '<small>' + outgoing + ' переходов' + (scene.id === project.firstScene ? ' · старт' : '') + '</small>' +
+        '</button>';
+    }).join('');
+
+    els.sceneGraph.innerHTML =
+      '<div class="graph-canvas" style="width:' + width + 'px;height:' + height + 'px">' +
+      '<svg class="graph-links" width="' + width + '" height="' + height + '">' +
+      '<defs><marker id="graphArrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z"/></marker></defs>' +
+      svgLines + '</svg>' + nodes + '</div>';
+
+    const incoming = new Set(edges.map((edge) => edge.to));
+    const unreachable = scenes.filter((scene) => scene.id !== project.firstScene && !incoming.has(scene.id)).length;
+    els.graphSummary.textContent = scenes.length + ' сцен · ' + edges.length + ' связей · ' +
+      unreachable + ' без входящих переходов' + (missing ? ' · ' + missing + ' битых ссылок' : '');
+  }
+
+  function openSceneGraph() {
+    renderSceneGraph();
+    els.sceneGraphDialog.showModal();
+  }
+
+  function renderGuideEditor() {
+    project.guide = normalizeGuide(project.guide || {}, project.scenes);
+    els.guideEnabled.checked = project.guide.enabled;
+
+    if (!project.guide.steps.length) {
+      els.guideStepList.innerHTML = '<div class="empty-state">Добавьте первый шаг маршрута</div>';
+      return;
+    }
+
+    els.guideStepList.innerHTML = project.guide.steps.map((step, index) => {
+      const options = project.scenes.map((scene) =>
+        '<option value="' + escapeHtml(scene.id) + '"' + (scene.id === step.sceneId ? ' selected' : '') + '>' +
+        sceneTypeMeta(scene).icon + ' ' + escapeHtml(scene.title) + '</option>'
+      ).join('');
+      const guideScene = getScene(step.sceneId);
+      const hotspotOptions = '<option value="">— без подсветки —</option>' +
+        (guideScene?.hotspots || []).map((hotspot) =>
+          '<option value="' + escapeHtml(hotspot.id) + '"' + (hotspot.id === step.highlightHotspotId ? ' selected' : '') + '>' +
+          escapeHtml(hotspot.text || hotspot.type || 'Hotspot') + '</option>'
+        ).join('');
+      return '<article class="guide-step" data-guide-step-id="' + escapeHtml(step.id) + '">' +
+        '<span class="guide-step-index">' + (index + 1) + '</span>' +
+        '<select data-guide-field="sceneId">' + options + '</select>' +
+        '<label><span>сек</span><input data-guide-field="duration" type="number" min="2" max="600" value="' + step.duration + '"></label>' +
+        '<label class="guide-check"><input data-guide-field="narrationAuto" type="checkbox"' + (step.narrationAuto ? ' checked' : '') + '> 🔊 авто</label>' +
+        '<select class="guide-highlight-select" data-guide-field="highlightHotspotId">' + hotspotOptions + '</select>' +
+        '<div class="guide-step-actions">' +
+        '<button type="button" data-guide-action="up">↑</button><button type="button" data-guide-action="down">↓</button><button type="button" data-guide-action="remove">×</button>' +
+        '</div></article>';
+    }).join('');
+  }
+
+  function openGuideEditor() {
+    renderGuideEditor();
+    els.guideDialog.showModal();
+  }
+
+  function syncAdvancedSettingsUi() {
+    project.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
+    project.exportSettings = normalizeExportSettings(project.exportSettings || {});
+    const s = project.startScreen;
+    const e = project.exportSettings;
+    els.startScreenEnabled.checked = s.enabled;
+    els.startScreenTitle.value = s.title;
+    els.startScreenSubtitle.value = s.subtitle;
+    els.startScreenCoverName.textContent = s.coverFilename || 'Без обложки';
+    els.startScreenAllowSilent.checked = s.allowSilent;
+    els.optimizeEnabled.checked = e.optimizeEnabled;
+    els.optimizeQuality.value = String(e.jpegQuality);
+    els.optimizeMaxImageWidth.value = String(e.maxImageWidth);
+    els.optimizeObjectFrameWidth.value = String(e.objectFrameWidth);
+    els.pwaEnabled.checked = e.pwaEnabled;
+    els.kioskMode.checked = e.kioskMode;
+    els.publicTourUrl.value = e.publicUrl;
+    renderQrPreview();
+  }
+
+  function applyAdvancedSettings() {
+    project.startScreen = normalizeStartScreen({
+      ...project.startScreen,
+      enabled: els.startScreenEnabled.checked,
+      title: els.startScreenTitle.value.trim() || project.title,
+      subtitle: els.startScreenSubtitle.value,
+      allowSilent: els.startScreenAllowSilent.checked
+    }, project.title);
+    project.exportSettings = normalizeExportSettings({
+      ...project.exportSettings,
+      optimizeEnabled: els.optimizeEnabled.checked,
+      jpegQuality: els.optimizeQuality.value,
+      maxImageWidth: els.optimizeMaxImageWidth.value,
+      objectFrameWidth: els.optimizeObjectFrameWidth.value,
+      pwaEnabled: els.pwaEnabled.checked,
+      kioskMode: els.kioskMode.checked,
+      publicUrl: els.publicTourUrl.value.trim()
+    });
+    markDirty();
+    renderQrPreview();
+  }
+
+  function openAdvancedSettings() {
+    syncAdvancedSettingsUi();
+    els.advancedSettingsDialog.showModal();
+  }
+
+  function dataUrlByteSize(value) {
+    const text = String(value || '');
+    if (!text) return 0;
+    const comma = text.indexOf(',');
+    if (comma < 0) return text.length;
+    const header = text.slice(0, comma);
+    const payload = text.slice(comma + 1);
+    return /;base64/i.test(header) ? Math.floor(payload.length * 0.75) : decodeURIComponent(payload).length;
+  }
+
+  function analyzeProjectSize() {
+    const totals = { panoramas:0, object360:0, stl:0, audio:0, media:0, backgrounds:0 };
+    project.scenes.forEach((scene) => {
+      if (scene.sceneType === 'panorama') totals.panoramas += dataUrlByteSize(scene.imageData);
+      if (scene.sceneType === 'object360') {
+        (scene.object360?.frames || []).forEach((row) => (row || []).forEach((frame) => {
+          totals.object360 += dataUrlByteSize(frame);
+        }));
+      }
+      if (scene.sceneType === 'stl') {
+        totals.stl += dataUrlByteSize(scene.stl?.data);
+        totals.backgrounds += dataUrlByteSize(scene.stl?.backgroundImageData);
+      }
+      totals.audio += dataUrlByteSize(scene.audio?.music?.data) + dataUrlByteSize(scene.audio?.narration?.data);
+      (scene.mediaObjects || []).forEach((item) => {
+        totals.media += dataUrlByteSize(item.data);
+        (item.gallery || []).forEach((entry) => { totals.media += dataUrlByteSize(entry.data); });
+      });
+    });
+    totals.audio += dataUrlByteSize(project.audio?.music?.data);
+    totals.media += dataUrlByteSize(project.startScreen?.coverData);
+    const total = Object.values(totals).reduce((a,b) => a+b, 0);
+    const fmt = (bytes) => formatFileSize(bytes);
+    els.projectSizeReport.innerHTML =
+      '<b>Итого: ' + fmt(total) + '</b>' +
+      '<span>Панорамы: ' + fmt(totals.panoramas) + '</span>' +
+      '<span>Object360: ' + fmt(totals.object360) + '</span>' +
+      '<span>STL: ' + fmt(totals.stl) + '</span>' +
+      '<span>Аудио: ' + fmt(totals.audio) + '</span>' +
+      '<span>Медиа: ' + fmt(totals.media) + '</span>' +
+      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>';
+  }
+
+  function renderQrPreview() {
+    if (!els.qrPreview) return;
+    const url = String(els.publicTourUrl?.value || project.exportSettings?.publicUrl || '').trim();
+    els.qrPreview.innerHTML = '';
+    if (!url) {
+      els.qrPreview.innerHTML = '<span>Укажите URL</span>';
+      els.btnDownloadQr.disabled = true;
+      return;
+    }
+    if (!window.QRCode) {
+      els.qrPreview.innerHTML = '<span>QR-библиотека не загружена</span>';
+      els.btnDownloadQr.disabled = true;
+      return;
+    }
+    els.btnDownloadQr.disabled = false;
+    new QRCode(els.qrPreview, {
+      text:url,
+      width:180,
+      height:180,
+      colorDark:'#06101f',
+      colorLight:'#ffffff',
+      correctLevel:QRCode.CorrectLevel.M
+    });
+  }
+
+  function downloadQrPng() {
+    const canvas = els.qrPreview.querySelector('canvas');
+    const img = els.qrPreview.querySelector('img');
+    const data = canvas?.toDataURL?.('image/png') || img?.src || '';
+    if (!data) {
+      showToast('QR ещё не создан');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = data;
+    a.download = safeFilename(project.title || 'tour', 'tour') + '-qr.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function openPreview() {
@@ -3875,6 +5206,8 @@
     els.projectMusicVolumeValue.textContent = project.audio.music.volume + '%';
     project.settings.fadeEnabled = els.sceneFadeEnabled.checked;
     project.settings.fadeDuration = Math.max(0, Number(els.sceneFadeDuration.value) || 0);
+    project.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(els.defaultTransition.value)
+      ? els.defaultTransition.value : 'fade';
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
     project.settings.autoRotate = Number(els.autoRotate.value) || -2;
     project.settings.multiresEnabled = els.multiresEnabled.checked;
@@ -3926,6 +5259,120 @@
   }
 
   function setupEvents() {
+    els.btnUndo.addEventListener('click', undoProject);
+    els.btnSceneGraph.addEventListener('click', openSceneGraph);
+    els.closeSceneGraph.addEventListener('click', () => els.sceneGraphDialog.close());
+    els.sceneGraphDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.sceneGraphDialog.close();
+    });
+    els.btnGraphAutoLayout.addEventListener('click', renderSceneGraph);
+    els.sceneGraph.addEventListener('click', (event) => {
+      const node = event.target.closest('[data-graph-scene]');
+      if (!node) return;
+      selectScene(node.dataset.graphScene);
+      els.sceneGraphDialog.close();
+    });
+
+    els.btnGuideEditor.addEventListener('click', openGuideEditor);
+    els.closeGuideDialog.addEventListener('click', () => els.guideDialog.close());
+    els.guideDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.guideDialog.close();
+    });
+    els.guideEnabled.addEventListener('change', () => {
+      project.guide = normalizeGuide(project.guide || {}, project.scenes);
+      project.guide.enabled = els.guideEnabled.checked;
+      markDirty();
+    });
+    els.btnAddGuideStep.addEventListener('click', () => {
+      if (!project.scenes.length) return;
+      project.guide = normalizeGuide(project.guide || {}, project.scenes);
+      project.guide.steps.push({
+        id:uid('guide'),
+        sceneId:project.scenes[Math.min(project.guide.steps.length, project.scenes.length - 1)].id,
+        duration:12,
+        narrationAuto:false,
+        highlightHotspotId:''
+      });
+      markDirty();
+      renderGuideEditor();
+    });
+    els.guideStepList.addEventListener('change', (event) => {
+      const row = event.target.closest('[data-guide-step-id]');
+      if (!row) return;
+      const step = project.guide?.steps?.find((entry) => entry.id === row.dataset.guideStepId);
+      if (!step) return;
+      const field = event.target.dataset.guideField;
+      if (field === 'sceneId') step.sceneId = event.target.value;
+      if (field === 'duration') step.duration = clampNumber(event.target.value, 2, 600, 12);
+      if (field === 'narrationAuto') step.narrationAuto = event.target.checked;
+      if (field === 'highlightHotspotId') step.highlightHotspotId = event.target.value;
+      if (field === 'sceneId') step.highlightHotspotId = '';
+      markDirty();
+      if (field === 'sceneId') renderGuideEditor();
+    });
+    els.guideStepList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-guide-action]');
+      const row = event.target.closest('[data-guide-step-id]');
+      if (!button || !row) return;
+      const steps = project.guide?.steps || [];
+      const index = steps.findIndex((entry) => entry.id === row.dataset.guideStepId);
+      if (index < 0) return;
+      if (button.dataset.guideAction === 'remove') steps.splice(index, 1);
+      if (button.dataset.guideAction === 'up' && index > 0) [steps[index - 1], steps[index]] = [steps[index], steps[index - 1]];
+      if (button.dataset.guideAction === 'down' && index < steps.length - 1) [steps[index + 1], steps[index]] = [steps[index], steps[index + 1]];
+      markDirty();
+      renderGuideEditor();
+    });
+
+    els.btnAdvancedSettings.addEventListener('click', openAdvancedSettings);
+    els.closeAdvancedSettings.addEventListener('click', () => els.advancedSettingsDialog.close());
+    els.advancedSettingsDialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      els.advancedSettingsDialog.close();
+    });
+    [
+      els.startScreenEnabled, els.startScreenTitle, els.startScreenSubtitle, els.startScreenAllowSilent,
+      els.optimizeEnabled, els.optimizeQuality, els.optimizeMaxImageWidth, els.optimizeObjectFrameWidth,
+      els.pwaEnabled, els.kioskMode, els.publicTourUrl
+    ].forEach((control) => {
+      const eventName = control?.type === 'checkbox' || control?.tagName === 'SELECT' ? 'change' : 'input';
+      control?.addEventListener(eventName, applyAdvancedSettings);
+    });
+    els.startScreenCoverFile.addEventListener('change', async () => {
+      const file = els.startScreenCoverFile.files?.[0];
+      if (!file) return;
+      try {
+        project.startScreen = normalizeStartScreen({
+          ...project.startScreen,
+          coverData:await fileToDataURL(file),
+          coverFilename:file.name
+        }, project.title);
+        els.startScreenCoverName.textContent = file.name;
+        markDirty();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить обложку');
+      } finally {
+        els.startScreenCoverFile.value = '';
+      }
+    });
+    els.btnAnalyzeProject.addEventListener('click', analyzeProjectSize);
+    els.publicTourUrl.addEventListener('change', renderQrPreview);
+    els.btnDownloadQr.addEventListener('click', downloadQrPng);
+    els.btnRedo.addEventListener('click', redoProject);
+    window.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undoProject();
+      } else if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        redoProject();
+      }
+    });
+
     els.btnAddScene.addEventListener('click', openSceneDialog);
     els.btnAddSceneCenter.addEventListener('click', openSceneDialog);
 
@@ -4005,6 +5452,62 @@
       if (card) openTextObjectDialog(card.dataset.textObjectId);
     });
 
+    els.btnAddMediaObject.addEventListener('click', () => openMediaObjectDialog());
+    els.mediaObjectList.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-media-object-id]');
+      if (card) openMediaObjectDialog(card.dataset.mediaObjectId);
+    });
+    els.mediaObjectType.addEventListener('change', updateMediaDialogUi);
+    els.mediaObjectFile.addEventListener('change', async () => {
+      const file = els.mediaObjectFile.files?.[0];
+      if (!file) return;
+      try {
+        pendingMediaData = await fileToDataURL(file);
+        pendingMediaFilename = file.name;
+        els.mediaObjectFilename.textContent = file.name;
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось прочитать медиафайл');
+      }
+    });
+    els.mediaGalleryFiles.addEventListener('change', async () => {
+      const files = [...els.mediaGalleryFiles.files || []];
+      if (!files.length) return;
+      try {
+        pendingMediaGallery = [];
+        for (const file of files.slice(0, 30)) {
+          pendingMediaGallery.push({ data: await fileToDataURL(file), filename:file.name });
+        }
+        els.mediaGalleryCount.textContent = pendingMediaGallery.length + ' изображений';
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось прочитать галерею');
+      }
+    });
+    els.mediaObjectForm.addEventListener('submit', async (event) => {
+      if (event.submitter?.value === 'cancel') return;
+      event.preventDefault();
+      await saveMediaObjectFromDialog();
+    });
+    els.btnDeleteMediaObject.addEventListener('click', () => {
+      const id = els.mediaObjectEditId.value;
+      if (id && confirm('Удалить этот медиа-объект?')) deleteMediaObject(id);
+    });
+
+    els.layerList.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-layer-action]');
+      const card = event.target.closest('[data-layer-kind]');
+      if (!action || !card) return;
+      const item = findLayerItem(card.dataset.layerKind, card.dataset.layerId);
+      if (!item) return;
+      if (action.dataset.layerAction === 'visible') item.visible = item.visible === false;
+      if (action.dataset.layerAction === 'locked') item.locked = !item.locked;
+      if (action.dataset.layerAction === 'up') item.zIndex = (Number(item.zIndex) || 0) + 1;
+      if (action.dataset.layerAction === 'down') item.zIndex = (Number(item.zIndex) || 0) - 1;
+      markDirty({ rerenderViewer: card.dataset.layerKind === 'hotspot' && getScene()?.sceneType === 'panorama' });
+      renderCompositeOverlay(getScene(), els.sceneOverlay, null, { editor:true });
+    });
+
     els.textObjectForm.addEventListener('submit', (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
@@ -4055,6 +5558,59 @@
       openTextObjectDialog(element.dataset.textObjectId);
     });
 
+    els.sceneOverlay.addEventListener('click', (event) => {
+      const hotspot = event.target.closest('[data-screen-hotspot-id]');
+      if (!hotspot) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const scene = getScene();
+      const item = scene?.hotspots?.find((entry) => entry.id === hotspot.dataset.screenHotspotId);
+      if (item) openHotspotDialog(item.pitch || 0, item.yaw || 0, item.id);
+    });
+
+    let draggedMediaElement = null;
+    let mediaDragOffsetX = 0;
+    let mediaDragOffsetY = 0;
+    els.sceneOverlay.addEventListener('pointerdown', (event) => {
+      const element = event.target.closest('[data-media-object-id]');
+      if (!element || element.classList.contains('is-locked')) return;
+      const scene = getScene();
+      const item = scene?.mediaObjects?.find((entry) => entry.id === element.dataset.mediaObjectId);
+      if (!item || item.locked) return;
+      event.preventDefault();
+      event.stopPropagation();
+      draggedMediaElement = element;
+      const box = element.getBoundingClientRect();
+      mediaDragOffsetX = event.clientX - box.left;
+      mediaDragOffsetY = event.clientY - box.top;
+      try { element.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    els.sceneOverlay.addEventListener('pointermove', (event) => {
+      if (!draggedMediaElement) return;
+      const scene = getScene();
+      const item = scene?.mediaObjects?.find((entry) => entry.id === draggedMediaElement.dataset.mediaObjectId);
+      if (!item) return;
+      const rect = els.sceneOverlay.getBoundingClientRect();
+      item.x = Number(clampNumber(((event.clientX - mediaDragOffsetX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100, item.x).toFixed(2));
+      item.y = Number(clampNumber(((event.clientY - mediaDragOffsetY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100, item.y).toFixed(2));
+      draggedMediaElement.style.left = item.x + '%';
+      draggedMediaElement.style.top = item.y + '%';
+    });
+    const finishMediaDrag = () => {
+      if (!draggedMediaElement) return;
+      draggedMediaElement = null;
+      markDirty();
+    };
+    els.sceneOverlay.addEventListener('pointerup', finishMediaDrag);
+    els.sceneOverlay.addEventListener('pointercancel', finishMediaDrag);
+    els.sceneOverlay.addEventListener('dblclick', (event) => {
+      const element = event.target.closest('[data-media-object-id]');
+      if (!element) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openMediaObjectDialog(element.dataset.mediaObjectId);
+    });
+
     els.hotspotList.addEventListener('click', (event) => {
       const card = event.target.closest('[data-hotspot-id]');
       if (!card) return;
@@ -4064,17 +5620,71 @@
     });
 
     els.btnAddHotspot.addEventListener('click', () => {
-      if (!viewer) return;
-      openHotspotDialog(viewer.getPitch(), viewer.getYaw());
+      const scene = getScene();
+      if (!scene) return;
+      if (viewer) {
+        openHotspotDialog(viewer.getPitch(), viewer.getYaw());
+        return;
+      }
+      if (objectViewer) {
+        const state = objectViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'object360', anchorX:50, anchorY:50,
+          anchorSector:state.sector, anchorRow:state.row, anchorYaw:0, anchorPitch:0
+        });
+        return;
+      }
+      if (stlViewer) {
+        const state = stlViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'stl-screen', anchorX:50, anchorY:50,
+          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
+        });
+      }
     });
 
     els.panorama.addEventListener('dblclick', (event) => {
-      if (!viewer || !getScene()) return;
-      try {
-        const [pitch, yaw] = viewer.mouseEventToCoords(event);
-        openHotspotDialog(pitch, yaw);
-      } catch (error) {
-        console.warn(error);
+      const scene = getScene();
+      if (!scene) return;
+      if (viewer) {
+        try {
+          const [pitch, yaw] = viewer.mouseEventToCoords(event);
+          openHotspotDialog(pitch, yaw);
+        } catch (error) {
+          console.warn(error);
+        }
+        return;
+      }
+      const rect = els.panorama.getBoundingClientRect();
+      const x = clampNumber(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100, 50);
+      const y = clampNumber(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100, 50);
+      if (objectViewer) {
+        const state = objectViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'object360', anchorX:x, anchorY:y,
+          anchorSector:state.sector, anchorRow:state.row, anchorYaw:0, anchorPitch:0
+        });
+      } else if (stlViewer) {
+        const state = stlViewer.getState();
+        let hit = null;
+        try { hit = stlViewer.pick(event.clientX, event.clientY); } catch (error) { console.warn(error); }
+        if (hit?.point) {
+          openHotspotDialog(0, 0, null, {
+            anchorMode:'stl-3d',
+            anchorX:hit.screen?.x ?? x,
+            anchorY:hit.screen?.y ?? y,
+            anchorSector:0,
+            anchorRow:0,
+            anchorYaw:state.yaw,
+            anchorPitch:state.pitch,
+            modelPoint:hit.point
+          });
+        } else {
+          openHotspotDialog(0, 0, null, {
+            anchorMode:'stl-screen', anchorX:x, anchorY:y,
+            anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch, modelPoint:null
+          });
+        }
       }
     });
 
@@ -4185,6 +5795,7 @@
       applyProjectSettingChange();
       renderViewer();
     });
+    els.defaultTransition.addEventListener('change', applyProjectSettingChange);
     els.autoRotateEnabled.addEventListener('change', () => {
       applyProjectSettingChange();
       renderViewer();
@@ -4489,6 +6100,25 @@
         console.warn(error);
       }
     });
+    els.previewSceneOverlay.addEventListener('click', (event) => {
+      const scene = getScene(previewSceneId);
+      const hotspotEl = event.target.closest('[data-screen-hotspot-id]');
+      if (hotspotEl && scene) {
+        const hotspot = (scene.hotspots || []).find((item) => item.id === hotspotEl.dataset.screenHotspotId);
+        if (hotspot?.type === 'scene' && hotspot.targetSceneId) renderPreviewScene(hotspot.targetSceneId);
+        else if (hotspot?.type === 'url' && hotspot.url) window.open(hotspot.url, '_blank', 'noopener');
+        else if (hotspot?.type === 'info') showToast(hotspot.info || hotspot.text || 'Информация', 4200);
+        return;
+      }
+      const mediaEl = event.target.closest('[data-media-object-id]');
+      if (!mediaEl || !scene) return;
+      const item = (scene.mediaObjects || []).find((entry) => entry.id === mediaEl.dataset.mediaObjectId);
+      if (!item) return;
+      if (item.type === 'button' && item.targetSceneId) renderPreviewScene(item.targetSceneId);
+      else if (item.type === 'button' && item.url) window.open(item.url, '_blank', 'noopener');
+      else if (item.type === 'pdf' && item.data) window.open(item.data, '_blank', 'noopener');
+    });
+
     els.previewNarrationButton.addEventListener('click', async () => {
       if (!previewNarrationAudio) return;
       try {
@@ -4515,6 +6145,7 @@
       destroyViewer();
       project = createEmptyProject();
       currentSceneId = null;
+      resetHistory();
       await clearPersistedProject();
       await persistProject();
       renderAll();
@@ -4598,6 +6229,7 @@
     }
 
     currentSceneId = project.firstScene || project.scenes[0]?.id || null;
+    resetHistory();
     renderAll();
     setSaveState('saved');
   }
