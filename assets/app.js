@@ -268,6 +268,10 @@
   let pendingZipDownloadUrl = '';
   let pendingZipBlob = null;
   let pendingZipFilename = '';
+  let pendingMediaData = '';
+  let pendingMediaFilename = '';
+  let pendingMediaGallery = [];
+  let pendingHotspotAnchor = null;
   let undoStack = [];
   let redoStack = [];
   let historySnapshot = '';
@@ -582,6 +586,9 @@
     renderSceneList();
     renderProjectSettings();
     renderSceneSettings();
+    renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
 
     if (rerenderViewer) {
@@ -838,9 +845,12 @@
     renderProjectSettings();
     renderSceneSettings();
     renderTextObjectList();
+    renderMediaObjectList();
+    renderLayerList();
     renderHotspotList();
     updateToolbarState();
     renderViewer();
+    updateHistoryButtons();
   }
 
   function renderSceneList() {
@@ -890,6 +900,8 @@
     els.projectMusicLoop.checked = Boolean(projectMusic.loop);
     els.sceneFadeEnabled.checked = Boolean(project.settings.fadeEnabled);
     els.sceneFadeDuration.value = Number(project.settings.fadeDuration ?? 900);
+    els.defaultTransition.value = ['fade','zoom','blur','portal','glitch','black'].includes(project.settings.defaultTransition)
+      ? project.settings.defaultTransition : 'fade';
     els.autoRotateEnabled.checked = Boolean(project.settings.autoRotateEnabled);
     els.autoRotate.value = Number(project.settings.autoRotate ?? -2);
     els.multiresEnabled.checked = Boolean(project.settings.multiresEnabled);
@@ -1004,12 +1016,16 @@
       '</div>';
   }
 
-  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true } = {}) {
+  function renderSceneTextOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = false } = {}) {
     if (!target) return;
     const items = Array.isArray(scene?.textObjects) ? scene.textObjects.map(normalizeTextObject) : [];
     if (scene) scene.textObjects = items;
-    target.innerHTML = items.map((item) => textObjectMarkup(item, { editor })).join('');
-    target.hidden = !scene || !items.length;
+    const markup = items.filter((item) => item.visible !== false).map((item) => {
+      const html = textObjectMarkup(item, { editor: editor && !item.locked });
+      return item.locked && editor ? html.replace('scene-text-object ', 'scene-text-object is-locked ') : html;
+    }).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
   }
 
   function renderTextObjectList() {
@@ -1030,6 +1046,159 @@
         '<em>' + Math.round(item.x) + '% / ' + Math.round(item.y) + '%</em>' +
         '</article>';
     }).join('');
+  }
+
+  function mediaObjectMarkup(item, { editor = false } = {}) {
+    if (item.visible === false) return '';
+    const cls = [
+      'scene-media-object',
+      'scene-media-' + item.type,
+      'scene-media-anim-' + item.animation,
+      editor && !item.locked ? 'is-editor' : '',
+      editor && item.locked ? 'is-locked' : ''
+    ].filter(Boolean).join(' ');
+    const style = [
+      'left:' + item.x + '%',
+      'top:' + item.y + '%',
+      'width:' + item.width + '%',
+      'height:' + item.height + '%'
+    ].join(';');
+
+    let body = '';
+    if (item.type === 'image' && item.data) {
+      body = '<img src="' + escapeHtml(item.data) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
+    } else if (item.type === 'gallery') {
+      const first = item.gallery?.[0]?.data || '';
+      body = first
+        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(first) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
+        : '<div class="scene-media-placeholder">Галерея</div>';
+    } else if (item.type === 'video' && item.data) {
+      body = '<video src="' + escapeHtml(item.data) + '" controls playsinline ' +
+        (item.autoplay ? 'autoplay muted ' : '') + (item.loop ? 'loop ' : '') + '></video>';
+    } else if (item.type === 'pdf') {
+      body = '<div class="scene-document-card"><b>PDF</b><span>' + escapeHtml(item.title || item.filename || 'Документ') + '</span></div>';
+    } else if (item.type === 'button') {
+      body = '<button type="button" class="scene-action-button">' + escapeHtml(item.title || 'Подробнее') + '</button>';
+    } else {
+      body = '<div class="scene-media-placeholder">' + escapeHtml(item.title || item.type) + '</div>';
+    }
+
+    return '<div class="' + cls + '" data-media-object-id="' + escapeHtml(item.id) + '" style="' + style + '">' +
+      body + (editor && !item.locked ? '<span class="scene-media-drag-hint">перетащить</span>' : '') + '</div>';
+  }
+
+  function renderSceneMediaOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = true } = {}) {
+    if (!target) return;
+    const items = Array.isArray(scene?.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+    if (scene) scene.mediaObjects = items;
+    const markup = items.map((item) => mediaObjectMarkup(item, { editor })).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
+  }
+
+  function screenHotspotVisible(hotspot, scene, state = null) {
+    if (hotspot.visible === false) return false;
+    if (scene.sceneType === 'object360') {
+      if (!state) return true;
+      const sectors = Math.max(1, Number(scene.object360?.sectors) || 1);
+      const a = ((Number(state.sector) || 0) - hotspot.anchorSector + sectors) % sectors;
+      const distance = Math.min(a, sectors - a);
+      return distance <= Math.max(1, Math.round(sectors / 18)) &&
+        Number(state.row || 0) === Number(hotspot.anchorRow || 0);
+    }
+    if (scene.sceneType === 'stl') {
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch) || 0) - hotspot.anchorPitch);
+      return dy <= 65 && dp <= 55;
+    }
+    return false;
+  }
+
+  function screenHotspotPosition(hotspot, scene, state = null) {
+    let x = hotspot.anchorX;
+    let y = hotspot.anchorY;
+    if (scene.sceneType === 'stl' && state) {
+      const dy = ((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
+      const dp = (Number(state.pitch) || 0) - hotspot.anchorPitch;
+      x = hotspot.anchorX - dy * 0.55;
+      y = hotspot.anchorY - dp * 0.65;
+    }
+    return { x: clampNumber(x, -20, 120, hotspot.anchorX), y: clampNumber(y, -20, 120, hotspot.anchorY) };
+  }
+
+  function screenHotspotMarkup(hotspot, scene, state = null, { editor = false } = {}) {
+    if (!screenHotspotVisible(hotspot, scene, state)) return '';
+    const pos = screenHotspotPosition(hotspot, scene, state);
+    const label = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Инфо');
+    return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor' : '') +
+      ' hotspot-' + escapeHtml(hotspot.type) + '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
+      '" style="left:' + pos.x + '%;top:' + pos.y + '%" title="' + escapeHtml(label) + '">' +
+      (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') +
+      '<span>' + escapeHtml(label) + '</span></button>';
+  }
+
+  function renderScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, append = true } = {}) {
+    if (!target || !scene || scene.sceneType === 'panorama') return;
+    const hotspots = Array.isArray(scene.hotspots) ? scene.hotspots : [];
+    const markup = hotspots.map((hotspot) => screenHotspotMarkup(hotspot, scene, state, { editor })).join('');
+    if (append) target.insertAdjacentHTML('beforeend', markup);
+    else target.innerHTML = markup;
+  }
+
+  function renderCompositeOverlay(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true } = {}) {
+    if (!target) return;
+    target.innerHTML = '';
+    if (!scene) {
+      target.hidden = true;
+      return;
+    }
+    renderSceneTextOverlay(scene, target, { editor, append: true });
+    renderSceneMediaOverlay(scene, target, { editor, append: true });
+    renderScreenHotspots(scene, target, state, { editor, append: true });
+    target.hidden = !target.children.length;
+  }
+
+  function renderMediaObjectList() {
+    const scene = getScene();
+    const items = scene?.mediaObjects || [];
+    if (!items.length) {
+      els.mediaObjectList.className = 'media-object-list empty';
+      els.mediaObjectList.innerHTML = '<div class="empty-state">Нет медиа</div>';
+      return;
+    }
+    const labels = { image:'Фото', gallery:'Галерея', video:'Видео', pdf:'PDF', button:'Кнопка' };
+    els.mediaObjectList.className = 'media-object-list';
+    els.mediaObjectList.innerHTML = items.map((item) =>
+      '<article class="media-object-card" data-media-object-id="' + escapeHtml(item.id) + '">' +
+      '<span class="media-object-kind">' + ({image:'▧',gallery:'▦',video:'▶',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
+      '<div><b>' + escapeHtml(labels[item.type] || item.type) + '</b><span>' + escapeHtml(item.title || item.filename || 'Без названия') + '</span></div>' +
+      '<em>' + (item.visible === false ? 'скрыт' : (item.locked ? '🔒' : '')) + '</em></article>'
+    ).join('');
+  }
+
+  function renderLayerList() {
+    const scene = getScene();
+    const layers = [];
+    if (scene) {
+      (scene.textObjects || []).forEach((item) => layers.push({ kind:'text', id:item.id, label:item.text || 'Текст', item }));
+      (scene.mediaObjects || []).forEach((item) => layers.push({ kind:'media', id:item.id, label:item.title || item.filename || item.type, item }));
+      (scene.hotspots || []).forEach((item) => layers.push({ kind:'hotspot', id:item.id, label:item.text || 'Hotspot', item }));
+    }
+    els.layerCount.textContent = String(layers.length);
+    if (!layers.length) {
+      els.layerList.className = 'layer-list empty';
+      els.layerList.innerHTML = '<div class="empty-state">Нет слоёв</div>';
+      return;
+    }
+    els.layerList.className = 'layer-list';
+    els.layerList.innerHTML = layers.map((layer) =>
+      '<article class="layer-card" data-layer-kind="' + layer.kind + '" data-layer-id="' + escapeHtml(layer.id) + '">' +
+      '<button type="button" data-layer-action="visible" title="Показать / скрыть">' + (layer.item.visible === false ? '○' : '👁') + '</button>' +
+      '<button type="button" data-layer-action="locked" title="Заблокировать">' + (layer.item.locked ? '🔒' : '🔓') + '</button>' +
+      '<div><b>' + escapeHtml(layer.kind === 'text' ? 'Текст' : layer.kind === 'media' ? 'Медиа' : 'Hotspot') + '</b><span>' + escapeHtml(layer.label) + '</span></div>' +
+      '</article>'
+    ).join('');
   }
 
   function renderHotspotList() {
@@ -1074,15 +1243,16 @@
     const hasScene = Boolean(scene);
     const isObject = scene?.sceneType === 'object360';
     const isStl = scene?.sceneType === 'stl';
-    els.btnAddHotspot.disabled = !hasScene || isObject || isStl;
+    els.btnAddHotspot.disabled = !hasScene;
     els.btnSetInitialView.disabled = !hasScene;
     els.btnSetInitialView.textContent = isObject
       ? 'Сохранить текущий кадр'
       : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
     els.btnPreview.disabled = !project.scenes.length;
     els.btnAddTextObject.disabled = !hasScene;
+    els.btnAddMediaObject.disabled = !hasScene;
     els.viewerPlaceholder.hidden = hasScene;
-    renderSceneTextOverlay(scene, els.sceneOverlay, { editor: true });
+    renderCompositeOverlay(scene, els.sceneOverlay, null, { editor: true });
   }
 
   function clampNumber(value, min, max, fallback) {
@@ -1552,6 +1722,7 @@
         yaw: Number(scene.yaw) || 0,
         hfov: Number(scene.hfov) || 100,
         hotSpots: (scene.hotspots || [])
+          .filter((hotspot) => hotspot.visible !== false)
           .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
           .map((hotspot) => hotspotToPannellum(hotspot, universalSceneHandler))
       };
@@ -4121,6 +4292,8 @@
     els.projectMusicVolumeValue.textContent = project.audio.music.volume + '%';
     project.settings.fadeEnabled = els.sceneFadeEnabled.checked;
     project.settings.fadeDuration = Math.max(0, Number(els.sceneFadeDuration.value) || 0);
+    project.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(els.defaultTransition.value)
+      ? els.defaultTransition.value : 'fade';
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
     project.settings.autoRotate = Number(els.autoRotate.value) || -2;
     project.settings.multiresEnabled = els.multiresEnabled.checked;
