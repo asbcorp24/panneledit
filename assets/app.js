@@ -4839,6 +4839,7 @@
 
       project = imported;
       currentSceneId = project.firstScene || project.scenes[0].id;
+      resetHistory();
       await persistProject();
       renderAll();
       showToast('Проект импортирован');
