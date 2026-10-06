@@ -4443,6 +4443,246 @@
     });
   }
 
+  function renderSceneGraph() {
+    const scenes = project.scenes;
+    if (!scenes.length) {
+      els.sceneGraph.innerHTML = '<div class="empty-state tall">Нет сцен</div>';
+      els.graphSummary.textContent = '0 сцен';
+      return;
+    }
+
+    const width = Math.max(900, scenes.length * 190);
+    const columns = Math.max(2, Math.ceil(Math.sqrt(scenes.length)));
+    const nodeW = 150;
+    const nodeH = 74;
+    const gapX = 185;
+    const gapY = 135;
+    const positions = new Map();
+    scenes.forEach((scene, index) => {
+      positions.set(scene.id, {
+        x: 45 + (index % columns) * gapX,
+        y: 45 + Math.floor(index / columns) * gapY
+      });
+    });
+    const height = 110 + Math.ceil(scenes.length / columns) * gapY;
+
+    const edges = [];
+    let missing = 0;
+    scenes.forEach((scene) => {
+      (scene.hotspots || []).forEach((hotspot) => {
+        if (hotspot.type !== 'scene') return;
+        if (!positions.has(hotspot.targetSceneId)) {
+          missing++;
+          return;
+        }
+        edges.push({ from: scene.id, to: hotspot.targetSceneId });
+      });
+      (scene.mediaObjects || []).forEach((item) => {
+        if (item.type === 'button' && item.targetSceneId && positions.has(item.targetSceneId)) {
+          edges.push({ from: scene.id, to: item.targetSceneId });
+        }
+      });
+    });
+
+    const svgLines = edges.map((edge) => {
+      const a = positions.get(edge.from);
+      const b = positions.get(edge.to);
+      return '<path d="M ' + (a.x + nodeW) + ' ' + (a.y + nodeH/2) +
+        ' C ' + (a.x + nodeW + 45) + ' ' + (a.y + nodeH/2) + ', ' +
+        (b.x - 45) + ' ' + (b.y + nodeH/2) + ', ' +
+        b.x + ' ' + (b.y + nodeH/2) + '" marker-end="url(#graphArrow)"/>';
+    }).join('');
+
+    const nodes = scenes.map((scene) => {
+      const p = positions.get(scene.id);
+      const meta = sceneTypeMeta(scene);
+      const outgoing = (scene.hotspots || []).filter((h) => h.type === 'scene').length;
+      return '<button class="graph-node ' + (scene.id === project.firstScene ? 'is-start' : '') +
+        '" data-graph-scene="' + escapeHtml(scene.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px">' +
+        '<span>' + meta.icon + ' ' + escapeHtml(meta.label) + '</span>' +
+        '<b>' + escapeHtml(scene.title) + '</b>' +
+        '<small>' + outgoing + ' переходов' + (scene.id === project.firstScene ? ' · старт' : '') + '</small>' +
+        '</button>';
+    }).join('');
+
+    els.sceneGraph.innerHTML =
+      '<div class="graph-canvas" style="width:' + width + 'px;height:' + height + 'px">' +
+      '<svg class="graph-links" width="' + width + '" height="' + height + '">' +
+      '<defs><marker id="graphArrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z"/></marker></defs>' +
+      svgLines + '</svg>' + nodes + '</div>';
+
+    const incoming = new Set(edges.map((edge) => edge.to));
+    const unreachable = scenes.filter((scene) => scene.id !== project.firstScene && !incoming.has(scene.id)).length;
+    els.graphSummary.textContent = scenes.length + ' сцен · ' + edges.length + ' связей · ' +
+      unreachable + ' без входящих переходов' + (missing ? ' · ' + missing + ' битых ссылок' : '');
+  }
+
+  function openSceneGraph() {
+    renderSceneGraph();
+    els.sceneGraphDialog.showModal();
+  }
+
+  function renderGuideEditor() {
+    project.guide = normalizeGuide(project.guide || {}, project.scenes);
+    els.guideEnabled.checked = project.guide.enabled;
+
+    if (!project.guide.steps.length) {
+      els.guideStepList.innerHTML = '<div class="empty-state">Добавьте первый шаг маршрута</div>';
+      return;
+    }
+
+    els.guideStepList.innerHTML = project.guide.steps.map((step, index) => {
+      const options = project.scenes.map((scene) =>
+        '<option value="' + escapeHtml(scene.id) + '"' + (scene.id === step.sceneId ? ' selected' : '') + '>' +
+        sceneTypeMeta(scene).icon + ' ' + escapeHtml(scene.title) + '</option>'
+      ).join('');
+      return '<article class="guide-step" data-guide-step-id="' + escapeHtml(step.id) + '">' +
+        '<span class="guide-step-index">' + (index + 1) + '</span>' +
+        '<select data-guide-field="sceneId">' + options + '</select>' +
+        '<label><span>сек</span><input data-guide-field="duration" type="number" min="2" max="600" value="' + step.duration + '"></label>' +
+        '<label class="guide-check"><input data-guide-field="narrationAuto" type="checkbox"' + (step.narrationAuto ? ' checked' : '') + '> 🔊 авто</label>' +
+        '<div class="guide-step-actions">' +
+        '<button type="button" data-guide-action="up">↑</button><button type="button" data-guide-action="down">↓</button><button type="button" data-guide-action="remove">×</button>' +
+        '</div></article>';
+    }).join('');
+  }
+
+  function openGuideEditor() {
+    renderGuideEditor();
+    els.guideDialog.showModal();
+  }
+
+  function syncAdvancedSettingsUi() {
+    project.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
+    project.exportSettings = normalizeExportSettings(project.exportSettings || {});
+    const s = project.startScreen;
+    const e = project.exportSettings;
+    els.startScreenEnabled.checked = s.enabled;
+    els.startScreenTitle.value = s.title;
+    els.startScreenSubtitle.value = s.subtitle;
+    els.startScreenCoverName.textContent = s.coverFilename || 'Без обложки';
+    els.startScreenAllowSilent.checked = s.allowSilent;
+    els.optimizeEnabled.checked = e.optimizeEnabled;
+    els.optimizeQuality.value = String(e.jpegQuality);
+    els.optimizeMaxImageWidth.value = String(e.maxImageWidth);
+    els.optimizeObjectFrameWidth.value = String(e.objectFrameWidth);
+    els.pwaEnabled.checked = e.pwaEnabled;
+    els.kioskMode.checked = e.kioskMode;
+    els.publicTourUrl.value = e.publicUrl;
+    renderQrPreview();
+  }
+
+  function applyAdvancedSettings() {
+    project.startScreen = normalizeStartScreen({
+      ...project.startScreen,
+      enabled: els.startScreenEnabled.checked,
+      title: els.startScreenTitle.value.trim() || project.title,
+      subtitle: els.startScreenSubtitle.value,
+      allowSilent: els.startScreenAllowSilent.checked
+    }, project.title);
+    project.exportSettings = normalizeExportSettings({
+      ...project.exportSettings,
+      optimizeEnabled: els.optimizeEnabled.checked,
+      jpegQuality: els.optimizeQuality.value,
+      maxImageWidth: els.optimizeMaxImageWidth.value,
+      objectFrameWidth: els.optimizeObjectFrameWidth.value,
+      pwaEnabled: els.pwaEnabled.checked,
+      kioskMode: els.kioskMode.checked,
+      publicUrl: els.publicTourUrl.value.trim()
+    });
+    markDirty();
+    renderQrPreview();
+  }
+
+  function openAdvancedSettings() {
+    syncAdvancedSettingsUi();
+    els.advancedSettingsDialog.showModal();
+  }
+
+  function dataUrlByteSize(value) {
+    const text = String(value || '');
+    if (!text) return 0;
+    const comma = text.indexOf(',');
+    if (comma < 0) return text.length;
+    const header = text.slice(0, comma);
+    const payload = text.slice(comma + 1);
+    return /;base64/i.test(header) ? Math.floor(payload.length * 0.75) : decodeURIComponent(payload).length;
+  }
+
+  function analyzeProjectSize() {
+    const totals = { panoramas:0, object360:0, stl:0, audio:0, media:0, backgrounds:0 };
+    project.scenes.forEach((scene) => {
+      if (scene.sceneType === 'panorama') totals.panoramas += dataUrlByteSize(scene.imageData);
+      if (scene.sceneType === 'object360') {
+        (scene.object360?.frames || []).forEach((row) => (row || []).forEach((frame) => {
+          totals.object360 += dataUrlByteSize(frame);
+        }));
+      }
+      if (scene.sceneType === 'stl') {
+        totals.stl += dataUrlByteSize(scene.stl?.data);
+        totals.backgrounds += dataUrlByteSize(scene.stl?.backgroundImageData);
+      }
+      totals.audio += dataUrlByteSize(scene.audio?.music?.data) + dataUrlByteSize(scene.audio?.narration?.data);
+      (scene.mediaObjects || []).forEach((item) => {
+        totals.media += dataUrlByteSize(item.data);
+        (item.gallery || []).forEach((entry) => { totals.media += dataUrlByteSize(entry.data); });
+      });
+    });
+    totals.audio += dataUrlByteSize(project.audio?.music?.data);
+    totals.media += dataUrlByteSize(project.startScreen?.coverData);
+    const total = Object.values(totals).reduce((a,b) => a+b, 0);
+    const fmt = (bytes) => formatFileSize(bytes);
+    els.projectSizeReport.innerHTML =
+      '<b>Итого: ' + fmt(total) + '</b>' +
+      '<span>Панорамы: ' + fmt(totals.panoramas) + '</span>' +
+      '<span>Object360: ' + fmt(totals.object360) + '</span>' +
+      '<span>STL: ' + fmt(totals.stl) + '</span>' +
+      '<span>Аудио: ' + fmt(totals.audio) + '</span>' +
+      '<span>Медиа: ' + fmt(totals.media) + '</span>' +
+      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>';
+  }
+
+  function renderQrPreview() {
+    if (!els.qrPreview) return;
+    const url = String(els.publicTourUrl?.value || project.exportSettings?.publicUrl || '').trim();
+    els.qrPreview.innerHTML = '';
+    if (!url) {
+      els.qrPreview.innerHTML = '<span>Укажите URL</span>';
+      els.btnDownloadQr.disabled = true;
+      return;
+    }
+    if (!window.QRCode) {
+      els.qrPreview.innerHTML = '<span>QR-библиотека не загружена</span>';
+      els.btnDownloadQr.disabled = true;
+      return;
+    }
+    els.btnDownloadQr.disabled = false;
+    new QRCode(els.qrPreview, {
+      text:url,
+      width:180,
+      height:180,
+      colorDark:'#06101f',
+      colorLight:'#ffffff',
+      correctLevel:QRCode.CorrectLevel.M
+    });
+  }
+
+  function downloadQrPng() {
+    const canvas = els.qrPreview.querySelector('canvas');
+    const img = els.qrPreview.querySelector('img');
+    const data = canvas?.toDataURL?.('image/png') || img?.src || '';
+    if (!data) {
+      showToast('QR ещё не создан');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = data;
+    a.download = safeFilename(project.title || 'tour', 'tour') + '-qr.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   function openPreview() {
     if (!project.scenes.length) return;
     const scene = getScene(project.firstScene) || project.scenes[0];
