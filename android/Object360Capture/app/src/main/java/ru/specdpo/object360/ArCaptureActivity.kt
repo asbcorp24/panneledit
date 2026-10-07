@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -94,6 +95,8 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var lastAutoKey = ""
     private var lastUiUpdateMs = 0L
     private var interfaceHidden = false
+    private var ghostEnabled = true
+    private var ghostBitmap: Bitmap? = null
 
     private val objectDepthOptionsM = floatArrayOf(0.20f, 0.50f, 1.00f, 2.00f, 0.00f)
     private var objectDepthIndex = 0
@@ -159,6 +162,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.btnArCleanShutter.setOnClickListener {
             manualCaptureRequested = true
         }
+        binding.btnArGhost.setOnClickListener { toggleGhost() }
 
         binding.btnAr36.setOnClickListener { changeGrid(36, captureSession.rows) }
         binding.btnAr72.setOnClickListener { changeGrid(72, captureSession.rows) }
@@ -212,6 +216,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 stableSince = 0L
                 lastAutoKey = ""
                 updateStaticUi()
+                refreshGhostForCurrentRow()
             }
         }
 
@@ -221,6 +226,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 stableSince = 0L
                 lastAutoKey = ""
                 updateStaticUi()
+                refreshGhostForCurrentRow()
             }
         }
 
@@ -346,6 +352,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onDestroy() {
+        clearGhost()
         centerAnchor?.detach()
         centerAnchor = null
         try {
@@ -543,7 +550,18 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             ).coerceIn(-1f, 1f)
 
         val alignmentDeg = Math.toDegrees(acos(dot.toDouble())).toFloat()
-        val alignmentGood = alignmentDeg <= 9f
+        val facingGood = alignmentDeg <= 9f
+
+        val centerOffset = projectCenterOffset(frame, center)
+        val centerOffsetX = centerOffset?.first ?: 0f
+        val centerOffsetY = centerOffset?.second ?: 0f
+        val centerTolerance = 0.12f
+        val centeredGood =
+            centerOffset != null &&
+                abs(centerOffsetX) <= centerTolerance &&
+                abs(centerOffsetY) <= centerTolerance
+        val centerGuide = centerGuidance(centerOffsetX, centerOffsetY, centeredGood)
+        val alignmentGood = facingGood && centeredGood
 
         val angleTarget = sector * step
         val angleError = angularDistance(angleDeg, angleTarget)
@@ -560,7 +578,9 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 "↑ Поднимите телефон"
             heightError > heightTolerance ->
                 "↓ Опустите телефон"
-            !alignmentGood ->
+            !centeredGood ->
+                "$centerGuide • совместите центр объекта с прицелом"
+            !facingGood ->
                 "Наведите центральный прицел точно на объект"
             shot ->
                 "✓ Этот сектор уже снят"
@@ -580,6 +600,10 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             radiusGood = radiusGood,
             heightGood = heightGood,
             alignmentGood = alignmentGood,
+            centeredGood = centeredGood,
+            centerOffsetX = centerOffsetX,
+            centerOffsetY = centerOffsetY,
+            centerGuide = centerGuide,
             sectorCentered = sectorCentered,
             shot = shot,
             guide = guide
@@ -656,6 +680,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     }
 
                     if (fromAuto) lastAutoKey = "${row}:${sector}"
+                    loadGhostFrame(file)
 
                     runOnUiThread {
                         binding.arGuideText.text =
@@ -711,10 +736,17 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             binding.arCoverageSphere.captured = capturedKeys
 
             if (metrics == null) {
+                binding.arCenterHint.visibility = View.GONE
                 if (centerAnchor == null) {
                     binding.arMetricsText.text = "Угол —   Радиус —   Высота —"
                 }
             } else {
+                binding.arCenterHint.visibility = View.VISIBLE
+                binding.arCenterHint.text = metrics.centerGuide
+                binding.arCenterHint.setTextColor(
+                    if (metrics.centeredGood) Color.rgb(130, 255, 210)
+                    else Color.rgb(255, 213, 79)
+                )
                 binding.arMetricsText.text =
                     "Угол %.0f°   Радиус %.2f м / %.2f м   Высота %+.2f м".format(
                         metrics.angleDeg,
@@ -771,6 +803,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             currentSector = 0
             stableSince = 0L
             lastAutoKey = ""
+            clearGhost()
             updateStaticUi()
         }
 
@@ -795,6 +828,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arCoverageOverlay.minimalMode = interfaceHidden
         binding.btnArRows.text = if (captureSession.rows == 1) "1 РЯД" else "3 РЯДА"
         binding.btnArAuto.text = if (autoMode) "AUTO: ВКЛ" else "AUTO: ВЫКЛ"
+        binding.btnArGhost.text = if (ghostEnabled) "GHOST: 25%" else "GHOST: ВЫКЛ"
 
         binding.btnArDepth.text =
             if (objectDepthM <= 0.001f) "ГЛУБИНА 0"
@@ -827,6 +861,68 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arCoverageSphere.captured = capturedKeys
     }
 
+    private fun toggleGhost() {
+        ghostEnabled = !ghostEnabled
+        binding.btnArGhost.text = if (ghostEnabled) "GHOST: 25%" else "GHOST: ВЫКЛ"
+
+        if (!ghostEnabled) {
+            binding.arGhostOverlay.visibility = View.GONE
+        } else if (ghostBitmap != null) {
+            binding.arGhostOverlay.visibility = View.VISIBLE
+        } else {
+            refreshGhostForCurrentRow()
+        }
+    }
+
+    private fun refreshGhostForCurrentRow() {
+        if (!ghostEnabled) return
+
+        val shot = synchronized(captureSession) {
+            captureSession.shots.values
+                .filter { it.row == currentRow && it.file.exists() }
+                .maxByOrNull { it.file.lastModified() }
+        }
+
+        if (shot == null) {
+            clearGhost()
+        } else {
+            loadGhostFrame(shot.file)
+        }
+    }
+
+    private fun loadGhostFrame(file: File) {
+        val targetWidth = resources.displayMetrics.widthPixels
+        val targetHeight = resources.displayMetrics.heightPixels
+
+        ioExecutor.execute {
+            val bitmap = GhostFrameDecoder.decode(file, targetWidth, targetHeight)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    bitmap?.recycle()
+                    return@runOnUiThread
+                }
+
+                val old = ghostBitmap
+                ghostBitmap = bitmap
+                binding.arGhostOverlay.setImageBitmap(bitmap)
+                binding.arGhostOverlay.visibility =
+                    if (ghostEnabled && bitmap != null) View.VISIBLE else View.GONE
+
+                if (old != null && old !== bitmap && !old.isRecycled) {
+                    old.recycle()
+                }
+            }
+        }
+    }
+
+    private fun clearGhost() {
+        val old = ghostBitmap
+        ghostBitmap = null
+        binding.arGhostOverlay.setImageDrawable(null)
+        binding.arGhostOverlay.visibility = View.GONE
+        if (old != null && !old.isRecycled) old.recycle()
+    }
+
     private fun setInterfaceHidden(hidden: Boolean) {
         interfaceHidden = hidden
         binding.arTopPanel.visibility = if (hidden) View.GONE else View.VISIBLE
@@ -835,6 +931,73 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arBottomPanel.visibility = if (hidden) View.GONE else View.VISIBLE
         binding.arCleanCaptureControls.visibility = if (hidden) View.VISIBLE else View.GONE
         binding.arCoverageOverlay.minimalMode = hidden
+    }
+
+    private fun projectCenterOffset(frame: Frame, center: FloatArray): Pair<Float, Float>? {
+        val view = FloatArray(16)
+        val projection = FloatArray(16)
+        frame.camera.getViewMatrix(view, 0)
+        frame.camera.getProjectionMatrix(projection, 0, 0.05f, 100f)
+
+        val viewPoint = multiplyMatrixVector(
+            view,
+            center[0],
+            center[1],
+            center[2],
+            1f
+        )
+        val clipPoint = multiplyMatrixVector(
+            projection,
+            viewPoint[0],
+            viewPoint[1],
+            viewPoint[2],
+            viewPoint[3]
+        )
+
+        val w = clipPoint[3]
+        if (abs(w) < 0.0001f || w <= 0f) return null
+
+        val x = clipPoint[0] / w
+        val y = clipPoint[1] / w
+        if (!x.isFinite() || !y.isFinite()) return null
+
+        return x to y
+    }
+
+    private fun multiplyMatrixVector(
+        matrix: FloatArray,
+        x: Float,
+        y: Float,
+        z: Float,
+        w: Float
+    ): FloatArray {
+        return floatArrayOf(
+            matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12] * w,
+            matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13] * w,
+            matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14] * w,
+            matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15] * w
+        )
+    }
+
+    private fun centerGuidance(x: Float, y: Float, centered: Boolean): String {
+        if (centered) return "◎ ЦЕНТР"
+
+        val horizontal = when {
+            x < -0.07f -> "←"
+            x > 0.07f -> "→"
+            else -> ""
+        }
+        val vertical = when {
+            y > 0.07f -> "↑"
+            y < -0.07f -> "↓"
+            else -> ""
+        }
+
+        val arrows = vertical + horizontal
+        return when {
+            arrows.isNotEmpty() -> "$arrows СМЕСТИТЕ ПРИЦЕЛ"
+            else -> "◎ ТОЧНЕЕ В ЦЕНТР"
+        }
     }
 
     private fun showOrientationDialog() {
@@ -1041,6 +1204,8 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         centerAnchor?.detach()
         centerAnchor = null
         binding.arTrajectoryOverlay.reset()
+        binding.arCenterHint.visibility = View.GONE
+        clearGhost()
         currentSector = 0
         currentRow = if (captureSession.rows == 3) 1 else 0
         stableSince = 0L
@@ -1116,6 +1281,10 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val radiusGood: Boolean,
         val heightGood: Boolean,
         val alignmentGood: Boolean,
+        val centeredGood: Boolean,
+        val centerOffsetX: Float,
+        val centerOffsetY: Float,
+        val centerGuide: String,
         val sectorCentered: Boolean,
         val shot: Boolean,
         val guide: String
