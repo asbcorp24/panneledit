@@ -2,6 +2,7 @@ package ru.specdpo.object360
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -160,6 +161,12 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun setupUi() {
         binding.btnArBack.setOnClickListener { finish() }
+        binding.btnArHelp.setOnClickListener {
+            startActivity(
+                Intent(this, HelpActivity::class.java)
+                    .putExtra(HelpActivity.EXTRA_SECTION, HelpActivity.SECTION_AR)
+            )
+        }
         binding.btnArOrientation.setOnClickListener {
             showOrientationDialog()
         }
