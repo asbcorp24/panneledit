@@ -19,7 +19,13 @@ object PublicStorage {
         row: Int,
         sector: Int
     ): Uri? {
-        val displayName = "frame_${sector.toString().padStart(3, '0')}.jpg"
+        val extension = source.extension.lowercase().ifBlank { "jpg" }
+        val displayName = "frame_${sector.toString().padStart(3, '0')}.$extension"
+        val mimeType = when (extension) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            else -> "image/jpeg"
+        }
         val relativePath = "Pictures/Object360/$sessionId/row_${row + 1}/"
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -28,7 +34,7 @@ object PublicStorage {
                 source = source,
                 collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 displayName = displayName,
-                mimeType = "image/jpeg",
+                mimeType = mimeType,
                 relativePath = relativePath
             )
         } else {
@@ -38,7 +44,7 @@ object PublicStorage {
                 root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
                 subDir = "Object360/$sessionId/row_${row + 1}",
                 displayName = displayName,
-                mimeType = "image/jpeg"
+                mimeType = mimeType
             )
         }
     }
