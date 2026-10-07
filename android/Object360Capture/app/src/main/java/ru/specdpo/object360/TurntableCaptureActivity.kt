@@ -45,8 +45,8 @@ class TurntableCaptureActivity : AppCompatActivity() {
     private var currentSector = 0
     private var interfaceHidden = false
 
-    private val angleSteps = floatArrayOf(5f, 10f, 15f)
-    private var angleIndex = 1
+    private val angleSteps = floatArrayOf(90f, 45f, 22.5f, 15f, 10f, 5f)
+    private var angleIndex = 4
 
     private val intervalOptionsMs = longArrayOf(1000L, 2000L, 3000L, 5000L)
     private var intervalIndex = 2
@@ -394,7 +394,7 @@ class TurntableCaptureActivity : AppCompatActivity() {
         val intervalSec = intervalOptionsMs[intervalIndex] / 1000L
         val orientationMode = CaptureOrientationSettings.get(this)
 
-        binding.btnTurntableAngle.text = "ШАГ: ${formatAngle(step)}°"
+        binding.btnTurntableAngle.text = "КАДРОВ: ${session.sectors} (${formatAngle(step)}°)"
         binding.btnTurntableInterval.text = "ИНТЕРВАЛ: $intervalSec С"
         binding.btnTurntableOrientation.text =
             "ОРИЕНТАЦИЯ: ${orientationMode.buttonLabel}"
