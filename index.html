@@ -240,6 +240,31 @@
                 <input id="object360Autoplay" type="checkbox">
               </label>
               <label class="field">
+                <span>Фон Object360</span>
+                <select id="object360BackgroundMode">
+                  <option value="hitech">Hi-Tech</option>
+                  <option value="black">Чёрный</option>
+                  <option value="light">Светлый</option>
+                  <option value="transparent">Прозрачный</option>
+                  <option value="color">Свой цвет</option>
+                  <option value="image">Своя картинка</option>
+                </select>
+              </label>
+              <label id="object360BackgroundColorRow" class="field" hidden>
+                <span>Цвет фона</span>
+                <input id="object360BackgroundColor" type="color" value="#ffffff">
+              </label>
+              <div id="object360BackgroundImageRow" class="field" hidden>
+                <span>Фоновая картинка</span>
+                <div class="file-line">
+                  <span id="object360BackgroundImageName">Файл не выбран</span>
+                  <label class="btn btn-small file-btn">
+                    Выбрать
+                    <input id="object360BackgroundImage" type="file" accept="image/jpeg,image/png,image/webp">
+                  </label>
+                </div>
+              </div>
+              <label class="field">
                 <span>Object360 ZIP</span>
                 <div class="file-line">
                   <span id="object360Filename">—</span>
