@@ -170,6 +170,9 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         binding.btnArGhost.setOnClickListener { toggleGhost() }
 
+        binding.btnAr4.setOnClickListener { changeGrid(4, captureSession.rows) }
+        binding.btnAr8.setOnClickListener { changeGrid(8, captureSession.rows) }
+        binding.btnAr16.setOnClickListener { changeGrid(16, captureSession.rows) }
         binding.btnAr36.setOnClickListener { changeGrid(36, captureSession.rows) }
         binding.btnAr72.setOnClickListener { changeGrid(72, captureSession.rows) }
 
