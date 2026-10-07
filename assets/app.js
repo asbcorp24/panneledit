@@ -82,6 +82,12 @@
     object360StartSector: $('object360StartSector'),
     object360StartRow: $('object360StartRow'),
     object360Autoplay: $('object360Autoplay'),
+    object360BackgroundMode: $('object360BackgroundMode'),
+    object360BackgroundColorRow: $('object360BackgroundColorRow'),
+    object360BackgroundColor: $('object360BackgroundColor'),
+    object360BackgroundImageRow: $('object360BackgroundImageRow'),
+    object360BackgroundImage: $('object360BackgroundImage'),
+    object360BackgroundImageName: $('object360BackgroundImageName'),
     object360Filename: $('object360Filename'),
     object360ZipReplace: $('object360ZipReplace'),
     stlSceneSettings: $('stlSceneSettings'),
@@ -391,11 +397,25 @@
       startSector: Math.max(0, Math.min(sectors - 1, Number(input.startSector) || 0)),
       startRow: Math.max(0, Math.min(rows - 1, Number(input.startRow) || (rows === 3 ? 1 : 0))),
       autoplay: Boolean(input.autoplay),
+      backgroundMode: ['hitech','black','light','transparent','color','image'].includes(String(input.backgroundMode))
+        ? String(input.backgroundMode)
+        : 'hitech',
+      backgroundColor: /^#[0-9a-f]{6}$/i.test(String(input.backgroundColor || ''))
+        ? String(input.backgroundColor).toLowerCase()
+        : '#ffffff',
+      backgroundImageData: String(input.backgroundImageData || ''),
+      backgroundImageName: String(input.backgroundImageName || ''),
       captureMode: String(input.captureMode || ''),
       baseRadiusMeters: Number(input.baseRadiusMeters) || 0,
       rowSpacingMeters: Number(input.rowSpacingMeters) || 0,
       objectDepthMeters: Number(input.objectDepthMeters) || 0
     };
+  }
+
+  function updateObject360BackgroundControls() {
+    const mode = els.object360BackgroundMode.value || 'hitech';
+    els.object360BackgroundColorRow.hidden = mode !== 'color';
+    els.object360BackgroundImageRow.hidden = mode !== 'image';
   }
 
   function countObjectFrames(data) {
@@ -965,6 +985,10 @@
       els.object360StartRow.max = String(Math.max(0, (data.rows || 1) - 1));
       els.object360StartRow.value = String(Math.min(Math.max(0, Number(data.startRow) || 0), Math.max(0, (data.rows || 1) - 1)));
       els.object360Autoplay.checked = Boolean(data.autoplay);
+      els.object360BackgroundMode.value = data.backgroundMode || 'hitech';
+      els.object360BackgroundColor.value = data.backgroundColor || '#ffffff';
+      els.object360BackgroundImageName.textContent = data.backgroundImageName || 'Файл не выбран';
+      updateObject360BackgroundControls();
       els.object360Filename.textContent = scene.filename || 'object360.zip';
     } else if (isStl) {
       const data = normalizeStlData(scene.stl || {});
@@ -1846,6 +1870,9 @@
           startSector: data.startSector,
           startRow: data.startRow,
           autoplay: data.autoplay,
+          backgroundMode: data.backgroundMode,
+          backgroundColor: data.backgroundColor,
+          backgroundImage: data.backgroundImageData,
           onFrameChange: (state) => {
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
@@ -5001,6 +5028,9 @@
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
+        backgroundMode: data.backgroundMode,
+        backgroundColor: data.backgroundColor,
+        backgroundImage: data.backgroundImageData,
         onFrameChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
@@ -5345,6 +5375,10 @@
       data.startSector = Math.max(0, Math.min(data.sectors - 1, Number(els.object360StartSector.value) || 0));
       data.startRow = Math.max(0, Math.min(data.rows - 1, Number(els.object360StartRow.value) || 0));
       data.autoplay = els.object360Autoplay.checked;
+      data.backgroundMode = els.object360BackgroundMode.value || 'hitech';
+      data.backgroundColor = /^#[0-9a-f]{6}$/i.test(els.object360BackgroundColor.value)
+        ? els.object360BackgroundColor.value.toLowerCase()
+        : '#ffffff';
       scene.object360 = data;
     } else if (scene.sceneType === 'stl') {
       const data = normalizeStlData(scene.stl || {});
@@ -5961,6 +5995,34 @@
     els.object360StartSector.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360StartRow.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.object360Autoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.object360BackgroundMode.addEventListener('change', () => {
+      updateObject360BackgroundControls();
+      applySceneFieldChanges({ rerender: true });
+    });
+    els.object360BackgroundColor.addEventListener('input', () => applySceneFieldChanges({ rerender: true }));
+    els.object360BackgroundImage.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.object360BackgroundImage.files?.[0];
+      if (!scene || scene.sceneType !== 'object360' || !file) return;
+      try {
+        scene.object360 = normalizeObject360Data({
+          ...scene.object360,
+          backgroundMode: 'image',
+          backgroundImageData: await fileToDataURL(file),
+          backgroundImageName: file.name
+        });
+        els.object360BackgroundMode.value = 'image';
+        els.object360BackgroundImageName.textContent = file.name;
+        updateObject360BackgroundControls();
+        markDirty();
+        renderViewer();
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось загрузить фон Object360');
+      } finally {
+        els.object360BackgroundImage.value = '';
+      }
+    });
     els.stlYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlPitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlZoom.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
