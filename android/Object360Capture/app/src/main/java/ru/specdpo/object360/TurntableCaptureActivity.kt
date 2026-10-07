@@ -1,6 +1,7 @@
 package ru.specdpo.object360
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -106,6 +107,12 @@ class TurntableCaptureActivity : AppCompatActivity() {
 
     private fun setupUi() {
         binding.btnTurntableBack.setOnClickListener { finish() }
+        binding.btnTurntableHelp.setOnClickListener {
+            startActivity(
+                Intent(this, HelpActivity::class.java)
+                    .putExtra(HelpActivity.EXTRA_SECTION, HelpActivity.SECTION_TURNTABLE)
+            )
+        }
 
         binding.btnTurntableAngle.setOnClickListener {
             if (sequenceRunning) {
