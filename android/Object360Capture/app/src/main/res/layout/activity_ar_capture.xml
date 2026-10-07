@@ -9,10 +9,37 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <ImageView
+        android:id="@+id/arGhostOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.25"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
     <ru.specdpo.object360.CoverageOverlay
         android:id="@+id/arCoverageOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/arCenterHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:translationY="82dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center"
+        android:minWidth="180dp"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:text="◎ ЦЕНТР"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/arTopPanel"
@@ -145,6 +172,16 @@
                     android:background="@drawable/bg_button"
                     android:text="ЗАДАТЬ ЦЕНТР"
                     android:textColor="#FFFFFF" />
+
+                <Button
+                    android:id="@+id/btnArGhost"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_button"
+                    android:text="GHOST: 25%"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/btnArHideUi"
