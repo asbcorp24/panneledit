@@ -284,6 +284,16 @@
         android:orientation="vertical"
         android:padding="14dp">
 
+        <Button
+            android:id="@+id/btnArProcess"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_button"
+            android:text="ОБРАБОТКА СЕРИИ"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
         <TextView
             android:id="@+id/arGuideText"
             android:layout_width="wrap_content"
