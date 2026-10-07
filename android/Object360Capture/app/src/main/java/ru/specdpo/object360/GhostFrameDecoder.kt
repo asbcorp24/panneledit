@@ -2,6 +2,8 @@ package ru.specdpo.object360
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import java.io.File
 import kotlin.math.max
 
@@ -27,12 +29,71 @@ object GhostFrameDecoder {
             sample *= 2
         }
 
-        return BitmapFactory.decodeFile(
+        val bitmap = BitmapFactory.decodeFile(
             file.absolutePath,
             BitmapFactory.Options().apply {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.RGB_565
             }
-        )
+        ) ?: return null
+
+        return applyExifOrientation(file, bitmap)
+    }
+
+    private fun applyExifOrientation(file: File, bitmap: Bitmap): Bitmap {
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL ->
+                matrix.setScale(-1f, 1f)
+
+            ExifInterface.ORIENTATION_ROTATE_180 ->
+                matrix.setRotate(180f)
+
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+                matrix.setRotate(180f)
+                matrix.postScale(-1f, 1f)
+            }
+
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.setRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+
+            ExifInterface.ORIENTATION_ROTATE_90 ->
+                matrix.setRotate(90f)
+
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.setRotate(-90f)
+                matrix.postScale(-1f, 1f)
+            }
+
+            ExifInterface.ORIENTATION_ROTATE_270 ->
+                matrix.setRotate(270f)
+
+            else -> return bitmap
+        }
+
+        return try {
+            val rotated = Bitmap.createBitmap(
+                bitmap,
+                0,
+                0,
+                bitmap.width,
+                bitmap.height,
+                matrix,
+                true
+            )
+            if (rotated !== bitmap && !bitmap.isRecycled) bitmap.recycle()
+            rotated
+        } catch (_: Exception) {
+            bitmap
+        }
     }
 }
