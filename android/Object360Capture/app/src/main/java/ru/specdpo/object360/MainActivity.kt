@@ -103,6 +103,19 @@ class MainActivity : AppCompatActivity() {
         binding.btnArMode.setOnClickListener {
             startActivity(Intent(this, ArCaptureActivity::class.java))
         }
+        binding.btnTurntableMode.setOnClickListener {
+            startActivity(Intent(this, TurntableCaptureActivity::class.java))
+        }
+        binding.btnProcess.setOnClickListener {
+            ObjectProcessingDialog.show(
+                this,
+                session,
+                cameraExecutor
+            ) {
+                updateUi()
+                refreshGhostForCurrentRow()
+            }
+        }
         binding.btn36.setOnClickListener { changeSectors(36) }
         binding.btn72.setOnClickListener { changeSectors(72) }
         binding.btnCalibrate.setOnClickListener {
