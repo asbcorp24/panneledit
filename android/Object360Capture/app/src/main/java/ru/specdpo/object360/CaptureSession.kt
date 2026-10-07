@@ -43,9 +43,10 @@ class CaptureSession(
     val shots = mutableMapOf<Pair<Int, Int>, ShotInfo>()
 
     init {
+        val hadMetadata = metadataFile.exists()
         loadMetadataIfPresent()
         loadExistingShots()
-        saveMetadata()
+        if (!hadMetadata) saveMetadata()
     }
 
     fun fileFor(row: Int, sector: Int): File {
@@ -111,7 +112,6 @@ class CaptureSession(
     }
 
     fun saveMetadata() {
-        updatedAt = System.currentTimeMillis()
         val json = JSONObject()
             .put("format", "object360-project")
             .put("version", 1)
