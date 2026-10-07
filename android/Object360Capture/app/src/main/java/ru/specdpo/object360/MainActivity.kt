@@ -97,6 +97,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUi() {
+        binding.btnHelp.setOnClickListener {
+            startActivity(
+                Intent(this, HelpActivity::class.java)
+                    .putExtra(HelpActivity.EXTRA_SECTION, HelpActivity.SECTION_STANDARD)
+            )
+        }
         binding.btnCaptureOrientation.setOnClickListener {
             showOrientationDialog()
         }
