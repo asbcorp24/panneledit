@@ -90,7 +90,7 @@ object ObjectProcessingDialog {
         val input = EditText(activity).apply {
             setText("#FFFFFF")
             filters = arrayOf(InputFilter.LengthFilter(9))
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(
             input,
