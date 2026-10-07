@@ -37,6 +37,13 @@ class ProjectListActivity : AppCompatActivity() {
 
         executor = Executors.newSingleThreadExecutor()
 
+        binding.btnHelp.setOnClickListener {
+            startActivity(
+                Intent(this, HelpActivity::class.java)
+                    .putExtra(HelpActivity.EXTRA_SECTION, HelpActivity.SECTION_PROJECTS)
+            )
+        }
+
         binding.btnNewProject.setOnClickListener {
             showNewProjectDialog()
         }
