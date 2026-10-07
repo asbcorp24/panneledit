@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Surface
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private var stableSince = 0L
     private var lastAutoSector = -1
     private var captureBusy = false
+    private var interfaceHidden = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -90,6 +92,10 @@ class MainActivity : AppCompatActivity() {
         binding.btnCaptureOrientation.setOnClickListener {
             showOrientationDialog()
         }
+        binding.btnHideUi.setOnClickListener { setInterfaceHidden(true) }
+        binding.btnShowUi.setOnClickListener { setInterfaceHidden(false) }
+        binding.btnCleanShutter.setOnClickListener { takeShot(false) }
+
         binding.btnArMode.setOnClickListener {
             startActivity(Intent(this, ArCaptureActivity::class.java))
         }
@@ -287,6 +293,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnCaptureOrientation.text = "ОРИЕНТАЦИЯ: ${orientationMode.buttonLabel}"
         binding.coverageOverlay.landscapeLayout =
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        binding.coverageOverlay.minimalMode = interfaceHidden
         binding.coverageOverlay.sectors = session.sectors
         binding.coverageOverlay.rows = session.rows
         binding.coverageOverlay.currentSector = currentSector
@@ -300,6 +307,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showReview() {
+        Object360ReviewDialog.show(this, session) {
+            showCoverageReview()
+        }
+    }
+
+    private fun showCoverageReview() {
         val scroll = ScrollView(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -403,6 +416,22 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 runOnUiThread { Toast.makeText(this, "Ошибка ZIP: ${e.message}", Toast.LENGTH_LONG).show() }
             }
+        }
+    }
+
+    private fun setInterfaceHidden(hidden: Boolean) {
+        interfaceHidden = hidden
+        binding.topPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.rowPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.bottomPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.cleanCaptureControls.visibility = if (hidden) View.VISIBLE else View.GONE
+        binding.coverageOverlay.minimalMode = hidden
+
+        if (hidden) {
+            binding.previewView.contentDescription =
+                "Чистый режим съёмки. Нажмите UI, чтобы вернуть панели."
+        } else {
+            binding.previewView.contentDescription = null
         }
     }
 
