@@ -108,6 +108,16 @@
                     android:text="ОРИЕНТАЦИЯ: АВТО"
                     android:textColor="#FFFFFF"
                     android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnHideUi"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="СКРЫТЬ UI"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp" />
             </LinearLayout>
         </HorizontalScrollView>
     </LinearLayout>
@@ -202,7 +212,7 @@
                 android:layout_width="96dp"
                 android:layout_height="52dp"
                 android:background="@drawable/bg_button"
-                android:text="ОБЗОР"
+                android:text="3D ПРОСМОТР"
                 android:textColor="#FFFFFF" />
 
             <Button
@@ -223,5 +233,33 @@
                 android:textColor="#FFFFFF" />
         </LinearLayout>
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/cleanCaptureControls"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnShowUi"
+            android:layout_width="58dp"
+            android:layout_height="48dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="12dp"
+            android:background="@drawable/bg_button"
+            android:text="UI"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnCleanShutter"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="18dp"
+            android:background="@drawable/bg_shutter"
+            android:contentDescription="Снять без интерфейса"
+            android:text="" />
+    </FrameLayout>
 
 </FrameLayout>
