@@ -77,7 +77,7 @@ object ObjectBatchProcessor {
             )
 
             try {
-                val oriented = GhostFrameDecoder.decode(shot.file, 3000, 3000)
+                val oriented = GhostFrameDecoder.decodeMaxDimension(shot.file, 3000)
                     ?: throw IllegalStateException("Не удалось открыть ${shot.file.name}")
 
                 val crop = pixelCrop(commonCrop, oriented.width, oriented.height)
