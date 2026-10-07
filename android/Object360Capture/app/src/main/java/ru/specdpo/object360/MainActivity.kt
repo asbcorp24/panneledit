@@ -277,11 +277,11 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         captureBusy = false
                         updateUi()
-                        binding.hintText.text = if (fromAuto) {
-                            "AUTO: снят сектор ${sector + 1}"
-                        } else {
-                            "Снят сектор ${sector + 1} из ${session.sectors}"
-                        }
+                        updateCaptureHintAfterShot(
+                            row = row,
+                            sector = sector,
+                            fromAuto = fromAuto
+                        )
                     }
                 }
 
@@ -293,6 +293,49 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         )
+    }
+
+    private fun updateCaptureHintAfterShot(
+        row: Int,
+        sector: Int,
+        fromAuto: Boolean
+    ) {
+        val completedTotal = session.completedTotal()
+        val requiredTotal = session.requiredTotal()
+        val completedInRow = session.completedInRow(row)
+
+        if (completedTotal >= requiredTotal) {
+            binding.hintText.text =
+                "✓ Серия готова: $completedTotal / $requiredTotal. Проверьте 3D-просмотр."
+            return
+        }
+
+        if (completedInRow >= session.sectors) {
+            val nextRow = (0 until session.rows).firstOrNull { candidate ->
+                session.completedInRow(candidate) < session.sectors
+            }
+
+            binding.hintText.text =
+                if (nextRow != null) {
+                    "✓ Ряд ${row + 1} готов: $completedInRow / ${session.sectors}. Перейдите к ряду ${nextRow + 1}."
+                } else {
+                    "Снято: $completedTotal / $requiredTotal"
+                }
+            return
+        }
+
+        val nextMissing = (0 until session.sectors).firstOrNull { candidate ->
+            !session.isShot(row, candidate)
+        }
+
+        binding.hintText.text = buildString {
+            if (fromAuto) append("AUTO • ")
+            append("Снято: $completedTotal / $requiredTotal")
+            append(" • ряд ${row + 1}: $completedInRow / ${session.sectors}")
+            if (nextMissing != null) {
+                append(" • не снят сектор ${nextMissing + 1}")
+            }
+        }
     }
 
     private fun changeSectors(count: Int) {
