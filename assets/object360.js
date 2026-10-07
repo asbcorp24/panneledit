@@ -20,6 +20,13 @@
         autoplayMs: Math.max(30, Number(options.autoplayMs) || 100),
         minZoom: Math.max(0.25, Number(options.minZoom) || 0.7),
         maxZoom: Math.max(1, Number(options.maxZoom) || 4),
+        backgroundMode: ['hitech','black','light','transparent','color','image'].includes(String(options.backgroundMode))
+          ? String(options.backgroundMode)
+          : 'hitech',
+        backgroundColor: /^#[0-9a-f]{6}$/i.test(String(options.backgroundColor || ''))
+          ? String(options.backgroundColor)
+          : '#ffffff',
+        backgroundImage: String(options.backgroundImage || ''),
         onFrameChange: typeof options.onFrameChange === 'function' ? options.onFrameChange : null
       };
 
@@ -48,6 +55,7 @@
       this.root = document.createElement('div');
       this.root.className = 'object360-viewer';
       this.root.tabIndex = 0;
+      this.applyBackground();
 
       this.imageWrap = document.createElement('div');
       this.imageWrap.className = 'object360-image-wrap';
@@ -96,6 +104,27 @@
         this.loading.hidden = false;
         this.loading.textContent = 'Кадр отсутствует';
       });
+    }
+
+    applyBackground() {
+      const mode = this.options.backgroundMode;
+      this.root.style.backgroundImage = '';
+      this.root.style.backgroundColor = '';
+      this.root.style.backgroundSize = '';
+      this.root.style.backgroundPosition = '';
+
+      if (mode === 'black') {
+        this.root.style.background = '#000000';
+      } else if (mode === 'light') {
+        this.root.style.background = '#f4f6fa';
+      } else if (mode === 'transparent') {
+        this.root.style.background = 'transparent';
+      } else if (mode === 'color') {
+        this.root.style.background = this.options.backgroundColor || '#ffffff';
+      } else if (mode === 'image' && this.options.backgroundImage) {
+        this.root.style.background =
+          'center / cover no-repeat url("' + this.options.backgroundImage.replace(/"/g, '%22') + '")';
+      }
     }
 
     bind() {
