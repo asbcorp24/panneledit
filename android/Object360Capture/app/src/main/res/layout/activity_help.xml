@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#070B14"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="14dp">
+
+        <Button
+            android:id="@+id/btnHelpBack"
+            android:layout_width="52dp"
+            android:layout_height="46dp"
+            android:background="@drawable/bg_button"
+            android:text="←"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Как пользоваться Object360"
+                android:textColor="#FFFFFF"
+                android:textSize="21sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Краткая инструкция по всем режимам"
+                android:textColor="#8E9AB5"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/helpScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="30dp">
+
+            <LinearLayout
+                android:id="@+id/helpQuick"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="БЫСТРЫЙ СТАРТ"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="1. На экране «Проекты» нажмите «+ НОВЫЙ ОБЪЕКТ».
+2. Введите название.
+3. Выберите режим: обычный, ARCore или поворотный стол.
+4. Выберите количество кадров: 4 / 8 / 16 / 36 / 72.
+5. Снимите полный оборот объекта.
+6. Откройте «3D просмотр» и проверьте вращение.
+7. При необходимости нажмите «Обработать».
+8. Нажмите «Экспорт» или «Отправить на ПК»."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpProjects"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ЭКРАН ПРОЕКТОВ"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Каждый объект хранится как отдельный проект. На карточке видны обложка, название, режим, количество снятых кадров и процент готовности.
+
+«Продолжить» — вернуться к съёмке.
+«3D просмотр» — прокрутить готовые кадры.
+«Обработать» — автообрезка или удаление фона.
+«Экспорт» — сохранить .object360.zip.
+«Отправить на ПК» — открыть системное меню Android для передачи ZIP."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpStandard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ОБЫЧНАЯ СЪЁМКА"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Подходит почти для любого телефона.
+
+1. Поставьте объект на свободное место и держите его в центре.
+2. Выберите 4 / 8 / 16 / 36 / 72 кадров.
+3. Нажмите «СТАРТ / 0°» — это нулевая точка оборота.
+4. Обходите объект по кругу. Индикатор показывает нужный сектор.
+5. Снимайте вручную кнопкой затвора или включите AUTO.
+6. Для простого Object360 обычно достаточно 16–36 кадров; 72 дают более плавное вращение.
+7. Для высокого или объёмного объекта можно включить 3 ряда."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpAr"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ARCORE — ТОЧНАЯ СЪЁМКА"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Используйте этот режим, если телефон поддерживает ARCore.
+
+1. Наведите центральный прицел на центр объекта.
+2. Нажмите «ЗАДАТЬ ЦЕНТР».
+3. Выберите количество кадров и 1 или 3 ряда.
+4. Идите вокруг объекта, удерживая радиус и высоту по подсказкам.
+5. Стрелки ← → ↑ ↓ показывают, куда вернуть центр объекта.
+6. Когда всё правильно, появится «◎ ЦЕНТР».
+7. В AUTO кадр снимается только когда совпали сектор, радиус, высота, центрирование и телефон достаточно неподвижен."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpTurntable"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ПОВОРОТНЫЙ СТОЛ"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="В этом режиме телефон не двигается — вращается только объект.
+
+1. Установите телефон на штатив и не меняйте его положение.
+2. Поставьте объект в центр поворотного стола.
+3. Выберите количество кадров. Приложение покажет и шаг: 4=90°, 8=45°, 16=22,5°, 24=15°, 36=10°, 72=5°.
+4. Выберите интервал 1 / 2 / 3 / 5 секунд.
+5. Нажмите «СТАРТ».
+6. После каждого кадра поворачивайте объект на указанный шаг. Можно поставить серию на паузу или снимать вручную."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpGhost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="GHOST И СКРЫТИЕ UI"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="GHOST накладывает предыдущий кадр полупрозрачно поверх камеры. Совмещайте размер и положение объекта с ним — так Object360 меньше «прыгает».
+
+«СКРЫТЬ UI» убирает панели и оставляет чистый экран съёмки. Кнопка «UI» возвращает интерфейс. Элементы интерфейса никогда не записываются в само фото."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpProcessing"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ОБРАБОТКА"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="«Автообрезка» находит общую рамку сразу для всей серии. Она одинаковая на всех кадрах, поэтому объект остаётся одного размера.
+
+«Удалить фон → прозрачный PNG» создаёт кадры с прозрачностью. Лучше всего работает, когда фон ровный и заметно отличается от предмета.
+
+«Удалить фон → однотонный цвет» заменяет фон выбранным HEX-цветом. После обработки обязательно проверьте результат в 3D-просмотре."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpReview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3D ПРОСМОТР"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Это быстрый Object360-просмотр снятых фотографий, а не построение настоящей 3D-сетки.
+
+Проведите пальцем влево/вправо — вращение объекта. Вверх/вниз — переход между рядами. Кнопка ▶ запускает автоматическое вращение. Через «КАРТА» можно проверить пропущенные сектора."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpExport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ЭКСПОРТ И ПК"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="«Экспорт» создаёт файл .object360.zip. Его можно импортировать в Pannellum Tour Editor как сцену «Объект 360°».
+
+«Отправить на ПК» создаёт тот же ZIP и открывает системное меню Android. Если на телефоне доступен Quick Share / Nearby Share, выберите компьютер; также можно отправить через облако, мессенджер или почту.
+
+Фотографии дополнительно сохраняются в Pictures/Object360, ZIP — в Downloads/Object360."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
