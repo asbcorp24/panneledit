@@ -75,7 +75,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
-        session = CaptureSession(getExternalFilesDir(null) ?: filesDir)
+        val sessionId = intent.getStringExtra(ProjectListActivity.EXTRA_SESSION_ID)
+        session = CaptureSession(
+            baseDir = getExternalFilesDir(null) ?: filesDir,
+            sessionIdOverride = sessionId
+        )
+        session.setCaptureMode("standard")
 
         orientationTracker = OrientationTracker(this) { yaw, _, stable ->
             runOnUiThread { onOrientation(yaw, stable) }
@@ -101,10 +106,20 @@ class MainActivity : AppCompatActivity() {
         binding.btnGhost.setOnClickListener { toggleGhost() }
 
         binding.btnArMode.setOnClickListener {
-            startActivity(Intent(this, ArCaptureActivity::class.java))
+            session.setCaptureMode("ar")
+            startActivity(
+                Intent(this, ArCaptureActivity::class.java)
+                    .putExtra(ProjectListActivity.EXTRA_SESSION_ID, session.sessionId)
+            )
+            finish()
         }
         binding.btnTurntableMode.setOnClickListener {
-            startActivity(Intent(this, TurntableCaptureActivity::class.java))
+            session.setCaptureMode("turntable")
+            startActivity(
+                Intent(this, TurntableCaptureActivity::class.java)
+                    .putExtra(ProjectListActivity.EXTRA_SESSION_ID, session.sessionId)
+            )
+            finish()
         }
         binding.btnProcess.setOnClickListener {
             ObjectProcessingDialog.show(
