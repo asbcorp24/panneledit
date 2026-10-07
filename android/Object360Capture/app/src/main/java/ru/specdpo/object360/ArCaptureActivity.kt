@@ -120,7 +120,13 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding = ActivityArCaptureBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        captureSession = CaptureSession(getExternalFilesDir(null) ?: filesDir)
+        val sessionId = intent.getStringExtra(ProjectListActivity.EXTRA_SESSION_ID)
+        captureSession = CaptureSession(
+            baseDir = getExternalFilesDir(null) ?: filesDir,
+            sessionIdOverride = sessionId,
+            initialCaptureMode = "ar"
+        )
+        captureSession.setCaptureMode("ar")
 
         orientationTracker = OrientationTracker(this) { _, _, stable ->
             motionStable = stable
