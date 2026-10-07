@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -55,6 +56,8 @@ class MainActivity : AppCompatActivity() {
     private var lastAutoSector = -1
     private var captureBusy = false
     private var interfaceHidden = false
+    private var ghostEnabled = true
+    private var ghostBitmap: Bitmap? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -95,6 +98,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnHideUi.setOnClickListener { setInterfaceHidden(true) }
         binding.btnShowUi.setOnClickListener { setInterfaceHidden(false) }
         binding.btnCleanShutter.setOnClickListener { takeShot(false) }
+        binding.btnGhost.setOnClickListener { toggleGhost() }
 
         binding.btnArMode.setOnClickListener {
             startActivity(Intent(this, ArCaptureActivity::class.java))
@@ -119,10 +123,12 @@ class MainActivity : AppCompatActivity() {
         binding.btnRowUp.setOnClickListener {
             if (currentRow < session.rows - 1) currentRow++
             updateUi()
+            refreshGhostForCurrentRow()
         }
         binding.btnRowDown.setOnClickListener {
             if (currentRow > 0) currentRow--
             updateUi()
+            refreshGhostForCurrentRow()
         }
         binding.btnReview.setOnClickListener { showReview() }
         binding.btnExport.setOnClickListener { exportZip() }
@@ -230,6 +236,7 @@ class MainActivity : AppCompatActivity() {
                             sector
                         )
                     }
+                    loadGhostFrame(file)
                     runOnUiThread {
                         captureBusy = false
                         updateUi()
@@ -266,6 +273,7 @@ class MainActivity : AppCompatActivity() {
         session.resetGrid(newSectors = count, newRows = session.rows)
         currentSector = 0
         calibrated = false
+        clearGhost()
         updateUi()
     }
 
@@ -285,6 +293,7 @@ class MainActivity : AppCompatActivity() {
         session.resetGrid(newRows = rows)
         currentRow = if (rows == 1) 0 else 1
         calibrated = false
+        clearGhost()
         updateUi()
     }
 
@@ -304,6 +313,67 @@ class MainActivity : AppCompatActivity() {
         binding.btnRowsMode.text = if (session.rows == 1) "1 РЯД" else "3 РЯДА"
         binding.btnRowUp.isEnabled = session.rows > 1 && currentRow < session.rows - 1
         binding.btnRowDown.isEnabled = session.rows > 1 && currentRow > 0
+        binding.btnGhost.text = if (ghostEnabled) "GHOST: 25%" else "GHOST: ВЫКЛ"
+    }
+
+    private fun toggleGhost() {
+        ghostEnabled = !ghostEnabled
+        binding.btnGhost.text = if (ghostEnabled) "GHOST: 25%" else "GHOST: ВЫКЛ"
+
+        if (!ghostEnabled) {
+            binding.ghostOverlay.visibility = View.GONE
+        } else if (ghostBitmap != null) {
+            binding.ghostOverlay.visibility = View.VISIBLE
+        } else {
+            refreshGhostForCurrentRow()
+        }
+    }
+
+    private fun refreshGhostForCurrentRow() {
+        if (!ghostEnabled) return
+
+        val shot = session.shots.values
+            .filter { it.row == currentRow && it.file.exists() }
+            .maxByOrNull { it.file.lastModified() }
+
+        if (shot == null) {
+            clearGhost()
+        } else {
+            loadGhostFrame(shot.file)
+        }
+    }
+
+    private fun loadGhostFrame(file: File) {
+        val targetWidth = resources.displayMetrics.widthPixels
+        val targetHeight = resources.displayMetrics.heightPixels
+
+        cameraExecutor.execute {
+            val bitmap = GhostFrameDecoder.decode(file, targetWidth, targetHeight)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    bitmap?.recycle()
+                    return@runOnUiThread
+                }
+
+                val old = ghostBitmap
+                ghostBitmap = bitmap
+                binding.ghostOverlay.setImageBitmap(bitmap)
+                binding.ghostOverlay.visibility =
+                    if (ghostEnabled && bitmap != null) View.VISIBLE else View.GONE
+
+                if (old != null && old !== bitmap && !old.isRecycled) {
+                    old.recycle()
+                }
+            }
+        }
+    }
+
+    private fun clearGhost() {
+        val old = ghostBitmap
+        ghostBitmap = null
+        binding.ghostOverlay.setImageDrawable(null)
+        binding.ghostOverlay.visibility = View.GONE
+        if (old != null && !old.isRecycled) old.recycle()
     }
 
     private fun showReview() {
@@ -522,6 +592,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        clearGhost()
         cameraExecutor.shutdown()
         super.onDestroy()
     }
