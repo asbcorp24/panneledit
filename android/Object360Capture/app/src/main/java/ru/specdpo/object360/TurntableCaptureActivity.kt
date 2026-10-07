@@ -74,11 +74,19 @@ class TurntableCaptureActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
+        val sessionId = intent.getStringExtra(ProjectListActivity.EXTRA_SESSION_ID)
         session = CaptureSession(
-            getExternalFilesDir(null) ?: filesDir,
+            baseDir = getExternalFilesDir(null) ?: filesDir,
             sectors = sectorsForAngle(angleSteps[angleIndex]),
-            rows = 1
+            rows = 1,
+            sessionIdOverride = sessionId,
+            initialCaptureMode = "turntable"
         )
+        session.setCaptureMode("turntable")
+
+        angleIndex = angleSteps.indices.minByOrNull { index ->
+            kotlin.math.abs(sectorsForAngle(angleSteps[index]) - session.sectors)
+        } ?: angleIndex
 
         setupUi()
         CaptureOrientationSettings.apply(this)
