@@ -28,6 +28,9 @@ class CoverageOverlay @JvmOverloads constructor(
     var landscapeLayout: Boolean = false
         set(value) { field = value; invalidate() }
 
+    var minimalMode: Boolean = false
+        set(value) { field = value; invalidate() }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.BUTT
@@ -45,27 +48,30 @@ class CoverageOverlay @JvmOverloads constructor(
         val h = height.toFloat()
         val cx = w / 2f
         val cy = h / 2f
-        val baseRadius = min(w, h) * if (landscapeLayout) 0.27f else 0.30f
-        val ringGap = (if (landscapeLayout) 10f else 13f) * resources.displayMetrics.density
-        val stroke = (if (landscapeLayout) 8f else 9f) * resources.displayMetrics.density
-        val gapDeg = if (sectors >= 72) 0.8f else 1.5f
-        val sweep = 360f / sectors
-        paint.strokeWidth = stroke
+        if (!minimalMode) {
+            val baseRadius = min(w, h) * if (landscapeLayout) 0.27f else 0.30f
+            val ringGap = (if (landscapeLayout) 10f else 13f) * resources.displayMetrics.density
+            val stroke = (if (landscapeLayout) 8f else 9f) * resources.displayMetrics.density
+            val gapDeg = if (sectors >= 72) 0.8f else 1.5f
+            val sweep = 360f / sectors
+            paint.strokeWidth = stroke
 
-        for (row in 0 until rows) {
-            val radius = baseRadius + (row - (rows - 1) / 2f) * ringGap
-            val rect = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
-            for (sector in 0 until sectors) {
-                paint.color = when {
-                    sector == currentSector && row == currentRow -> Color.rgb(255, 213, 79)
-                    captured.contains(row to sector) -> Color.rgb(0, 229, 168)
-                    else -> Color.argb(145, 105, 114, 125)
+            for (row in 0 until rows) {
+                val radius = baseRadius + (row - (rows - 1) / 2f) * ringGap
+                val rect = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+                for (sector in 0 until sectors) {
+                    paint.color = when {
+                        sector == currentSector && row == currentRow -> Color.rgb(255, 213, 79)
+                        captured.contains(row to sector) -> Color.rgb(0, 229, 168)
+                        else -> Color.argb(145, 105, 114, 125)
+                    }
+                    canvas.drawArc(rect, -90f + sector * sweep + gapDeg / 2f, sweep - gapDeg, false, paint)
                 }
-                canvas.drawArc(rect, -90f + sector * sweep + gapDeg / 2f, sweep - gapDeg, false, paint)
             }
         }
 
-        val r = (if (landscapeLayout) 20f else 24f) * resources.displayMetrics.density
+        reticlePaint.alpha = if (minimalMode) 170 else 220
+        val r = (if (minimalMode) 16f else if (landscapeLayout) 20f else 24f) * resources.displayMetrics.density
         canvas.drawCircle(cx, cy, r, reticlePaint)
         canvas.drawLine(cx - r * 1.5f, cy, cx - r * 0.45f, cy, reticlePaint)
         canvas.drawLine(cx + r * 0.45f, cy, cx + r * 1.5f, cy, reticlePaint)
