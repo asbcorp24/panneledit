@@ -231,6 +231,16 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
 
         binding.btnArReview.setOnClickListener { showReview() }
+        binding.btnArProcess.setOnClickListener {
+            ObjectProcessingDialog.show(
+                this,
+                captureSession,
+                ioExecutor
+            ) {
+                updateStaticUi()
+                refreshGhostForCurrentRow()
+            }
+        }
         binding.btnArExport.setOnClickListener { exportZip() }
     }
 
