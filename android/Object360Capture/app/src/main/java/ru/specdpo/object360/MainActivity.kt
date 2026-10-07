@@ -394,6 +394,11 @@ class MainActivity : AppCompatActivity() {
         binding.btnRowUp.isEnabled = session.rows > 1 && currentRow < session.rows - 1
         binding.btnRowDown.isEnabled = session.rows > 1 && currentRow > 0
         binding.btnGhost.text = if (ghostEnabled) "GHOST: 25%" else "GHOST: ВЫКЛ"
+
+        if (session.completedTotal() >= session.requiredTotal()) {
+            binding.hintText.text =
+                "✓ Серия готова: ${session.completedTotal()} / ${session.requiredTotal()}. Проверьте 3D-просмотр."
+        }
     }
 
     private fun toggleGhost() {
