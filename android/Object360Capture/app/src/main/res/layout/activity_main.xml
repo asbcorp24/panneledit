@@ -12,6 +12,16 @@
         app:implementationMode="performance"
         app:scaleType="fillCenter" />
 
+    <ImageView
+        android:id="@+id/ghostOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.25"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:visibility="gone" />
+
     <ru.specdpo.object360.CoverageOverlay
         android:id="@+id/coverageOverlay"
         android:layout_width="match_parent"
@@ -106,6 +116,16 @@
                     android:layout_marginStart="8dp"
                     android:background="@drawable/bg_button"
                     android:text="ОРИЕНТАЦИЯ: АВТО"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnGhost"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_button"
+                    android:text="GHOST: 25%"
                     android:textColor="#FFFFFF"
                     android:textSize="11sp" />
 
