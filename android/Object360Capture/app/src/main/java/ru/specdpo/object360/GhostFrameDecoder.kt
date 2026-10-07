@@ -40,6 +40,35 @@ object GhostFrameDecoder {
         return applyExifOrientation(file, bitmap)
     }
 
+    fun decodeMaxDimension(file: File, maxDimension: Int): Bitmap? {
+        if (!file.exists()) return null
+
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val safeMax = max(1, maxDimension)
+        var sample = 1
+        while (
+            max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= safeMax
+        ) {
+            sample *= 2
+        }
+
+        val bitmap = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        ) ?: return null
+
+        return applyExifOrientation(file, bitmap)
+    }
+
     private fun applyExifOrientation(file: File, bitmap: Bitmap): Bitmap {
         val orientation = runCatching {
             ExifInterface(file.absolutePath).getAttributeInt(
