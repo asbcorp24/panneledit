@@ -12,6 +12,7 @@ import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
 import android.view.Surface
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,6 +93,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var stableSince = 0L
     private var lastAutoKey = ""
     private var lastUiUpdateMs = 0L
+    private var interfaceHidden = false
 
     private val objectDepthOptionsM = floatArrayOf(0.20f, 0.50f, 1.00f, 2.00f, 0.00f)
     private var objectDepthIndex = 0
@@ -151,6 +153,11 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.btnArBack.setOnClickListener { finish() }
         binding.btnArOrientation.setOnClickListener {
             showOrientationDialog()
+        }
+        binding.btnArHideUi.setOnClickListener { setInterfaceHidden(true) }
+        binding.btnArShowUi.setOnClickListener { setInterfaceHidden(false) }
+        binding.btnArCleanShutter.setOnClickListener {
+            manualCaptureRequested = true
         }
 
         binding.btnAr36.setOnClickListener { changeGrid(36, captureSession.rows) }
@@ -785,6 +792,7 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.btnArOrientation.text = "ОРИЕНТАЦИЯ: ${orientationMode.buttonLabel}"
         binding.arCoverageOverlay.landscapeLayout =
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        binding.arCoverageOverlay.minimalMode = interfaceHidden
         binding.btnArRows.text = if (captureSession.rows == 1) "1 РЯД" else "3 РЯДА"
         binding.btnArAuto.text = if (autoMode) "AUTO: ВКЛ" else "AUTO: ВЫКЛ"
 
@@ -817,6 +825,16 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.arCoverageSphere.currentRow = currentRow
         binding.arCoverageSphere.currentSector = currentSector
         binding.arCoverageSphere.captured = capturedKeys
+    }
+
+    private fun setInterfaceHidden(hidden: Boolean) {
+        interfaceHidden = hidden
+        binding.arTopPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.arMapPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.arRowPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.arBottomPanel.visibility = if (hidden) View.GONE else View.VISIBLE
+        binding.arCleanCaptureControls.visibility = if (hidden) View.VISIBLE else View.GONE
+        binding.arCoverageOverlay.minimalMode = hidden
     }
 
     private fun showOrientationDialog() {
@@ -901,6 +919,12 @@ class ArCaptureActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         (value * resources.displayMetrics.density).toInt()
 
     private fun showReview() {
+        Object360ReviewDialog.show(this, captureSession) {
+            showCoverageReview()
+        }
+    }
+
+    private fun showCoverageReview() {
         val text = buildString {
             append("Режим: ARCore\n")
             append("Секторов: ${captureSession.sectors}\n")
