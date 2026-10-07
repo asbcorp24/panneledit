@@ -10,8 +10,8 @@ android {
         applicationId = "ru.specdpo.object360"
         minSdk = 24
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.7.1"
+        versionCode = 9
+        versionName = "0.7.2"
     }
 
     buildFeatures {
