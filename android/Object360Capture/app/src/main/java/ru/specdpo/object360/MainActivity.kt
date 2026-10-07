@@ -131,6 +131,9 @@ class MainActivity : AppCompatActivity() {
                 refreshGhostForCurrentRow()
             }
         }
+        binding.btn4.setOnClickListener { changeSectors(4) }
+        binding.btn8.setOnClickListener { changeSectors(8) }
+        binding.btn16.setOnClickListener { changeSectors(16) }
         binding.btn36.setOnClickListener { changeSectors(36) }
         binding.btn72.setOnClickListener { changeSectors(72) }
         binding.btnCalibrate.setOnClickListener {
