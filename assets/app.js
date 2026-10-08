@@ -4079,13 +4079,30 @@
       const pos = screenHotspotPosition(hotspot, meta, state, projector);
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      const token = String(hotspot.id || 'hotspot').replace(/[^a-zA-Z0-9_-]/g,'');
+      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info') +
+        ' hotspot-style-' + token + ' tour-hotspot-' + token;
       btn.dataset.screenHotspotId = hotspot.id || '';
       btn.style.left = pos.x + '%';
       btn.style.top = pos.y + '%';
       btn.style.zIndex = String(Number(hotspot.zIndex) || 30);
-      btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
-      btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+
+      const customImage = hotspot.type === 'scene' &&
+        ['custom','preview'].includes(hotspot.iconPreset) && hotspot.iconData;
+      if (customImage) {
+        btn.classList.add('has-custom-image');
+        if (hotspot.iconPreset === 'preview') btn.classList.add('is-preview-image');
+        const img = document.createElement('img');
+        img.src = hotspot.iconData;
+        img.alt = hotspot.text || 'Переход';
+        btn.appendChild(img);
+        const label = document.createElement('span');
+        label.textContent = hotspot.text || 'Переход';
+        btn.appendChild(label);
+      } else {
+        btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
+        btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+      }
       btn.addEventListener('click', () => runHotspotAction(hotspot));
       overlay.appendChild(btn);
     });
@@ -4100,13 +4117,30 @@
       const pos = screenHotspotPosition(hotspot, meta, state, projector);
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info');
+      const token = String(hotspot.id || 'hotspot').replace(/[^a-zA-Z0-9_-]/g,'');
+      btn.className = 'screen-hotspot hotspot-' + (hotspot.type || 'info') +
+        ' hotspot-style-' + token + ' tour-hotspot-' + token;
       btn.dataset.screenHotspotId = hotspot.id || '';
       btn.style.left = pos.x + '%';
       btn.style.top = pos.y + '%';
       btn.style.zIndex = String(Number(hotspot.zIndex) || 30);
-      btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
-      btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+
+      const customImage = hotspot.type === 'scene' &&
+        ['custom','preview'].includes(hotspot.iconPreset) && hotspot.iconData;
+      if (customImage) {
+        btn.classList.add('has-custom-image');
+        if (hotspot.iconPreset === 'preview') btn.classList.add('is-preview-image');
+        const img = document.createElement('img');
+        img.src = hotspot.iconData;
+        img.alt = hotspot.text || 'Переход';
+        btn.appendChild(img);
+        const label = document.createElement('span');
+        label.textContent = hotspot.text || 'Переход';
+        btn.appendChild(label);
+      } else {
+        btn.innerHTML = (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') + '<span></span>';
+        btn.querySelector('span').textContent = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : 'Подробнее');
+      }
       btn.addEventListener('click', () => runHotspotAction(hotspot));
       overlay.appendChild(btn);
     });
