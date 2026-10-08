@@ -5507,19 +5507,33 @@
       return;
     }
 
-    if (!window.pannellum) return;
-    previewViewer = pannellum.viewer('previewPanorama', buildPannellumConfig({
-      useEmbeddedImages: true,
-      firstSceneId: scene.id,
-      universalSceneHandler: renderPreviewScene
-    }));
-    previewViewer.on('scenechange', (nextSceneId) => {
-      const nextScene = getScene(nextSceneId);
-      if (!nextScene) return;
-      previewSceneId = nextScene.id;
-      renderCompositeOverlay(nextScene, els.previewSceneOverlay, null, { editor: false });
-      configurePreviewAudio(nextScene);
+    if (!window.XRMediaViewer) return;
+    previewViewer = new XRMediaViewer(els.previewPanorama, {
+      source: scene.imageData,
+      kind: 'image',
+      projection: '360',
+      yaw: -(Number(scene.yaw) || 0),
+      pitch: Number(scene.pitch) || 0,
+      fov: Number(scene.hfov) || 100,
+      autoRotate: project.settings.autoRotateEnabled ? -(Number(project.settings.autoRotate) || -2) : 0,
+      threeModuleUrl: 'assets/three.module.min.js',
+      onChange: (xrState) => {
+        renderDynamicScreenHotspots(
+          scene,
+          els.previewSceneOverlay,
+          panoramaStateFromXr(xrState),
+          { editor:false }
+        );
+      }
     });
+    previewViewer.ready.then(() => {
+      renderDynamicScreenHotspots(
+        scene,
+        els.previewSceneOverlay,
+        panoramaStateFromXr(previewViewer.getState()),
+        { editor:false }
+      );
+    }).catch(console.error);
   }
 
   function renderSceneGraph() {
