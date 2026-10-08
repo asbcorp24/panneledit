@@ -5678,6 +5678,14 @@
       }
     });
 
+    els.newXrMediaFile.addEventListener('change', () => {
+      const file = els.newXrMediaFile.files?.[0];
+      els.newXrMediaFileName.textContent = file ? file.name : 'MP4 / WEBM / JPG / PNG / WEBP';
+      if (file && !els.newSceneTitle.value.trim()) {
+        els.newSceneTitle.value = file.name.replace(/\.[^.]+$/, '');
+      }
+    });
+
     els.sceneForm.addEventListener('submit', async (event) => {
       if (event.submitter?.value === 'cancel') return;
       event.preventDefault();
@@ -5686,14 +5694,18 @@
       const title = els.newSceneTitle.value.trim();
       const file = sceneType === 'object360'
         ? els.newObject360Zip.files?.[0]
-        : (sceneType === 'stl' ? els.newStlFile.files?.[0] : els.newSceneImage.files?.[0]);
+        : (sceneType === 'stl'
+          ? els.newStlFile.files?.[0]
+          : (sceneType === 'xr' ? els.newXrMediaFile.files?.[0] : els.newSceneImage.files?.[0]));
 
       if (!file || !title) {
         const message = sceneType === 'object360'
           ? 'Укажите название и выберите Object360 ZIP'
           : (sceneType === 'stl'
             ? 'Укажите название и выберите STL-файл'
-            : 'Укажите название и выберите панораму');
+            : (sceneType === 'xr'
+              ? 'Укажите название и выберите XR медиафайл'
+              : 'Укажите название и выберите панораму'));
         showToast(message);
         return;
       }
@@ -5703,6 +5715,7 @@
       try {
         if (sceneType === 'object360') await createObject360SceneFromZip(file, title);
         else if (sceneType === 'stl') await createStlSceneFromFile(file, title);
+        else if (sceneType === 'xr') await createXrSceneFromFile(file, title, els.newXrProjection.value);
         else await createSceneFromFile(file, title);
         els.sceneDialog.close();
       } catch (error) {
