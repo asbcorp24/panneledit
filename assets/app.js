@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const DB_NAME = 'pannellum-tour-editor';
+  const DB_NAME = 'xr-tour-editor';
+  const LEGACY_DB_NAME = 'pannellum-tour-editor';
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
@@ -628,20 +629,61 @@
     }
   }
 
+  async function readStoredProject(db) {
+    if (!db || !db.objectStoreNames.contains(STORE_NAME)) return null;
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const request = tx.objectStore(STORE_NAME).get(CURRENT_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function openLegacyDB() {
+    if (!('indexedDB' in window) || LEGACY_DB_NAME === DB_NAME) return null;
+    if (typeof indexedDB.databases === 'function') {
+      try {
+        const databases = await indexedDB.databases();
+        if (!databases.some((entry) => entry?.name === LEGACY_DB_NAME)) return null;
+      } catch (_) {}
+    }
+    return await new Promise((resolve, reject) => {
+      const request = indexedDB.open(LEGACY_DB_NAME, DB_VERSION);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => resolve(null);
+    });
+  }
+
   async function loadPersistedProject() {
     try {
       const db = await openDB();
       if (!db) {
-        const raw = localStorage.getItem(DB_NAME);
-        return raw ? JSON.parse(raw) : null;
+        const raw = localStorage.getItem(DB_NAME) || localStorage.getItem(LEGACY_DB_NAME);
+        if (!raw) return null;
+        if (!localStorage.getItem(DB_NAME)) localStorage.setItem(DB_NAME, raw);
+        return JSON.parse(raw);
       }
 
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const request = tx.objectStore(STORE_NAME).get(CURRENT_KEY);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
+      const saved = await readStoredProject(db);
+      if (saved) return saved;
+
+      const legacyDb = await openLegacyDB();
+      if (!legacyDb) return null;
+      try {
+        const legacySaved = await readStoredProject(legacyDb);
+        if (!legacySaved) return null;
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put(legacySaved, CURRENT_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('IndexedDB migration aborted'));
+        });
+        return legacySaved;
+      } finally {
+        legacyDb.close();
+      }
     } catch (error) {
       console.warn('Не удалось загрузить сохранённый проект', error);
       return null;
