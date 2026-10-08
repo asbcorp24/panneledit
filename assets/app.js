@@ -1943,6 +1943,10 @@
       try { stlViewer.destroy(); } catch (error) { console.warn(error); }
       stlViewer = null;
     }
+    if (xrViewer) {
+      try { xrViewer.destroy(); } catch (error) { console.warn(error); }
+      xrViewer = null;
+    }
   }
 
   function renderViewer() {
@@ -2026,6 +2030,47 @@
       } catch (error) {
         console.error(error);
         showToast('Ошибка запуска STL Viewer');
+      }
+      return;
+    }
+
+    if (scene.sceneType === 'xr') {
+      if (!window.XRMediaViewer) {
+        showToast('XRMediaViewer не загрузился');
+        return;
+      }
+      const data = normalizeXrData(scene.xr || {});
+      scene.xr = data;
+      try {
+        xrViewer = new XRMediaViewer(els.panorama, {
+          source: data.data,
+          kind: data.kind,
+          projection: data.projection,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          fov: data.fov,
+          autoplay: data.autoplay,
+          loop: data.loop,
+          muted: false,
+          volume: data.volume,
+          onChange: (state) => {
+            els.coords.textContent =
+              'XR ' + data.projection + ' · yaw ' + formatNum(state.yaw) +
+              '° · pitch ' + formatNum(state.pitch) + '° · FOV ' + Math.round(state.fov) + '°';
+            renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true });
+          }
+        });
+        xrViewer.ready.catch((error) => {
+          console.error(error);
+          showToast('Не удалось открыть XR Media: ' + (error?.message || 'ошибка'));
+        });
+        els.coords.textContent =
+          'XR ' + data.projection + ' · yaw ' + formatNum(data.yaw) +
+          '° · pitch ' + formatNum(data.pitch) + '° · FOV ' + Math.round(data.fov) + '°';
+        renderDynamicScreenHotspots(scene, els.sceneOverlay, xrViewer.getState(), { editor:true });
+      } catch (error) {
+        console.error(error);
+        showToast('Ошибка запуска XR Media Viewer');
       }
       return;
     }
@@ -5162,6 +5207,10 @@
       try { previewStlViewer.destroy(); } catch (_) {}
       previewStlViewer = null;
     }
+    if (previewXrViewer) {
+      try { previewXrViewer.destroy(); } catch (_) {}
+      previewXrViewer = null;
+    }
     els.previewPanorama.innerHTML = '';
     previewSceneId = null;
   }
@@ -5212,6 +5261,27 @@
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
       previewStlViewer.ready.catch(console.error);
+      return;
+    }
+
+    if (scene.sceneType === 'xr') {
+      if (!window.XRMediaViewer) return;
+      const data = normalizeXrData(scene.xr || {});
+      previewXrViewer = new XRMediaViewer(els.previewPanorama, {
+        source: data.data,
+        kind: data.kind,
+        projection: data.projection,
+        yaw: data.yaw,
+        pitch: data.pitch,
+        fov: data.fov,
+        autoplay: data.autoplay,
+        loop: data.loop,
+        muted: false,
+        volume: data.volume,
+        onChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
+      });
+      previewXrViewer.ready.catch(console.error);
+      renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewXrViewer.getState(), { editor:false });
       return;
     }
 
