@@ -1,6 +1,6 @@
 # XR Tour Editor
 
-Визуальный редактор виртуальных 360°-туров на базе [Pannellum](https://pannellum.org/).
+Визуальный редактор виртуальных 360°/3D/XR-туров на базе Three.js и WebXR.
 
 ## Что умеет
 
@@ -465,7 +465,7 @@ Pannellum распространяется отдельно на условия�
 
 ## XR Media / Cardboard
 
-Редактор поддерживает отдельный тип сцены **XR 180/360** на Three.js — на Three.js.
+Редактор поддерживает отдельный тип сцены **XR 180/360** на Three.js/WebXR.
 
 - Источник: MP4, WEBM, JPG, PNG или WEBP.
 - Проекции: 360 mono, 180 mono, 360/180 stereo LR и 360/180 stereo Top-Bottom.
@@ -486,5 +486,6 @@ Pannellum больше не используется как движок про�
 - STL — настоящая Three.js 3D-модель с wireframe/solid, Cardboard и WebXR.
 - Object360 — последовательность кадров на виртуальном Three.js-экране, Cardboard и WebXR.
 - Стерео-фото — LR/SBS или Top-Bottom через Three.js.
+- Текстовые объекты, медиа-объекты, кнопки и hotspot’ы передаются в immersive WebXR через DOM Overlay, когда браузер/шлем поддерживает эту возможность.
 
 Экспортируемый ZIP содержит локальные Three.js-файлы и XR-viewer'ы. Pannellum в новый ZIP не включается.
