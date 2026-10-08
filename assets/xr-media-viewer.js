@@ -40,6 +40,7 @@
         motionControls: options.motionControls !== false,
         autoRotate: Number(options.autoRotate) || 0,
         threeModuleUrl: options.threeModuleUrl || DEFAULT_THREE_URL,
+        domOverlayRoot: options.domOverlayRoot && options.domOverlayRoot.nodeType === 1 ? options.domOverlayRoot : null,
         onChange: typeof options.onChange === 'function' ? options.onChange : null,
         onReady: typeof options.onReady === 'function' ? options.onReady : null
       };
@@ -470,9 +471,14 @@
       }
 
       try {
-        const session = await navigator.xr.requestSession('immersive-vr', {
+        const sessionInit = {
           optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-        });
+        };
+        if (this.options.domOverlayRoot) {
+          sessionInit.optionalFeatures.push('dom-overlay');
+          sessionInit.domOverlay = { root: this.options.domOverlayRoot };
+        }
+        const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
 
         // Three.js adds eye layers 1 / 2 to the layer mask inherited from
         // the user camera. Remove the ordinary layer 0 while presenting,
@@ -481,16 +487,19 @@
         this.camera.layers.disableAll();
 
         this.xrSession = session;
+        this.options.domOverlayRoot?.classList.add('xr-dom-overlay-active');
         this.xrButton.classList.add('active');
         this.xrButton.textContent = 'ВЫХОД XR';
         await this.renderer.xr.setSession(session);
         session.addEventListener('end', () => {
           this.xrSession = null;
+          this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
           this.camera?.layers.set(0);
           this.xrButton.classList.remove('active');
           this.xrButton.textContent = 'XR';
         }, { once: true });
       } catch (error) {
+        this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
         this.camera?.layers.set(0);
         console.warn('WebXR:', error);
       }
