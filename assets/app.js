@@ -3755,6 +3755,7 @@
       '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
+      '  <script src="assets/xr-media-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
       (pwa ? '  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>\n' : '') +
       '</body>\n</html>\n';
