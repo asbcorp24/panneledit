@@ -4983,9 +4983,11 @@
       const multiresScenes = new Map();
       const objectSceneFiles = new Map();
       const stlSceneFiles = new Map();
+      const xrSceneFiles = new Map();
       const panoramaScenes = project.scenes.filter((scene) => scene.sceneType === 'panorama');
       const objectScenes = project.scenes.filter((scene) => scene.sceneType === 'object360');
       const stlScenes = project.scenes.filter((scene) => scene.sceneType === 'stl');
+      const xrScenes = project.scenes.filter((scene) => scene.sceneType === 'xr');
 
       if (project.settings.multiresEnabled) {
         for (let index = 0; index < panoramaScenes.length; index++) {
@@ -5123,6 +5125,50 @@
         });
       }
 
+      for (let sceneIndex = 0; sceneIndex < xrScenes.length; sceneIndex++) {
+        const scene = xrScenes[sceneIndex];
+        const data = normalizeXrData(scene.xr || {});
+        if (!data.data) throw new Error('XR данные отсутствуют: ' + scene.title);
+
+        let mediaData = data.data;
+        if (data.kind === 'image') {
+          const settings = normalizeExportSettings(project.exportSettings || {});
+          if (settings.optimizeEnabled) {
+            mediaData = await optimizeImageDataUrl(
+              data.data,
+              Math.min(settings.maxImageWidth, 8192),
+              settings.jpegQuality,
+              /^data:image\/(png|webp)/i.test(data.data)
+            );
+          }
+        }
+
+        const ext = extensionForDataUrl(mediaData, data.kind === 'image' ? '.jpg' : '.mp4');
+        const baseName = safeFilename(scene.title || scene.id, 'xr-' + (sceneIndex + 1));
+        let filename = baseName + ext;
+        let suffix = 2;
+        while (usedNames.has(filename.toLowerCase())) {
+          filename = baseName + '-' + suffix++ + ext;
+        }
+        usedNames.add(filename.toLowerCase());
+
+        const sourcePath = 'xr/' + filename;
+        bundleDataUrlFile(root, mediaData, sourcePath);
+
+        xrSceneFiles.set(scene.id, {
+          source: sourcePath,
+          kind: data.kind,
+          projection: data.projection,
+          yaw: data.yaw,
+          pitch: data.pitch,
+          fov: data.fov,
+          autoplay: data.autoplay,
+          loop: data.loop,
+          muted: false,
+          volume: data.volume
+        });
+      }
+
       const audioConfig = {
         projectMusic: bundleAudioSlot(
           root,
@@ -5157,6 +5203,7 @@
         multiresScenes,
         objectSceneFiles,
         stlSceneFiles,
+        xrSceneFiles,
         audioConfig,
         mediaConfig
       );
@@ -5169,6 +5216,10 @@
       root.file('assets/object360.js', await objectViewerAsset.text());
       const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
       root.file('assets/stl-viewer.js', await stlViewerAsset.text());
+      const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
+      root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
+      const threeAsset = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.min.js');
+      root.file('vendor/three/three.module.min.js', await threeAsset.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       if (config.exportSettings?.pwaEnabled) {
         root.file('manifest.webmanifest', exportedManifest());
@@ -5191,6 +5242,8 @@
         '- images/ — исходные панорамы при обычном экспорте\n' +
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
+        '- xr/ — XR 180/360 видео и изображения\n' +
+        '- vendor/three/ — локальная Three.js для XR / Cardboard\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- audio/ — музыка тура, музыка сцен и озвучка\n' +
         '- media/ — фото, видео, PDF и галереи\n' +
