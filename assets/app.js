@@ -4992,7 +4992,7 @@
   function exportedServiceWorker(config) {
     const assets = new Set([
       './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','assets/xr-media-viewer.js',
-      'vendor/three/three.module.min.js',
+      'vendor/three/three.module.min.js','vendor/three/three.core.min.js',
       'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
     ]);
 
@@ -5305,6 +5305,8 @@
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
       const threeAsset = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.min.js');
       root.file('vendor/three/three.module.min.js', await threeAsset.text());
+      const threeCoreAsset = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.core.min.js');
+      root.file('vendor/three/three.core.min.js', await threeCoreAsset.text());
       const threeLicense = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/LICENSE');
       root.file('vendor/three/LICENSE', await threeLicense.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
@@ -5330,7 +5332,7 @@
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
         '- xr/ — XR 180/360 видео и изображения\n' +
-        '- vendor/three/ — локальная Three.js + LICENSE для XR / Cardboard\n' +
+        '- vendor/three/ — three.module.min.js + three.core.min.js + LICENSE для XR / Cardboard\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- audio/ — музыка тура, музыка сцен и озвучка\n' +
         '- media/ — фото, видео, PDF и галереи\n' +
