@@ -5,7 +5,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 7;
+  const PROJECT_VERSION = 8;
 
   const $ = (id) => document.getElementById(id);
 
@@ -59,12 +59,17 @@
     object360ImportNote: $('object360ImportNote'),
     stlUploadBox: $('stlUploadBox'),
     stlImportNote: $('stlImportNote'),
+    xrUploadBox: $('xrUploadBox'),
+    xrCreateOptions: $('xrCreateOptions'),
     newSceneImage: $('newSceneImage'),
     newSceneFileName: $('newSceneFileName'),
     newObject360Zip: $('newObject360Zip'),
     newObject360FileName: $('newObject360FileName'),
     newStlFile: $('newStlFile'),
     newStlFileName: $('newStlFileName'),
+    newXrMediaFile: $('newXrMediaFile'),
+    newXrMediaFileName: $('newXrMediaFileName'),
+    newXrProjection: $('newXrProjection'),
     sceneSettings: $('sceneSettings'),
     noSceneSettings: $('noSceneSettings'),
     sceneSettingsSubtitle: $('sceneSettingsSubtitle'),
@@ -107,6 +112,22 @@
     stlAutoplay: $('stlAutoplay'),
     stlFilename: $('stlFilename'),
     stlFileReplace: $('stlFileReplace'),
+    xrSceneSettings: $('xrSceneSettings'),
+    xrSceneStats: $('xrSceneStats'),
+    xrSceneFile: $('xrSceneFile'),
+    xrProjection: $('xrProjection'),
+    xrYaw: $('xrYaw'),
+    xrPitch: $('xrPitch'),
+    xrFov: $('xrFov'),
+    xrAutoplayRow: $('xrAutoplayRow'),
+    xrLoopRow: $('xrLoopRow'),
+    xrVolumeRow: $('xrVolumeRow'),
+    xrAutoplay: $('xrAutoplay'),
+    xrLoop: $('xrLoop'),
+    xrVolume: $('xrVolume'),
+    xrVolumeValue: $('xrVolumeValue'),
+    xrFilename: $('xrFilename'),
+    xrFileReplace: $('xrFileReplace'),
     sceneMusicName: $('sceneMusicName'),
     sceneMusicFile: $('sceneMusicFile'),
     sceneMusicVolume: $('sceneMusicVolume'),
@@ -163,6 +184,8 @@
     mediaObjectHeight: $('mediaObjectHeight'),
     mediaObjectFit: $('mediaObjectFit'),
     mediaObjectAnimation: $('mediaObjectAnimation'),
+    mediaStereoProjectionRow: $('mediaStereoProjectionRow'),
+    mediaStereoProjection: $('mediaStereoProjection'),
     mediaAudioStyleRow: $('mediaAudioStyleRow'),
     mediaObjectAudioStyle: $('mediaObjectAudioStyle'),
     mediaVolumeRow: $('mediaVolumeRow'),
@@ -263,9 +286,11 @@
   let viewer = null;
   let objectViewer = null;
   let stlViewer = null;
+  let xrViewer = null;
   let previewViewer = null;
   let previewObjectViewer = null;
   let previewStlViewer = null;
+  let previewXrViewer = null;
   let previewSceneId = null;
   let previewMusicAudio = null;
   let previewNarrationAudio = null;
