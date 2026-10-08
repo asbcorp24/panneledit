@@ -1325,7 +1325,7 @@
 
   function panoramaStateFromXr(state = {}) {
     return {
-      yaw: -(Number(state.yaw) || 0),
+      yaw: Number(state.yaw) || 0,
       pitch: Number(state.pitch) || 0,
       fov: Number(state.fov) || 100,
       aspect: Number(state.aspect) || 1
@@ -1334,7 +1334,7 @@
 
   function panoramaPointFromXr(point = {}) {
     return {
-      yaw: -(Number(point.yaw) || 0),
+      yaw: Number(point.yaw) || 0,
       pitch: Number(point.pitch) || 0
     };
   }
@@ -1353,6 +1353,10 @@
   function screenHotspotVisible(hotspot, scene, state = null, projector = null) {
     if (hotspot.visible === false) return false;
     if (scene.sceneType === 'panorama') {
+      if (projector?.viewToScreen) {
+        const projected = projector.viewToScreen(hotspot.yaw, hotspot.pitch);
+        return Boolean(projected?.visible);
+      }
       if (!state) return true;
       const d = panoramaHotspotDelta(hotspot, state);
       const hfov = Math.max(30, Number(state.fov) || 100);
@@ -1388,7 +1392,10 @@
   function screenHotspotPosition(hotspot, scene, state = null, projector = null) {
     let x = hotspot.anchorX;
     let y = hotspot.anchorY;
-    if (scene.sceneType === 'panorama' && state) {
+    if (scene.sceneType === 'panorama' && projector?.viewToScreen) {
+      const projected = projector.viewToScreen(hotspot.yaw, hotspot.pitch);
+      if (projected) return { x:projected.x, y:projected.y };
+    } else if (scene.sceneType === 'panorama' && state) {
       const d = panoramaHotspotDelta(hotspot, state);
       const hfov = Math.max(30, Number(state.fov) || 100);
       const aspect = Math.max(0.5, Number(state.aspect) || 1);
@@ -1813,7 +1820,8 @@
         source: scene.imageData,
         kind: 'image',
         projection: '360',
-        yaw: -(Number(scene.yaw) || 0),
+        yawDirection: 'right-positive',
+        yaw: Number(scene.yaw) || 0,
         pitch: Number(scene.pitch) || 0,
         fov: Number(scene.hfov) || 100,
         threeModuleUrl: 'assets/three.module.min.js'
@@ -2071,17 +2079,18 @@
         source: scene.imageData,
         kind: 'image',
         projection: '360',
-        yaw: -(Number(scene.yaw) || 0),
+        yawDirection: 'right-positive',
+        yaw: Number(scene.yaw) || 0,
         pitch: Number(scene.pitch) || 0,
         fov: Number(scene.hfov) || 100,
-        autoRotate: project.settings.autoRotateEnabled ? -(Number(project.settings.autoRotate) || -2) : 0,
+        autoRotate: project.settings.autoRotateEnabled ? (Number(project.settings.autoRotate) || -2) : 0,
         threeModuleUrl: 'assets/three.module.min.js',
         onChange: (xrState) => {
           const state = panoramaStateFromXr(xrState);
           els.coords.textContent =
             'pitch ' + formatNum(state.pitch) + '° · yaw ' + formatNum(state.yaw) +
             '° · FOV ' + Math.round(state.fov) + '°';
-          renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true });
+          renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true, projector:viewer });
         }
       });
       viewer.ready.then(() => {
@@ -2090,7 +2099,7 @@
           scene,
           els.sceneOverlay,
           panoramaStateFromXr(viewer.getState()),
-          { editor:true }
+          { editor:true, projector:viewer }
         );
       }).catch((error) => {
         console.error(error);
@@ -3920,6 +3929,7 @@
   const screenHotspotVisible = (hotspot, meta, state, projector = null) => {
     if (hotspot.visible === false) return false;
     if (meta.sceneType === 'panorama') {
+      if (projector?.viewToScreen) return Boolean(projector.viewToScreen(hotspot.yaw,hotspot.pitch)?.visible);
       if (!state) return true;
       const dy = (((Number(hotspot.yaw)||0) - (Number(state.yaw)||0) + 540) % 360) - 180;
       const dp = (Number(hotspot.pitch)||0) - (Number(state.pitch)||0);
@@ -3956,7 +3966,10 @@
   const screenHotspotPosition = (hotspot, meta, state, projector = null) => {
     let x = Number(hotspot.anchorX)||50;
     let y = Number(hotspot.anchorY)||50;
-    if (meta.sceneType === 'panorama' && state) {
+    if (meta.sceneType === 'panorama' && projector?.viewToScreen) {
+      const projected = projector.viewToScreen(hotspot.yaw,hotspot.pitch);
+      if (projected) return {x:projected.x,y:projected.y};
+    } else if (meta.sceneType === 'panorama' && state) {
       const dy = (((Number(hotspot.yaw)||0) - (Number(state.yaw)||0) + 540) % 360) - 180;
       const dp = (Number(hotspot.pitch)||0) - (Number(state.pitch)||0);
       const hfov = Math.max(30,Number(state.fov)||100);
@@ -4375,27 +4388,17 @@
         source:data.source,
         kind:'image',
         projection:'360',
-        yaw:-(Number(data.yaw)||0),
+        yawDirection:'right-positive',
+        yaw:Number(data.yaw)||0,
         pitch:Number(data.pitch)||0,
         fov:Number(data.fov)||100,
-        autoRotate:-(Number(config.autoRotate)||0),
+        autoRotate:Number(config.autoRotate)||0,
         threeModuleUrl:'assets/three.module.min.js',
-        onChange:(xrState)=>{
-          const state={
-            yaw:-(Number(xrState.yaw)||0),
-            pitch:Number(xrState.pitch)||0,
-            fov:Number(xrState.fov)||100,
-            aspect:Number(xrState.aspect)||1
-          };
-          renderDynamicHotspots(id,state);
-        }
+        onChange:(state)=>renderDynamicHotspots(id,state,panoViewer)
       });
       panoViewer.ready.then(()=>{
-        const s=panoViewer.getState();
-        renderDynamicHotspots(id,{
-          yaw:-(Number(s.yaw)||0),pitch:Number(s.pitch)||0,
-          fov:Number(s.fov)||100,aspect:Number(s.aspect)||1
-        });
+        const state=panoViewer.getState();
+        renderDynamicHotspots(id,state,panoViewer);
       }).catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки панорамы</div>';});
     };
 
@@ -5489,17 +5492,18 @@
       source: scene.imageData,
       kind: 'image',
       projection: '360',
-      yaw: -(Number(scene.yaw) || 0),
+      yawDirection: 'right-positive',
+      yaw: Number(scene.yaw) || 0,
       pitch: Number(scene.pitch) || 0,
       fov: Number(scene.hfov) || 100,
-      autoRotate: project.settings.autoRotateEnabled ? -(Number(project.settings.autoRotate) || -2) : 0,
+      autoRotate: project.settings.autoRotateEnabled ? (Number(project.settings.autoRotate) || -2) : 0,
       threeModuleUrl: 'assets/three.module.min.js',
       onChange: (xrState) => {
         renderDynamicScreenHotspots(
           scene,
           els.previewSceneOverlay,
           panoramaStateFromXr(xrState),
-          { editor:false }
+          { editor:false, projector:previewViewer }
         );
       }
     });
@@ -5508,7 +5512,7 @@
         scene,
         els.previewSceneOverlay,
         panoramaStateFromXr(previewViewer.getState()),
-        { editor:false }
+        { editor:false, projector:previewViewer }
       );
     }).catch(console.error);
   }
