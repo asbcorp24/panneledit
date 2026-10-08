@@ -39,6 +39,7 @@
         controls: options.controls !== false,
         motionControls: options.motionControls !== false,
         autoRotate: Number(options.autoRotate) || 0,
+        yawDirection: options.yawDirection === 'right-positive' ? 'right-positive' : 'native',
         threeModuleUrl: options.threeModuleUrl || DEFAULT_THREE_URL,
         domOverlayRoot: options.domOverlayRoot && options.domOverlayRoot.nodeType === 1 ? options.domOverlayRoot : null,
         onChange: typeof options.onChange === 'function' ? options.onChange : null,
@@ -541,20 +542,29 @@
       this.emitChange();
     }
 
+    logicalYawToCameraYaw(yaw = this.yaw) {
+      return this.options.yawDirection === 'right-positive' ? -Number(yaw || 0) : Number(yaw || 0);
+    }
+
+    cameraYawToLogicalYaw(cameraYaw = 0) {
+      return this.options.yawDirection === 'right-positive' ? -Number(cameraYaw || 0) : Number(cameraYaw || 0);
+    }
+
     updateCameraOrientation() {
       if (!this.camera || this.xrSession) return;
       const THREE = this.THREE;
+      const cameraYaw = this.logicalYawToCameraYaw(this.yaw);
       if (this.cardboard && this.deviceQuaternion) {
         const offset = new THREE.Quaternion().setFromEuler(new THREE.Euler(
           this.pitch * DEG,
-          this.yaw * DEG,
+          cameraYaw * DEG,
           0,
           'YXZ'
         ));
         this.camera.quaternion.copy(this.deviceQuaternion).premultiply(offset);
         return;
       }
-      this.camera.rotation.set(this.pitch * DEG, this.yaw * DEG, 0, 'YXZ');
+      this.camera.rotation.set(this.pitch * DEG, cameraYaw * DEG, 0, 'YXZ');
     }
 
     render() {
@@ -635,18 +645,49 @@
 
     screenToView(clientX, clientY) {
       const rect = this.canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) {
+      if (!rect.width || !rect.height || !this.THREE || !this.camera) {
         return { yaw: this.yaw, pitch: this.pitch };
       }
-      const nx = ((clientX - rect.left) / rect.width - 0.5) * 2;
-      const ny = (0.5 - (clientY - rect.top) / rect.height) * 2;
-      const verticalFov = this.fov;
-      const horizontalFov = 2 * Math.atan(
-        Math.tan((verticalFov * DEG) / 2) * (rect.width / rect.height)
-      ) / DEG;
+
+      this.updateCameraOrientation();
+      this.camera.updateMatrixWorld(true);
+
+      const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      const point = new this.THREE.Vector3(nx, ny, 0.5).unproject(this.camera);
+      const direction = point.sub(this.camera.position).normalize();
+
+      const bearingRightPositive = Math.atan2(direction.x, -direction.z) / DEG;
+      const cameraYaw = -bearingRightPositive;
+      const logicalYaw = this.cameraYawToLogicalYaw(cameraYaw);
+      const pitch = Math.asin(clamp(direction.y, -1, 1)) / DEG;
+
       return {
-        yaw: this.yaw + nx * horizontalFov * 0.5,
-        pitch: clamp(this.pitch + ny * verticalFov * 0.5, -89, 89)
+        yaw: ((logicalYaw + 540) % 360) - 180,
+        pitch: clamp(pitch, -89, 89)
+      };
+    }
+
+    viewToScreen(yaw, pitch) {
+      if (!this.THREE || !this.camera || !this.canvas) return null;
+      this.updateCameraOrientation();
+      this.camera.updateMatrixWorld(true);
+
+      const logicalYaw = Number(yaw) || 0;
+      const cameraYaw = this.logicalYawToCameraYaw(logicalYaw) * DEG;
+      const pointPitch = clamp(pitch, -89, 89) * DEG;
+      const direction = new this.THREE.Vector3(0, 0, -1).applyEuler(
+        new this.THREE.Euler(pointPitch, cameraYaw, 0, 'YXZ')
+      );
+      const point = direction.multiplyScalar(20).project(this.camera);
+      const x = (point.x + 1) * 50;
+      const y = (1 - point.y) * 50;
+
+      return {
+        x,
+        y,
+        depth: point.z,
+        visible: point.z >= -1 && point.z <= 1 && x >= -12 && x <= 112 && y >= -12 && y <= 112
       };
     }
 
