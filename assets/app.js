@@ -971,18 +971,23 @@
       const count = scene.hotspots?.length || 0;
       const isObject = scene.sceneType === 'object360';
       const isStl = scene.sceneType === 'stl';
-      const thumb = scene.imageData || scene.object360?.coverData || (isStl ? stlPlaceholderDataUrl() : '');
+      const isXr = scene.sceneType === 'xr';
+      const thumb = scene.imageData || scene.object360?.coverData || (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''));
       const kind = isObject
         ? '<span class="scene-kind">ОБЪЕКТ 360</span>'
-        : (isStl ? '<span class="scene-kind stl-kind">STL 3D</span>' : '');
+        : (isStl
+          ? '<span class="scene-kind stl-kind">STL 3D</span>'
+          : (isXr ? '<span class="scene-kind xr-kind">XR</span>' : ''));
       const info = isObject
         ? ((scene.object360?.sectors || 0) + ' кадров × ' + (scene.object360?.rows || 1) + ' ряд.')
         : (isStl
           ? ((scene.stl?.triangleCount || 0).toLocaleString('ru-RU') + ' треуг.')
-          : (count + ' ' + (count === 1 ? 'точка' : 'точек')));
+          : (isXr
+            ? ((scene.xr?.kind === 'image' ? 'Фото' : 'Видео') + ' · ' + (scene.xr?.projection || '360'))
+            : (count + ' ' + (count === 1 ? 'точка' : 'точек'))));
 
       return `
-        <article class="scene-card ${isObject ? 'object360' : ''} ${isStl ? 'stl-scene' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
+        <article class="scene-card ${isObject ? 'object360' : ''} ${isStl ? 'stl-scene' : ''} ${isXr ? 'xr-scene' : ''} ${scene.id === currentSceneId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
           <div class="scene-card-main">
             <img class="scene-thumb" src="${escapeHtml(thumb)}" alt="">
             <div class="scene-meta">
