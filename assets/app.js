@@ -1345,6 +1345,9 @@
 
   function renderCompositeOverlay(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, projector = null } = {}) {
     if (!target) return;
+    target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
+      try { host._xrViewer?.destroy?.(); } catch (_) {}
+    });
     target.innerHTML = '';
     if (!scene) {
       target.hidden = true;
@@ -3649,9 +3652,9 @@
         const exported = { ...item, data:'', gallery:[] };
         const settings = normalizeExportSettings(project.exportSettings || {});
 
-        if (item.data && ['image','video','audio','pdf'].includes(item.type)) {
+        if (item.data && ['image','stereo-photo','video','audio','pdf'].includes(item.type)) {
           let fileData = item.data;
-          if (item.type === 'image' && settings.optimizeEnabled) {
+          if ((item.type === 'image' || item.type === 'stereo-photo') && settings.optimizeEnabled) {
             fileData = await optimizeImageDataUrl(
               item.data,
               Math.min(settings.maxImageWidth, 2560),
@@ -5236,6 +5239,7 @@
       if (imported.scenes.some((scene) => {
         if (scene.sceneType === 'object360') return !countObjectFrames(scene.object360);
         if (scene.sceneType === 'stl') return !scene.stl?.data;
+        if (scene.sceneType === 'xr') return !scene.xr?.data;
         return !scene.imageData;
       })) {
         throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры / STL данные');
@@ -6719,7 +6723,8 @@
       dragDepth = 0;
       els.dropOverlay.classList.remove('visible');
       const files = [...event.dataTransfer?.files || []];
-      const file = files.find((item) => item.type.startsWith('image/')) ||
+      const file = files.find((item) => item.type.startsWith('video/')) ||
+        files.find((item) => item.type.startsWith('image/')) ||
         files.find((item) => /\.zip$/i.test(item.name || '')) ||
         files.find((item) => /\.stl$/i.test(item.name || ''));
       if (!file) return;
@@ -6731,6 +6736,9 @@
         } else if (/\.stl$/i.test(file.name || '')) {
           await createStlSceneFromFile(file, file.name.replace(/\.stl$/i, ''));
           showToast('STL-модель добавлена');
+        } else if (file.type.startsWith('video/')) {
+          await createXrSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''), '360');
+          showToast('XR-видео добавлено');
         } else {
           await createSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''));
           showToast('Панорама добавлена');
