@@ -1280,8 +1280,42 @@
     });
   }
 
+  function panoramaStateFromXr(state = {}) {
+    return {
+      yaw: -(Number(state.yaw) || 0),
+      pitch: Number(state.pitch) || 0,
+      fov: Number(state.fov) || 100,
+      aspect: Number(state.aspect) || 1
+    };
+  }
+
+  function panoramaPointFromXr(point = {}) {
+    return {
+      yaw: -(Number(point.yaw) || 0),
+      pitch: Number(point.pitch) || 0
+    };
+  }
+
+  function panoramaHotspotDelta(hotspot, state) {
+    const yaw = Number(hotspot.yaw) || 0;
+    const pitch = Number(hotspot.pitch) || 0;
+    const viewYaw = Number(state?.yaw) || 0;
+    const viewPitch = Number(state?.pitch) || 0;
+    return {
+      yaw: ((yaw - viewYaw + 540) % 360) - 180,
+      pitch: pitch - viewPitch
+    };
+  }
+
   function screenHotspotVisible(hotspot, scene, state = null, projector = null) {
     if (hotspot.visible === false) return false;
+    if (scene.sceneType === 'panorama') {
+      if (!state) return true;
+      const d = panoramaHotspotDelta(hotspot, state);
+      const hfov = Math.max(30, Number(state.fov) || 100);
+      const vfov = hfov / Math.max(1, Number(state.aspect) || 1);
+      return Math.abs(d.yaw) <= hfov * 0.62 && Math.abs(d.pitch) <= Math.max(35, vfov * 0.72);
+    }
     if (scene.sceneType === 'object360') {
       if (!state) return true;
       const sectors = Math.max(1, Number(scene.object360?.sectors) || 1);
@@ -1311,6 +1345,14 @@
   function screenHotspotPosition(hotspot, scene, state = null, projector = null) {
     let x = hotspot.anchorX;
     let y = hotspot.anchorY;
+    if (scene.sceneType === 'panorama' && state) {
+      const d = panoramaHotspotDelta(hotspot, state);
+      const hfov = Math.max(30, Number(state.fov) || 100);
+      const aspect = Math.max(0.5, Number(state.aspect) || 1);
+      const vfov = hfov / aspect;
+      x = 50 + (d.yaw / Math.max(1, hfov * 0.5)) * 50;
+      y = 50 - (d.pitch / Math.max(1, vfov * 0.5)) * 50;
+    }
     if (scene.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
       const projected = projector.projectPoint(hotspot.modelPoint);
       if (projected) return { x:projected.x, y:projected.y };
@@ -1328,15 +1370,21 @@
     if (!screenHotspotVisible(hotspot, scene, state, projector)) return '';
     const pos = screenHotspotPosition(hotspot, scene, state, projector);
     const label = hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Инфо');
-    return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor' : '') +
-      ' hotspot-' + escapeHtml(hotspot.type) + '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
+    const customImage = hotspot.type === 'scene' &&
+      ['custom','preview'].includes(hotspot.iconPreset) && hotspot.iconData;
+    const icon = customImage
+      ? '<img src="' + escapeHtml(hotspot.iconData) + '" alt="">'
+      : (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i');
+    return '<button type="button" class="screen-hotspot ' + (editor ? 'is-editor ' : '') +
+      ' hotspot-' + escapeHtml(hotspot.type) + ' ' + hotspotStyleClass(hotspot) +
+      (customImage ? ' has-custom-image ' + (hotspot.iconPreset === 'preview' ? 'is-preview-image' : '') : '') +
+      '" data-screen-hotspot-id="' + escapeHtml(hotspot.id) +
       '" style="left:' + pos.x + '%;top:' + pos.y + '%;z-index:' + (Number(hotspot.zIndex) || 30) + '" title="' + escapeHtml(label) + '">' +
-      (hotspot.type === 'scene' ? '→' : hotspot.type === 'url' ? '↗' : 'i') +
-      '<span>' + escapeHtml(label) + '</span></button>';
+      icon + '<span>' + escapeHtml(label) + '</span></button>';
   }
 
   function renderScreenHotspots(scene = getScene(), target = els.sceneOverlay, state = null, { editor = true, append = true, projector = null } = {}) {
-    if (!target || !scene || scene.sceneType === 'panorama') return;
+    if (!target || !scene) return;
     const hotspots = Array.isArray(scene.hotspots) ? scene.hotspots : [];
     const markup = hotspots.map((hotspot) => screenHotspotMarkup(hotspot, scene, state, { editor, projector })).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
@@ -1516,7 +1564,7 @@
     if (!glow.enabled) return '';
 
     const token = hotspotCssToken(hotspot.id);
-    const selector = '.pnlm-hotspot-base.' + hotspotStyleClass(hotspot);
+    const selector = '.screen-hotspot.' + hotspotStyleClass(hotspot) + ',.pnlm-hotspot-base.' + hotspotStyleClass(hotspot);
 
     if (!glow.pulse) {
       const filter = glowFilterString(glow, 1);
