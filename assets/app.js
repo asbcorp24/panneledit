@@ -5098,35 +5098,21 @@
       const stlScenes = project.scenes.filter((scene) => scene.sceneType === 'stl');
       const xrScenes = project.scenes.filter((scene) => scene.sceneType === 'xr');
 
-      if (project.settings.multiresEnabled) {
-        for (let index = 0; index < panoramaScenes.length; index++) {
-          const scene = panoramaScenes[index];
-          const multi = await generateSceneMultires(
-            root,
-            scene,
-            index,
-            panoramaScenes.length,
-            button
-          );
-          multiresScenes.set(scene.id, multi);
-        }
-      } else {
-        for (let index = 0; index < panoramaScenes.length; index++) {
-          const scene = panoramaScenes[index];
-          const settings = normalizeExportSettings(project.exportSettings || {});
-          const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
-          const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
-          const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
-          let filename = baseName + '.' + ext;
-          let suffix = 2;
-          while (usedNames.has(filename.toLowerCase())) filename = baseName + '-' + suffix++ + '.' + ext;
-          usedNames.add(filename.toLowerCase());
-          sceneFiles.set(scene.id, filename);
+      for (let index = 0; index < panoramaScenes.length; index++) {
+        const scene = panoramaScenes[index];
+        const settings = normalizeExportSettings(project.exportSettings || {});
+        const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
+        const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
+        const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
+        let filename = baseName + '.' + ext;
+        let suffix = 2;
+        while (usedNames.has(filename.toLowerCase())) filename = baseName + '-' + suffix++ + '.' + ext;
+        usedNames.add(filename.toLowerCase());
+        sceneFiles.set(scene.id, filename);
 
-          const payload = dataUrlPayload(optimized);
-          if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
-          else root.file('images/' + filename, decodeURIComponent(payload.data));
-        }
+        const payload = dataUrlPayload(optimized);
+        if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
+        else root.file('images/' + filename, decodeURIComponent(payload.data));
       }
 
       for (let sceneIndex = 0; sceneIndex < objectScenes.length; sceneIndex++) {
@@ -5830,7 +5816,7 @@
       ? els.defaultTransition.value : 'fade';
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
     project.settings.autoRotate = Number(els.autoRotate.value) || -2;
-    project.settings.multiresEnabled = els.multiresEnabled.checked;
+    project.settings.multiresEnabled = false;
     project.settings.multiresTileSize = [512, 1024].includes(Number(els.multiresTileSize.value))
       ? Number(els.multiresTileSize.value) : 512;
     project.settings.multiresQuality = clampNumber(els.multiresQuality.value, 50, 100, 85);
