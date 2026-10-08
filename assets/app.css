@@ -822,3 +822,23 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
   border-radius:12px
 }
 .screen-hotspot.has-custom-image>span{display:none}
+
+/* WebXR DOM Overlay: keep text, media controls and hotspots available in immersive mode. */
+.scene-text-overlay:xr-overlay,
+.xr-dom-overlay-active {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483646 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+}
+
+.scene-text-overlay:xr-overlay .scene-text-object,
+.scene-text-overlay:xr-overlay .scene-media-object,
+.scene-text-overlay:xr-overlay .screen-hotspot,
+.xr-dom-overlay-active .scene-text-object,
+.xr-dom-overlay-active .scene-media-object,
+.xr-dom-overlay-active .screen-hotspot {
+  pointer-events: auto !important;
+}
+
