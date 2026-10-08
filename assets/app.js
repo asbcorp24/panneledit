@@ -4975,7 +4975,8 @@
 
   function exportedServiceWorker(config) {
     const assets = new Set([
-      './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js',
+      './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','assets/xr-media-viewer.js',
+      'vendor/three/three.module.min.js',
       'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
     ]);
 
@@ -4990,6 +4991,9 @@
       if (scene.source) assets.add(scene.source);
       if (scene.backgroundImage) assets.add(scene.backgroundImage);
     });
+    Object.values(config.xrScenes || {}).forEach((scene) => {
+      if (scene.source) assets.add(scene.source);
+    });
     Object.values(config.sceneMeta || {}).forEach((meta) => {
       (meta.mediaObjects || []).forEach((item) => {
         if (item.src) assets.add(item.src);
@@ -5003,7 +5007,7 @@
     (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
-    return "const CACHE='pannellum-tour-v7';\n" +
+    return "const CACHE='pannellum-tour-v8';\n" +
       "const CORE=" + list + ";\n" +
       "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
       "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
