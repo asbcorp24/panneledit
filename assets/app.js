@@ -464,7 +464,7 @@
     if (scene?.sceneType === 'xr') {
       return { icon: '◈', label: 'XR Media', detail: 'Three.js 180/360 · XR · Cardboard' };
     }
-    return { icon: '◌', label: 'Панорама 360°', detail: 'Pannellum-панорама' };
+    return { icon: '◌', label: 'Панорама 360°', detail: 'Three.js 360° · XR · Cardboard' };
   }
 
   function normalizeXrData(input = {}) {
@@ -1863,105 +1863,6 @@
     });
 
     return affected.length;
-  }
-
-  function hotspotToPannellum(hotspot, universalSceneHandler = null) {
-    const base = {
-      pitch: Number(hotspot.pitch) || 0,
-      yaw: Number(hotspot.yaw) || 0,
-      text: hotspot.text || ''
-    };
-
-    if (hotspot.type === 'scene') {
-      const targetScene = getScene(hotspot.targetSceneId);
-      const cssClass = transitionIconClass(hotspot) + ' ' + hotspotStyleClass(hotspot);
-
-      if (targetScene?.sceneType === 'panorama') {
-        return {
-          ...base,
-          type: 'scene',
-          sceneId: hotspot.targetSceneId,
-          tourTargetSceneId: hotspot.targetSceneId,
-          tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
-          cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id)
-        };
-      }
-
-      return {
-        ...base,
-        type: 'info',
-        cssClass: cssClass + ' tour-hotspot-' + hotspotCssToken(hotspot.id),
-        tourTargetSceneId: hotspot.targetSceneId,
-        tourTransition: hotspot.transition || project.settings.defaultTransition || 'fade',
-        clickHandlerFunc: () => {
-          if (typeof universalSceneHandler === 'function') {
-            universalSceneHandler(hotspot.targetSceneId);
-          } else {
-            selectScene(hotspot.targetSceneId);
-          }
-        }
-      };
-    }
-
-    if (hotspot.type === 'url') {
-      return {
-        ...base,
-        type: 'info',
-        URL: hotspot.url || '#',
-        attributes: { target: '_blank', rel: 'noopener noreferrer' },
-        cssClass: 'editor-url-hotspot ' + hotspotStyleClass(hotspot)
-      };
-    }
-
-    return {
-      ...base,
-      type: 'info',
-      text: hotspot.info ? ((hotspot.text ? hotspot.text + ': ' : '') + hotspot.info) : hotspot.text,
-      cssClass: 'pnlm-info ' + hotspotStyleClass(hotspot)
-    };
-  }
-
-  function buildPannellumConfig({
-    useEmbeddedImages = true,
-    firstSceneId = null,
-    universalSceneHandler = null
-  } = {}) {
-    const scenes = {};
-
-    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
-      scenes[scene.id] = {
-        type: 'equirectangular',
-        panorama: useEmbeddedImages ? scene.imageData : scene.filename,
-        title: scene.title || undefined,
-        pitch: Number(scene.pitch) || 0,
-        yaw: Number(scene.yaw) || 0,
-        hfov: Number(scene.hfov) || 100,
-        hotSpots: (scene.hotspots || [])
-          .filter((hotspot) => hotspot.visible !== false)
-          .filter((hotspot) => hotspot.type !== 'scene' || project.scenes.some((s) => s.id === hotspot.targetSceneId))
-          .map((hotspot) => hotspotToPannellum(hotspot, universalSceneHandler))
-      };
-    });
-
-    const defaultConfig = {
-      firstScene: (() => {
-        const requested = firstSceneId || project.firstScene;
-        if (requested && scenes[requested]) return requested;
-        return Object.keys(scenes)[0] || null;
-      })(),
-      sceneFadeDuration: project.settings.fadeEnabled ? Number(project.settings.fadeDuration || 0) : 0,
-      autoLoad: true,
-      showControls: true,
-      compass: false
-    };
-
-    if (project.settings.autoRotateEnabled) {
-      defaultConfig.autoRotate = Number(project.settings.autoRotate || -2);
-      defaultConfig.autoRotateInactivityDelay = 3000;
-      defaultConfig.autoRotateStopDelay = -1;
-    }
-
-    return { default: defaultConfig, scenes };
   }
 
   function destroyViewer() {
@@ -4919,7 +4820,7 @@
       "cd /d \"%~dp0\"",
       "",
       "echo.",
-      "echo Starting Pannellum Tour Editor...",
+      "echo Starting XR Tour Editor...",
       "echo.",
       "",
       "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%~dp0server.ps1\" -Port %PORT%",
@@ -4933,30 +4834,6 @@
     root.file('server.ps1', serverPs1);
     root.file('start-server.bat', startBat);
   }
-  async function bundlePannellum(zip) {
-    const base = 'https://cdn.jsdelivr.net/npm/pannellum@2.5.7/';
-    const cssUrl = base + 'build/pannellum.css';
-    const jsUrl = base + 'build/pannellum.js';
-    const responses = await Promise.all([fetchRequiredAsset(cssUrl), fetchRequiredAsset(jsUrl)]);
-    const cssText = await responses[0].text();
-    const jsBuffer = await responses[1].arrayBuffer();
-
-    zip.file('vendor/pannellum/build/pannellum.css', cssText);
-    zip.file('vendor/pannellum/build/pannellum.js', jsBuffer);
-
-    const refs = [...cssText.matchAll(/url\((['"]?)(?!data:|https?:|#)([^'")]+)\1\)/g)]
-      .map((match) => match[2].trim())
-      .filter(Boolean);
-    const uniqueRefs = [...new Set(refs)];
-
-    await Promise.all(uniqueRefs.map(async (relativeRef) => {
-      const sourceUrl = new URL(relativeRef, cssUrl).href;
-      const targetPath = normalizeZipPath('vendor/pannellum/build/' + relativeRef);
-      const response = await fetchRequiredAsset(sourceUrl);
-      zip.file(targetPath, await response.arrayBuffer());
-    }));
-  }
-
   async function optimizeImageDataUrl(dataUrl, maxWidth, quality = 84, preserveAlpha = false) {
     if (!dataUrl || !/^data:image\//i.test(dataUrl)) return dataUrl;
     if (!normalizeExportSettings(project.exportSettings || {}).optimizeEnabled) return dataUrl;
@@ -5047,7 +4924,7 @@
     (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
-    return "const CACHE='pannellum-tour-v8';\n" +
+    return "const CACHE='xr-tour-v9';\n" +
       "const CORE=" + list + ";\n" +
       "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
       "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
