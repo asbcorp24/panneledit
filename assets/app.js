@@ -1206,6 +1206,9 @@
     let body = '';
     if (item.type === 'image' && item.data) {
       body = '<img src="' + escapeHtml(item.data) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
+    } else if (item.type === 'stereo-photo' && item.data) {
+      body = '<div class="scene-stereo-viewer-host" data-stereo-projection="' +
+        escapeHtml(item.stereoProjection || 'FLAT_LR') + '"></div>';
     } else if (item.type === 'gallery') {
       const first = item.gallery?.[0]?.data || '';
       body = first
@@ -1253,6 +1256,26 @@
       audio.volume = clampNumber(Number(audio.dataset.mediaVolume) / 100, 0, 1, 0.8);
       if (!editor && audio.dataset.mediaAutoplay === '1') {
         audio.play().catch(() => {});
+      }
+    });
+
+    target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
+      const wrapper = host.closest('[data-media-object-id]');
+      const item = items.find((entry) => entry.id === wrapper?.dataset.mediaObjectId);
+      if (!item?.data || !window.XRMediaViewer) return;
+      try {
+        host._xrViewer?.destroy?.();
+        host._xrViewer = new XRMediaViewer(host, {
+          source: item.data,
+          kind: 'image',
+          projection: item.stereoProjection || 'FLAT_LR',
+          fov: 55,
+          controls: true,
+          motionControls: true
+        });
+        host._xrViewer.ready.catch(console.error);
+      } catch (error) {
+        console.error('Stereo photo:', error);
       }
     });
   }
@@ -1348,11 +1371,11 @@
       els.mediaObjectList.innerHTML = '<div class="empty-state">Нет медиа</div>';
       return;
     }
-    const labels = { image:'Фото', gallery:'Галерея', video:'Видео', audio:'Аудио', pdf:'PDF', button:'Кнопка' };
+    const labels = { image:'Фото', 'stereo-photo':'Стерео фото', gallery:'Галерея', video:'Видео', audio:'Аудио', pdf:'PDF', button:'Кнопка' };
     els.mediaObjectList.className = 'media-object-list';
     els.mediaObjectList.innerHTML = items.map((item) =>
       '<article class="media-object-card" data-media-object-id="' + escapeHtml(item.id) + '">' +
-      '<span class="media-object-kind">' + ({image:'▧',gallery:'▦',video:'▶',audio:'♪',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
+      '<span class="media-object-kind">' + ({image:'▧','stereo-photo':'VR',gallery:'▦',video:'▶',audio:'♪',pdf:'PDF',button:'↗'}[item.type] || '◈') + '</span>' +
       '<div><b>' + escapeHtml(labels[item.type] || item.type) + '</b><span>' + escapeHtml(item.title || item.filename || 'Без названия') + '</span></div>' +
       '<em>' + (item.visible === false ? 'скрыт' : (item.locked ? '🔒' : '')) + '</em></article>'
     ).join('');
@@ -2612,18 +2635,24 @@
   function updateMediaDialogUi() {
     const type = els.mediaObjectType.value;
     const timedMedia = type === 'video' || type === 'audio';
+    const stereoPhoto = type === 'stereo-photo';
     els.mediaUploadBox.hidden = type === 'gallery' || type === 'button';
     els.mediaGalleryUploadBox.hidden = type !== 'gallery';
     els.mediaUrlRow.hidden = type !== 'button';
     els.mediaTargetRow.hidden = type !== 'button';
     els.mediaAudioStyleRow.hidden = type !== 'audio';
+    els.mediaStereoProjectionRow.hidden = !stereoPhoto;
     els.mediaVolumeRow.hidden = type !== 'audio';
     els.mediaAutoplayRow.hidden = !timedMedia;
     els.mediaLoopRow.hidden = !timedMedia;
     if (!pendingMediaData) {
       els.mediaObjectFilename.textContent = type === 'audio'
         ? 'MP3, OGG или WAV'
-        : (type === 'video' ? 'MP4 или WEBM' : (type === 'pdf' ? 'PDF' : 'Файл не выбран'));
+        : (type === 'video'
+          ? 'MP4 или WEBM'
+          : (type === 'stereo-photo'
+            ? 'JPG / PNG / WEBP в SBS или Top-Bottom'
+            : (type === 'pdf' ? 'PDF' : 'Файл не выбран')));
     }
     if (type === 'button') {
       populateSceneSelect(els.mediaObjectTargetScene, getScene()?.id || '');
@@ -2664,6 +2693,7 @@
     els.mediaObjectHeight.value = String(item.height);
     els.mediaObjectFit.value = item.fit;
     els.mediaObjectAnimation.value = item.animation;
+    els.mediaStereoProjection.value = item.stereoProjection || 'FLAT_LR';
     els.mediaObjectAudioStyle.value = item.audioStyle;
     els.mediaObjectVolume.value = String(item.volume);
     els.mediaObjectVolumeValue.textContent = item.volume + '%';
@@ -2683,7 +2713,7 @@
       showToast('Добавьте изображения галереи');
       return;
     }
-    if (['image','video','audio','pdf'].includes(type) && !pendingMediaData) {
+    if (['image','stereo-photo','video','audio','pdf'].includes(type) && !pendingMediaData) {
       showToast('Выберите файл');
       return;
     }
@@ -2716,6 +2746,7 @@
       height: els.mediaObjectHeight.value,
       fit: els.mediaObjectFit.value,
       animation: els.mediaObjectAnimation.value,
+      stereoProjection: type === 'stereo-photo' ? els.mediaStereoProjection.value : item.stereoProjection,
       autoplay: (type === 'video' || type === 'audio') && els.mediaObjectAutoplay.checked,
       loop: (type === 'video' || type === 'audio') && els.mediaObjectLoop.checked,
       volume: type === 'audio' ? els.mediaObjectVolume.value : item.volume,
@@ -6007,7 +6038,7 @@
     let mediaDragOffsetY = 0;
     els.sceneOverlay.addEventListener('pointerdown', (event) => {
       const element = event.target.closest('[data-media-object-id]');
-      if (!element || element.classList.contains('is-locked')) return;
+      if (!element || element.classList.contains('is-locked') || event.target.closest('.xr-media-viewer')) return;
       const scene = getScene();
       const item = scene?.mediaObjects?.find((entry) => entry.id === element.dataset.mediaObjectId);
       if (!item || item.locked) return;
