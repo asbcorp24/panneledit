@@ -6391,6 +6391,13 @@
     });
     els.stlWireframe.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
     els.stlAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrProjection.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrYaw.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrPitch.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrFov.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrAutoplay.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrLoop.addEventListener('change', () => applySceneFieldChanges({ rerender: true }));
+    els.xrVolume.addEventListener('input', () => applySceneFieldChanges());
 
     els.sceneMusicFile.addEventListener('change', async () => {
       const scene = getScene();
@@ -6578,6 +6585,36 @@
         showToast('Не удалось заменить STL: ' + (error?.message || 'ошибка'));
       } finally {
         els.stlFileReplace.value = '';
+      }
+    });
+
+    els.xrFileReplace.addEventListener('change', async () => {
+      const scene = getScene();
+      const file = els.xrFileReplace.files?.[0];
+      if (!scene || scene.sceneType !== 'xr' || !file) return;
+      try {
+        const isImage = /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
+        const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
+        if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
+        const data = await fileToDataURL(file);
+        scene.filename = file.name;
+        scene.xr = normalizeXrData({
+          ...scene.xr,
+          data,
+          filename: file.name,
+          kind: isImage ? 'image' : 'video',
+          autoplay: isVideo ? scene.xr?.autoplay : false,
+          loop: isVideo ? scene.xr?.loop : false
+        });
+        scene.imageData = isImage ? data : xrPlaceholderDataUrl(scene.xr.projection);
+        markDirty();
+        renderViewer();
+        showToast('XR медиа заменено');
+      } catch (error) {
+        console.error(error);
+        showToast('Не удалось заменить XR медиа: ' + (error?.message || 'ошибка'));
+      } finally {
+        els.xrFileReplace.value = '';
       }
     });
 
