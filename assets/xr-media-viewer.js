@@ -216,7 +216,9 @@
       const offsetY = isTB && eye === 'left' ? 0.5 : 0;
 
       return new THREE.ShaderMaterial({
-        side: this.flat ? THREE.FrontSide : THREE.BackSide,
+        // Spherical geometry is mirrored in createGeometry(), so the
+        // front faces point inward and can use normal FrontSide rendering.
+        side: THREE.FrontSide,
         uniforms: {
           map: { value: this.texture },
           uvScale: { value: new THREE.Vector2(scaleX, scaleY) },
@@ -250,9 +252,18 @@
         return new THREE.PlaneGeometry(height * aspect, height);
       }
       if (this.is180) {
-        return new THREE.SphereGeometry(100, 64, 40, Math.PI, Math.PI, 0, Math.PI);
+        const geometry = new THREE.SphereGeometry(
+          100, 64, 40,
+          Math.PI, Math.PI,
+          0, Math.PI
+        );
+        geometry.scale(-1, 1, 1);
+        return geometry;
       }
-      return new THREE.SphereGeometry(100, 64, 40);
+
+      const geometry = new THREE.SphereGeometry(100, 64, 40);
+      geometry.scale(-1, 1, 1);
+      return geometry;
     }
 
     getEyeAspect() {
@@ -280,7 +291,13 @@
       const leftGeometry = this.createGeometry();
       const leftMaterial = this.makeMaterial('left');
       this.leftMesh = new THREE.Mesh(leftGeometry, leftMaterial);
-      if (this.flat) this.leftMesh.position.set(0, 0, -3.2);
+      if (this.flat) {
+        this.leftMesh.position.set(0, 0, -3.2);
+      } else if (!this.is180) {
+        // Three SphereGeometry puts the center of an equirectangular
+        // texture 90 degrees away from the default -Z view.
+        this.leftMesh.rotation.y = -Math.PI / 2;
+      }
       this.leftMesh.layers.enable(0);
       this.leftMesh.layers.enable(1);
       this.scene.add(this.leftMesh);
@@ -289,7 +306,11 @@
         const rightGeometry = this.createGeometry();
         const rightMaterial = this.makeMaterial('right');
         this.rightMesh = new THREE.Mesh(rightGeometry, rightMaterial);
-        if (this.flat) this.rightMesh.position.set(0, 0, -3.2);
+        if (this.flat) {
+          this.rightMesh.position.set(0, 0, -3.2);
+        } else if (!this.is180) {
+          this.rightMesh.rotation.y = -Math.PI / 2;
+        }
         this.rightMesh.layers.set(2);
         this.scene.add(this.rightMesh);
       } else {
