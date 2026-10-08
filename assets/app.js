@@ -2156,46 +2156,56 @@
       return;
     }
 
-    if (!window.pannellum) {
-      showToast('Pannellum не загрузился. Проверьте подключение к интернету.');
+    if (!window.XRMediaViewer) {
+      showToast('Three.js XR Viewer не загрузился');
       return;
     }
 
     refreshCustomHotspotStyles();
-    isRenderingViewer = true;
 
     try {
-      viewer = pannellum.viewer('panorama', buildPannellumConfig({ firstSceneId: scene.id }));
-
-      viewer.on('load', () => {
-        isRenderingViewer = false;
+      viewer = new XRMediaViewer(els.panorama, {
+        source: scene.imageData,
+        kind: 'image',
+        projection: '360',
+        yaw: -(Number(scene.yaw) || 0),
+        pitch: Number(scene.pitch) || 0,
+        fov: Number(scene.hfov) || 100,
+        autoRotate: project.settings.autoRotateEnabled ? -(Number(project.settings.autoRotate) || -2) : 0,
+        threeModuleUrl: 'assets/three.module.min.js',
+        onChange: (xrState) => {
+          const state = panoramaStateFromXr(xrState);
+          els.coords.textContent =
+            'pitch ' + formatNum(state.pitch) + '° · yaw ' + formatNum(state.yaw) +
+            '° · FOV ' + Math.round(state.fov) + '°';
+          renderDynamicScreenHotspots(scene, els.sceneOverlay, state, { editor:true });
+        }
+      });
+      viewer.ready.then(() => {
         updateCoordsFromViewer();
-      });
-
-      viewer.on('scenechange', (sceneId) => {
-        if (!sceneId || isRenderingViewer) return;
-        currentSceneId = sceneId;
-        renderSceneList();
-        renderSceneSettings();
-        renderHotspotList();
-        updateToolbarState();
-      });
-
-      viewer.on('error', (message) => {
-        console.error('Pannellum:', message);
-        showToast('Не удалось загрузить панораму');
+        renderDynamicScreenHotspots(
+          scene,
+          els.sceneOverlay,
+          panoramaStateFromXr(viewer.getState()),
+          { editor:true }
+        );
+      }).catch((error) => {
+        console.error(error);
+        showToast('Не удалось загрузить 360° панораму');
       });
     } catch (error) {
-      isRenderingViewer = false;
       console.error(error);
-      showToast('Ошибка запуска просмотрщика');
+      showToast('Ошибка запуска Three.js просмотрщика');
     }
   }
 
   function updateCoordsFromViewer() {
     if (!viewer) return;
     try {
-      els.coords.textContent = `pitch ${formatNum(viewer.getPitch())}° · yaw ${formatNum(viewer.getYaw())}°`;
+      const state = panoramaStateFromXr(viewer.getState());
+      els.coords.textContent =
+        'pitch ' + formatNum(state.pitch) + '° · yaw ' + formatNum(state.yaw) +
+        '° · FOV ' + Math.round(state.fov) + '°';
     } catch (_) {}
   }
 
@@ -2210,13 +2220,6 @@
     renderHotspotList();
     updateToolbarState();
 
-    const target = getScene(sceneId);
-    if (viewer && target?.sceneType === 'panorama') {
-      try {
-        viewer.loadScene(sceneId);
-        return;
-      } catch (_) {}
-    }
     renderViewer();
   }
 
@@ -3135,9 +3138,10 @@
     }
 
     if (!viewer) return;
-    scene.pitch = Number(viewer.getPitch().toFixed(2));
-    scene.yaw = Number(viewer.getYaw().toFixed(2));
-    scene.hfov = Number(viewer.getHfov().toFixed(1));
+    const state = panoramaStateFromXr(viewer.getState());
+    scene.pitch = Number(state.pitch.toFixed(2));
+    scene.yaw = Number(state.yaw.toFixed(2));
+    scene.hfov = Number(state.fov.toFixed(1));
     markDirty();
 
     let updated = 0;
