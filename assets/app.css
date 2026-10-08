@@ -310,7 +310,7 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
 .range-field input[type="range"]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--primary)}
 .glow-pulse-row{margin-top:9px}
 
-/* Pannellum refinements */
+/* Three.js viewer refinements */
 .pnlm-container{font-family:inherit}
 .pnlm-hotspot-base{transition:filter .16s ease}
 .pnlm-hotspot-base:hover{filter:brightness(1.18)}
