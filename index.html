@@ -4,10 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1020">
-  <title>Pannellum Tour Editor</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.css">
-  <link rel="stylesheet" href="assets/app.css?v=20261008-2">
+  <title>XR Tour Editor</title>  <link rel="stylesheet" href="assets/app.css?v=20261008-2">
 </head>
 <body>
   <div class="app-shell">
@@ -15,7 +12,7 @@
       <div class="brand">
         <div class="brand-mark">360°</div>
         <div>
-          <strong>Pannellum Tour Editor</strong>
+          <strong>XR Tour Editor</strong>
           <span>Редактор виртуальных туров</span>
         </div>
       </div>
@@ -112,10 +109,10 @@
             <span>Скорость</span>
             <input id="autoRotate" type="number" value="-2" min="-20" max="20" step="0.5">
           </label>
-          <label class="switch-row">
+          <label class="switch-row" hidden>
             <span>
               <b>Multiresolution ZIP</b>
-              <small>Тайлы Pannellum для больших панорам</small>
+              <small>Legacy-настройка отключена после перехода на Three.js</small>
             </span>
             <input id="multiresEnabled" type="checkbox">
           </label>
@@ -1010,14 +1007,12 @@
     </div>
   </dialog>
 
-  <div id="toast" class="toast" role="status"></div>
-
-  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.7/build/pannellum.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <div id="toast" class="toast" role="status"></div>  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="assets/object360.js?v=20261005-1"></script>
   <script src="assets/stl-viewer.js?v=20261006-1"></script>
-  <script src="assets/xr-media-viewer.js?v=20261008-6"></script>
-  <script src="assets/app.js?v=20261008-6"></script>
+  <script src="assets/object360-xr-viewer.js?v=20261008-1"></script>
+  <script src="assets/stl-xr-viewer.js?v=20261008-1"></script>
+  <script src="assets/xr-media-viewer.js?v=20261008-7"></script>
+  <script src="assets/app.js?v=20261008-7"></script>
 </body>
 </html>
