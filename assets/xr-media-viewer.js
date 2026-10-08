@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const DEFAULT_THREE_URL = 'vendor/three/three.module.min.js';
+  const DEFAULT_THREE_URL = 'assets/three.module.min.js';
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
   const DEG = Math.PI / 180;
