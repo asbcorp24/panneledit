@@ -3882,6 +3882,8 @@
   let panoViewer = null;
   let objectViewer = null;
   let stlViewer = null;
+  let xrViewer = null;
+  let mediaXrViewers = [];
   let currentSceneId = '';
   let musicAudio = null;
   let musicKey = '';
@@ -3919,6 +3921,7 @@
     if (panoViewer) { try { panoViewer.destroy(); } catch (_) {} panoViewer = null; }
     if (objectViewer) { try { objectViewer.destroy(); } catch (_) {} objectViewer = null; }
     if (stlViewer) { try { stlViewer.destroy(); } catch (_) {} stlViewer = null; }
+    if (xrViewer) { try { xrViewer.destroy(); } catch (_) {} xrViewer = null; }
     host.innerHTML = '';
   };
 
@@ -3958,6 +3961,12 @@
       const dp = Math.abs((Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0));
       return dy <= 65 && dp <= 55;
     }
+    if (meta.sceneType === 'xr') {
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0));
+      return dy <= 72 && dp <= 58;
+    }
     return false;
   };
 
@@ -3968,7 +3977,7 @@
       const projected = projector.projectPoint(hotspot.modelPoint);
       if (projected) return {x:projected.x,y:projected.y};
     }
-    if (meta.sceneType === 'stl' && state) {
+    if ((meta.sceneType === 'stl' || meta.sceneType === 'xr') && state) {
       const dy = (((Number(state.yaw)||0) - (Number(hotspot.anchorYaw)||0) + 540) % 360) - 180;
       const dp = (Number(state.pitch)||0) - (Number(hotspot.anchorPitch)||0);
       x -= dy * .55;
@@ -3994,6 +4003,8 @@
 
   const renderOverlay = (id, state = null, projector = null) => {
     if (!overlay) return;
+    mediaXrViewers.forEach((viewer)=>{ try { viewer.destroy(); } catch (_) {} });
+    mediaXrViewers = [];
     overlay.innerHTML = '';
     const meta = config.sceneMeta?.[id] || {};
 
