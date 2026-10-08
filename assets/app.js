@@ -5549,6 +5549,19 @@
       data.wireframe = els.stlWireframe.checked;
       data.autoplay = els.stlAutoplay.checked;
       scene.stl = data;
+    } else if (scene.sceneType === 'xr') {
+      const data = normalizeXrData(scene.xr || {});
+      data.projection = ['360','180','360_LR','180_LR','360_TB','180_TB'].includes(els.xrProjection.value)
+        ? els.xrProjection.value
+        : '360';
+      data.yaw = Number(els.xrYaw.value) || 0;
+      data.pitch = clampNumber(els.xrPitch.value, -89, 89, 0);
+      data.fov = clampNumber(els.xrFov.value, 35, 110, 80);
+      data.autoplay = data.kind === 'video' && els.xrAutoplay.checked;
+      data.loop = data.kind === 'video' && els.xrLoop.checked;
+      data.volume = clampNumber(els.xrVolume.value, 0, 100, 80);
+      scene.xr = data;
+      els.xrVolumeValue.textContent = data.volume + '%';
     } else {
       scene.pitch = Number(els.scenePitch.value) || 0;
       scene.yaw = Number(els.sceneYaw.value) || 0;
