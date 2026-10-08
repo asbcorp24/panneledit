@@ -1427,11 +1427,12 @@
     const hasScene = Boolean(scene);
     const isObject = scene?.sceneType === 'object360';
     const isStl = scene?.sceneType === 'stl';
+    const isXr = scene?.sceneType === 'xr';
     els.btnAddHotspot.disabled = !hasScene;
     els.btnSetInitialView.disabled = !hasScene;
     els.btnSetInitialView.textContent = isObject
       ? 'Сохранить текущий кадр'
-      : (isStl ? 'Сохранить ракурс модели' : 'Сохранить текущий вид');
+      : (isStl ? 'Сохранить ракурс модели' : (isXr ? 'Сохранить XR-ракурс' : 'Сохранить текущий вид'));
     els.btnPreview.disabled = !project.scenes.length;
     els.btnAddTextObject.disabled = !hasScene;
     els.btnAddMediaObject.disabled = !hasScene;
@@ -3017,6 +3018,21 @@
       markDirty();
       renderSceneSettings();
       showToast('Ракурс STL-модели сохранён');
+      return;
+    }
+
+    if (scene.sceneType === 'xr') {
+      if (!xrViewer) return;
+      const state = xrViewer.getState();
+      scene.xr = normalizeXrData({
+        ...scene.xr,
+        yaw: Number(state.yaw.toFixed(2)),
+        pitch: Number(state.pitch.toFixed(2)),
+        fov: Number(state.fov.toFixed(1))
+      });
+      markDirty();
+      renderSceneSettings();
+      showToast('XR-ракурс сохранён');
       return;
     }
 
@@ -6058,6 +6074,14 @@
           anchorMode:'stl-screen', anchorX:50, anchorY:50,
           anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
         });
+        return;
+      }
+      if (xrViewer) {
+        const state = xrViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'xr-screen', anchorX:50, anchorY:50,
+          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch
+        });
       }
     });
 
@@ -6103,6 +6127,12 @@
             anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch, modelPoint:null
           });
         }
+      } else if (xrViewer) {
+        const state = xrViewer.getState();
+        openHotspotDialog(0, 0, null, {
+          anchorMode:'xr-screen', anchorX:x, anchorY:y,
+          anchorSector:0, anchorRow:0, anchorYaw:state.yaw, anchorPitch:state.pitch, modelPoint:null
+        });
       }
     });
 
@@ -6655,9 +6685,11 @@
       try { viewer?.resize(); } catch (_) {}
       try { objectViewer?.resize(); } catch (_) {}
       try { stlViewer?.resize(); } catch (_) {}
+      try { xrViewer?.resize(); } catch (_) {}
       try { previewViewer?.resize(); } catch (_) {}
       try { previewObjectViewer?.resize(); } catch (_) {}
       try { previewStlViewer?.resize(); } catch (_) {}
+      try { previewXrViewer?.resize(); } catch (_) {}
     });
   }
 
