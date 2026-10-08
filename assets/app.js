@@ -1756,7 +1756,7 @@
     }
 
     if (!scene.imageData) throw new Error('У панорамы нет изображения');
-    if (!window.pannellum) throw new Error('Pannellum не загружен');
+    if (!window.XRMediaViewer) throw new Error('Three.js XR Viewer не загружен');
 
     const host = document.createElement('div');
     host.style.cssText =
@@ -1765,70 +1765,23 @@
     document.body.appendChild(host);
 
     let tempViewer = null;
-    let timeoutId = null;
-
     try {
-      return await new Promise((resolve, reject) => {
-        let finished = false;
-
-        const cleanupAndReject = (error) => {
-          if (finished) return;
-          finished = true;
-          reject(error instanceof Error ? error : new Error(String(error || 'Ошибка создания превью')));
-        };
-
-        timeoutId = setTimeout(() => cleanupAndReject(new Error('Таймаут генерации превью')), 15000);
-
-        try {
-          tempViewer = pannellum.viewer(host, {
-            type: 'equirectangular',
-            panorama: scene.imageData,
-            autoLoad: true,
-            showControls: false,
-            keyboardZoom: false,
-            mouseZoom: false,
-            draggable: false,
-            pitch: Number(scene.pitch) || 0,
-            yaw: Number(scene.yaw) || 0,
-            hfov: Number(scene.hfov) || 100
-          });
-
-          tempViewer.on('load', () => {
-            if (finished) return;
-            try {
-              const renderer = tempViewer.getRenderer();
-              const rendered = renderer.render(
-                radians(scene.pitch),
-                radians(scene.yaw),
-                radians(scene.hfov || 100),
-                { returnImage: true }
-              );
-
-              let imageData = typeof rendered === 'string' ? rendered : '';
-              if (!imageData) {
-                const canvas = renderer.getCanvas();
-                if (canvas && typeof canvas.toDataURL === 'function') {
-                  imageData = canvas.toDataURL('image/png');
-                }
-              }
-
-              if (!imageData) throw new Error('Pannellum не вернул изображение');
-
-              finished = true;
-              clearTimeout(timeoutId);
-              resolve(imageData);
-            } catch (error) {
-              cleanupAndReject(error);
-            }
-          });
-
-          tempViewer.on('error', (message) => cleanupAndReject(new Error(String(message))));
-        } catch (error) {
-          cleanupAndReject(error);
-        }
+      tempViewer = new XRMediaViewer(host, {
+        source: scene.imageData,
+        kind: 'image',
+        projection: '360',
+        yaw: -(Number(scene.yaw) || 0),
+        pitch: Number(scene.pitch) || 0,
+        fov: Number(scene.hfov) || 100,
+        threeModuleUrl: 'assets/three.module.min.js'
       });
+      await tempViewer.ready;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      tempViewer.render();
+      const imageData = tempViewer.canvas?.toDataURL?.('image/png') || '';
+      if (!imageData) throw new Error('Three.js Viewer не вернул изображение');
+      return imageData;
     } finally {
-      clearTimeout(timeoutId);
       try { tempViewer?.destroy(); } catch (_) {}
       host.remove();
     }
