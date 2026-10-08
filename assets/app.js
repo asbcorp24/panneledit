@@ -1276,6 +1276,12 @@
       const dp = Math.abs((Number(state.pitch) || 0) - hotspot.anchorPitch);
       return dy <= 65 && dp <= 55;
     }
+    if (scene.sceneType === 'xr') {
+      if (!state) return true;
+      const dy = Math.abs((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
+      const dp = Math.abs((Number(state.pitch) || 0) - hotspot.anchorPitch);
+      return dy <= 72 && dp <= 58;
+    }
     return false;
   }
 
@@ -1286,7 +1292,7 @@
       const projected = projector.projectPoint(hotspot.modelPoint);
       if (projected) return { x:projected.x, y:projected.y };
     }
-    if (scene.sceneType === 'stl' && state) {
+    if ((scene.sceneType === 'stl' || scene.sceneType === 'xr') && state) {
       const dy = ((((Number(state.yaw) || 0) - hotspot.anchorYaw + 540) % 360) - 180);
       const dp = (Number(state.pitch) || 0) - hotspot.anchorPitch;
       x = hotspot.anchorX - dy * 0.55;
@@ -2792,7 +2798,9 @@
         ? { anchorMode:'object360', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
         : scene.sceneType === 'stl'
           ? { anchorMode:'stl-screen', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
-          : { anchorMode:'panorama', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:Number(yaw)||0, anchorPitch:Number(pitch)||0 }));
+          : scene.sceneType === 'xr'
+            ? { anchorMode:'xr-screen', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:0, anchorPitch:0 }
+            : { anchorMode:'panorama', anchorX:50, anchorY:50, anchorSector:0, anchorRow:0, anchorYaw:Number(yaw)||0, anchorPitch:Number(pitch)||0 }));
 
     const p = hotspot ? hotspot.pitch : pitch;
     const y = hotspot ? hotspot.yaw : yaw;
@@ -2830,6 +2838,13 @@
       els.hotspotAnchorInfo.hidden = false;
       els.hotspotAnchorInfo.textContent =
         'STL: привязка к ракурсу yaw ' + formatNum(pendingHotspotAnchor.anchorYaw) +
+        '° / pitch ' + formatNum(pendingHotspotAnchor.anchorPitch) +
+        '°, позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
+        Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
+    } else if (pendingHotspotAnchor?.anchorMode === 'xr-screen') {
+      els.hotspotAnchorInfo.hidden = false;
+      els.hotspotAnchorInfo.textContent =
+        'XR: привязка к ракурсу yaw ' + formatNum(pendingHotspotAnchor.anchorYaw) +
         '° / pitch ' + formatNum(pendingHotspotAnchor.anchorPitch) +
         '°, позиция ' + Math.round(pendingHotspotAnchor.anchorX || 50) + '% / ' +
         Math.round(pendingHotspotAnchor.anchorY || 50) + '%';
@@ -2913,7 +2928,11 @@
       url: type === 'url' ? els.hotspotUrl.value.trim() : '',
       info: type === 'info' ? els.hotspotInfo.value.trim() : '',
       transition: els.hotspotTransition.value || project.settings.defaultTransition || 'fade',
-      anchorMode: pendingHotspotAnchor?.anchorMode || (scene.sceneType === 'panorama' ? 'panorama' : scene.sceneType === 'object360' ? 'object360' : 'stl-screen'),
+      anchorMode: pendingHotspotAnchor?.anchorMode || (
+        scene.sceneType === 'panorama' ? 'panorama' :
+        scene.sceneType === 'object360' ? 'object360' :
+        scene.sceneType === 'xr' ? 'xr-screen' : 'stl-screen'
+      ),
       anchorX: pendingHotspotAnchor?.anchorX ?? 50,
       anchorY: pendingHotspotAnchor?.anchorY ?? 50,
       anchorSector: pendingHotspotAnchor?.anchorSector ?? 0,
