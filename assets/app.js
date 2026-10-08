@@ -4044,6 +4044,11 @@
         const img = document.createElement('img');
         img.src = item.src; img.alt = item.title || ''; img.style.objectFit = item.fit || 'contain';
         el.appendChild(img);
+      } else if (item.type === 'stereo-photo' && item.src) {
+        const stereoHost = document.createElement('div');
+        stereoHost.className = 'scene-stereo-viewer-host';
+        el.appendChild(stereoHost);
+        el._stereoHost = stereoHost;
       } else if (item.type === 'video' && item.src) {
         const video = document.createElement('video');
         video.src = item.src; video.controls = true; video.playsInline = true;
@@ -4110,6 +4115,23 @@
         el.append(frame,nav);
       }
       overlay.appendChild(el);
+      if (item.type === 'stereo-photo' && item.src && el._stereoHost && window.XRMediaViewer) {
+        try {
+          const stereoViewer = new XRMediaViewer(el._stereoHost, {
+            source:item.src,
+            kind:'image',
+            projection:item.stereoProjection || 'FLAT_LR',
+            fov:55,
+            controls:true,
+            motionControls:true,
+            threeModuleUrl:'vendor/three/three.module.min.js'
+          });
+          mediaXrViewers.push(stereoViewer);
+          stereoViewer.ready.catch(console.error);
+        } catch (error) {
+          console.error('Stereo photo:', error);
+        }
+      }
     });
 
     (meta.screenHotspots || []).forEach((hotspot) => {
