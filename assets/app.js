@@ -1721,7 +1721,7 @@
     }
 
     if (scene.sceneType === 'stl') {
-      if (!window.StlViewer) throw new Error('STL Viewer не загружен');
+      if (!window.StlXRViewer) throw new Error('STL XR Viewer не загружен');
       const data = normalizeStlData(scene.stl || {});
       if (!data.data) throw new Error('STL данные отсутствуют');
 
@@ -1733,7 +1733,7 @@
 
       let tempStl = null;
       try {
-        tempStl = new StlViewer(host, {
+        tempStl = new StlXRViewer(host, {
           source: data.data,
           yaw: data.yaw,
           pitch: data.pitch,
@@ -1993,14 +1993,14 @@
     if (!scene) return;
 
     if (scene.sceneType === 'object360') {
-      if (!window.Object360Viewer) {
-        showToast('Object360Viewer не загрузился');
+      if (!window.Object360XRViewer) {
+        showToast('Object360 XR Viewer не загрузился');
         return;
       }
       const data = normalizeObject360Data(scene.object360 || {});
       scene.object360 = data;
       try {
-        objectViewer = new Object360Viewer(els.panorama, {
+        objectViewer = new Object360XRViewer(els.panorama, {
           sectors: data.sectors,
           rows: data.rows,
           frames: data.frames,
@@ -2010,6 +2010,7 @@
           backgroundMode: data.backgroundMode,
           backgroundColor: data.backgroundColor,
           backgroundImage: data.backgroundImageData,
+          threeModuleUrl: 'assets/three.module.min.js',
           onFrameChange: (state) => {
             els.coords.textContent =
               'угол ' + formatNum(state.angle) + '° · кадр ' + (state.sector + 1) +
@@ -2029,14 +2030,14 @@
     }
 
     if (scene.sceneType === 'stl') {
-      if (!window.StlViewer) {
-        showToast('STL Viewer не загрузился');
+      if (!window.StlXRViewer) {
+        showToast('STL XR Viewer не загрузился');
         return;
       }
       const data = normalizeStlData(scene.stl || {});
       scene.stl = data;
       try {
-        stlViewer = new StlViewer(els.panorama, {
+        stlViewer = new StlXRViewer(els.panorama, {
           source: data.data,
           yaw: data.yaw,
           pitch: data.pitch,
@@ -2046,6 +2047,7 @@
           color: data.color,
           backgroundMode: data.backgroundMode,
           backgroundImage: stlBackgroundImageForData(data),
+          threeModuleUrl: 'assets/three.module.min.js',
           onChange: (state) => {
             els.coords.textContent =
               'yaw ' + formatNum(state.yaw) + '° · pitch ' + formatNum(state.pitch) +
@@ -5461,9 +5463,9 @@
     configurePreviewAudio(scene);
 
     if (scene.sceneType === 'object360') {
-      if (!window.Object360Viewer) return;
+      if (!window.Object360XRViewer) return;
       const data = normalizeObject360Data(scene.object360 || {});
-      previewObjectViewer = new Object360Viewer(els.previewPanorama, {
+      previewObjectViewer = new Object360XRViewer(els.previewPanorama, {
         sectors: data.sectors,
         rows: data.rows,
         frames: data.frames,
@@ -5480,9 +5482,9 @@
     }
 
     if (scene.sceneType === 'stl') {
-      if (!window.StlViewer) return;
+      if (!window.StlXRViewer) return;
       const data = normalizeStlData(scene.stl || {});
-      previewStlViewer = new StlViewer(els.previewPanorama, {
+      previewStlViewer = new StlXRViewer(els.previewPanorama, {
         source: data.data,
         yaw: data.yaw,
         pitch: data.pitch,
