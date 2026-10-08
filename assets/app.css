@@ -782,3 +782,43 @@ input[type="color"]{height:38px;padding:4px;cursor:pointer}
 @media(max-width:900px){
   .scene-type-control-4{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* Universal Three.js XR viewers */
+.object360-three-canvas{
+  position:absolute;inset:0;width:100%;height:100%;display:block
+}
+.object360-xr-button,.stl-xr-button{
+  flex:none;height:28px;min-width:34px;padding:0 8px;
+  border:1px solid rgba(255,255,255,.12);border-radius:8px;
+  background:#121b2e;color:#fff;cursor:pointer;
+  font-size:9px;font-weight:900
+}
+.object360-xr-button:hover:not(:disabled),.stl-xr-button:hover:not(:disabled){
+  border-color:#75e7d6
+}
+.object360-xr-button.active,.stl-xr-button.active{
+  border-color:#75e7d6;color:#75e7d6;
+  box-shadow:0 0 0 2px rgba(117,231,214,.10)
+}
+.object360-xr-button:disabled,.stl-xr-button:disabled{
+  opacity:.38;cursor:not-allowed
+}
+.object360-viewer.cardboard-active .object360-hint,
+.stl-viewer.cardboard-active .stl-hint{display:none}
+.object360-viewer.cardboard-active .object360-hud,
+.stl-viewer.cardboard-active .stl-hud{
+  left:50%;right:auto;transform:translateX(-50%);
+  width:auto;max-width:96vw
+}
+.screen-hotspot.has-custom-image{
+  width:58px;height:58px;padding:0;border-radius:14px;overflow:hidden
+}
+.screen-hotspot.has-custom-image>img{
+  width:100%;height:100%;display:block;object-fit:contain
+}
+.screen-hotspot.is-preview-image{
+  width:98px;height:64px;border:3px solid rgba(255,255,255,.94);
+  border-radius:12px
+}
+.screen-hotspot.has-custom-image>span{display:none}
