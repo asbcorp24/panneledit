@@ -461,7 +461,41 @@
     if (scene?.sceneType === 'stl') {
       return { icon: '◆', label: 'STL 3D', detail: 'интерактивная 3D-модель' };
     }
+    if (scene?.sceneType === 'xr') {
+      return { icon: '◈', label: 'XR Media', detail: 'Three.js 180/360 · XR · Cardboard' };
+    }
     return { icon: '◌', label: 'Панорама 360°', detail: 'Pannellum-панорама' };
+  }
+
+  function normalizeXrData(input = {}) {
+    const projection = ['360','180','360_LR','180_LR','360_TB','180_TB'].includes(String(input.projection || '').toUpperCase())
+      ? String(input.projection).toUpperCase()
+      : '360';
+    const kind = input.kind === 'image' ? 'image' : 'video';
+    return {
+      data: String(input.data || ''),
+      filename: String(input.filename || ''),
+      kind,
+      projection,
+      yaw: Number(input.yaw) || 0,
+      pitch: clampNumber(input.pitch, -89, 89, 0),
+      fov: clampNumber(input.fov, 35, 110, 80),
+      autoplay: kind === 'video' && Boolean(input.autoplay),
+      loop: kind === 'video' && Boolean(input.loop),
+      muted: input.muted !== false,
+      volume: clampNumber(input.volume, 0, 100, 80)
+    };
+  }
+
+  function xrPlaceholderDataUrl(projection = '360') {
+    const label = String(projection || '360').replace('_', ' ');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240">' +
+      '<defs><radialGradient id="g"><stop stop-color="#311b46"/><stop offset="1" stop-color="#07101b"/></radialGradient></defs>' +
+      '<rect width="320" height="240" fill="url(#g)"/>' +
+      '<circle cx="160" cy="112" r="62" fill="none" stroke="#ff8dcc" stroke-width="3"/>' +
+      '<path d="M88 112h144M160 50c-22 18-34 39-34 62s12 44 34 62M160 50c22 18 34 39 34 62s-12 44-34 62" fill="none" stroke="#ffb8df" stroke-width="2" opacity=".85"/>' +
+      '<text x="160" y="211" text-anchor="middle" fill="#ffb8df" font-family="Arial" font-size="18" font-weight="700">XR ' + label + '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
 
   function normalizeStlData(input = {}) {
@@ -691,7 +725,7 @@
   }
 
   function normalizeMediaObject(input = {}) {
-    const type = ['image','gallery','video','audio','pdf','button'].includes(input.type) ? input.type : 'image';
+    const type = ['image','stereo-photo','gallery','video','audio','pdf','button'].includes(input.type) ? input.type : 'image';
     const flags = normalizeLayerFlags(input);
     return {
       id: String(input.id || uid('media')),
@@ -714,6 +748,9 @@
       loop: Boolean(input.loop),
       volume: clampNumber(input.volume, 0, 100, 80),
       audioStyle: ['compact','large','hidden'].includes(input.audioStyle) ? input.audioStyle : 'compact',
+      stereoProjection: ['FLAT_LR','FLAT_TB'].includes(String(input.stereoProjection || '').toUpperCase())
+        ? String(input.stereoProjection).toUpperCase()
+        : 'FLAT_LR',
       muted: input.muted !== false,
       background: ['none','dark','light'].includes(input.background) ? input.background : 'dark',
       animation: ['none','fade','slide','zoom'].includes(input.animation) ? input.animation : 'fade',
