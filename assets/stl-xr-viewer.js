@@ -157,6 +157,10 @@
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, this.options.backgroundMode === 'transparent' ? 0 : 1);
 
+      this.spatialOverlay = window.XRSpatialOverlay && this.options.domOverlayRoot
+        ? new XRSpatialOverlay({THREE,renderer:this.renderer,scene:this.scene,camera:this.camera,root:this.options.domOverlayRoot})
+        : null;
+
       this.world = new THREE.Group();
       this.world.position.set(0,0,-3.2);
       this.scene.add(this.world);
@@ -373,13 +377,15 @@
         this.xrButton.classList.add('active');
         this.xrButton.textContent='ВЫХОД XR';
         await this.renderer.xr.setSession(session);
+        this.spatialOverlay?.attachSession(session);
         session.addEventListener('end',()=>{
           this.xrSession=null;
+          this.spatialOverlay?.detachSession();
           this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
           this.xrButton.classList.remove('active');
           this.xrButton.textContent='XR';
         },{once:true});
-      }catch(error){this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');console.warn('STL WebXR:',error);}
+      }catch(error){this.spatialOverlay?.detachSession();this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');console.warn('STL WebXR:',error);}
     }
 
     setColor(color) {
@@ -458,6 +464,7 @@
       this.resize();
 
       if(this.xrSession || this.renderer.xr.isPresenting){
+        this.spatialOverlay?.update();
         this.renderer.setScissorTest(false);
         this.renderer.render(this.scene,this.camera);
         return;
@@ -509,6 +516,8 @@
       this.root?.removeEventListener('pointerup',this.onPointerUp);
       this.root?.removeEventListener('pointercancel',this.onPointerUp);
       this.root?.removeEventListener('wheel',this.onWheel);
+      this.spatialOverlay?.destroy();
+      this.spatialOverlay=null;
       this.geometry?.dispose?.();
       this.material?.dispose?.();
       this.renderer?.dispose?.();

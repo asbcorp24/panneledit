@@ -151,6 +151,16 @@
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, 1);
 
+      this.spatialOverlay = window.XRSpatialOverlay && this.options.domOverlayRoot
+        ? new XRSpatialOverlay({
+            THREE,
+            renderer: this.renderer,
+            scene: this.scene,
+            camera: this.camera,
+            root: this.options.domOverlayRoot
+          })
+        : null;
+
       this.resizeObserver = new ResizeObserver(() => this.resize());
       this.resizeObserver.observe(this.container);
 
@@ -491,14 +501,17 @@
         this.xrButton.classList.add('active');
         this.xrButton.textContent = 'ВЫХОД XR';
         await this.renderer.xr.setSession(session);
+        this.spatialOverlay?.attachSession(session);
         session.addEventListener('end', () => {
           this.xrSession = null;
+          this.spatialOverlay?.detachSession();
           this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
           this.camera?.layers.set(0);
           this.xrButton.classList.remove('active');
           this.xrButton.textContent = 'XR';
         }, { once: true });
       } catch (error) {
+        this.spatialOverlay?.detachSession();
         this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
         this.camera?.layers.set(0);
         console.warn('WebXR:', error);
@@ -560,6 +573,7 @@
       if (this.video) this.updatePlayButton();
 
       if (this.xrSession || this.renderer.xr.isPresenting) {
+        this.spatialOverlay?.update();
         this.renderer.setScissorTest(false);
         this.renderer.setViewport(0, 0, this.canvas.width, this.canvas.height);
         this.renderer.render(this.scene, this.camera);
@@ -670,6 +684,8 @@
         this.video.load();
       }
 
+      this.spatialOverlay?.destroy();
+      this.spatialOverlay = null;
       this.disposeMeshes();
       this.texture?.dispose?.();
       this.renderer?.dispose?.();

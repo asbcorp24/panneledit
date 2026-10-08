@@ -3718,6 +3718,7 @@
       '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
+      '  <script src="assets/xr-spatial-overlay.js"></script>\n' +
       '  <script src="assets/object360-xr-viewer.js"></script>\n' +
       '  <script src="assets/stl-xr-viewer.js"></script>\n' +
       '  <script src="assets/xr-media-viewer.js"></script>\n' +
@@ -4982,7 +4983,7 @@
   function exportedServiceWorker(config) {
     const assets = new Set([
       './','index.html','assets/tour.css','assets/tour.js','assets/stl-viewer.js',
-      'assets/object360-xr-viewer.js','assets/stl-xr-viewer.js','assets/xr-media-viewer.js',
+      'assets/xr-spatial-overlay.js','assets/object360-xr-viewer.js','assets/stl-xr-viewer.js','assets/xr-media-viewer.js',
       'assets/three.module.min.js','assets/three.core.min.js',
       'manifest.webmanifest','icons/app-icon.svg'
     ]);
@@ -5275,6 +5276,8 @@
       root.file('assets/tour.js', exportedViewerJs(config));
       const stlParserAsset = await fetchRequiredAsset('assets/stl-viewer.js');
       root.file('assets/stl-viewer.js', await stlParserAsset.text());
+      const spatialOverlayAsset = await fetchRequiredAsset('assets/xr-spatial-overlay.js');
+      root.file('assets/xr-spatial-overlay.js', await spatialOverlayAsset.text());
       const objectXrViewerAsset = await fetchRequiredAsset('assets/object360-xr-viewer.js');
       root.file('assets/object360-xr-viewer.js', await objectXrViewerAsset.text());
       const stlXrViewerAsset = await fetchRequiredAsset('assets/stl-xr-viewer.js');
