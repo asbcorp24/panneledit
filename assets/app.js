@@ -2186,19 +2186,76 @@
     return scene;
   }
 
+  async function createXrSceneFromFile(file, title, projection = '360') {
+    if (!file) throw new Error('Выберите XR медиафайл');
+    const isImage = /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
+    const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
+    if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
+
+    const data = await fileToDataURL(file);
+    const xr = normalizeXrData({
+      data,
+      filename: file.name,
+      kind: isImage ? 'image' : 'video',
+      projection,
+      yaw: 0,
+      pitch: 0,
+      fov: 80,
+      autoplay: false,
+      loop: false,
+      muted: false,
+      volume: 80
+    });
+
+    const baseId = slugify(title || file.name.replace(/\.[^.]+$/, ''));
+    let id = baseId;
+    let n = 2;
+    while (project.scenes.some((scene) => scene.id === id)) id = baseId + '-' + n++;
+
+    const scene = {
+      id,
+      title: String(title || file.name.replace(/\.[^.]+$/, '') || 'XR Media'),
+      sceneType: 'xr',
+      filename: file.name || (id + (isImage ? '.jpg' : '.mp4')),
+      imageData: isImage ? data : xrPlaceholderDataUrl(xr.projection),
+      object360: null,
+      stl: null,
+      xr,
+      pitch: 0,
+      yaw: 0,
+      hfov: 100,
+      audio: normalizeSceneAudio({}),
+      textObjects: [],
+      mediaObjects: [],
+      hotspots: []
+    };
+
+    project.scenes.push(scene);
+    if (!project.firstScene) project.firstScene = scene.id;
+    currentSceneId = scene.id;
+    markDirty();
+    renderViewer();
+    return scene;
+  }
+
   function setNewSceneType(type) {
-    const next = type === 'object360' ? 'object360' : (type === 'stl' ? 'stl' : 'panorama');
+    const next = type === 'object360'
+      ? 'object360'
+      : (type === 'stl' ? 'stl' : (type === 'xr' ? 'xr' : 'panorama'));
     els.newSceneType.value = next;
     [...els.sceneTypeControl.querySelectorAll('[data-scene-type]')].forEach((button) => {
       button.classList.toggle('active', button.dataset.sceneType === next);
     });
     const objectMode = next === 'object360';
     const stlMode = next === 'stl';
-    els.panoramaUploadBox.hidden = objectMode || stlMode;
+    const xrMode = next === 'xr';
+    els.panoramaUploadBox.hidden = objectMode || stlMode || xrMode;
     els.object360UploadBox.hidden = !objectMode;
     els.object360ImportNote.hidden = !objectMode;
     els.stlUploadBox.hidden = !stlMode;
     els.stlImportNote.hidden = !stlMode;
+    els.xrUploadBox.hidden = !xrMode;
+    els.xrCreateOptions.hidden = !xrMode;
   }
 
   function openSceneDialog() {
@@ -2206,6 +2263,8 @@
     els.newSceneFileName.textContent = 'JPG, PNG или WEBP';
     els.newObject360FileName.textContent = 'ZIP из Android-приложения Object360Capture';
     els.newStlFileName.textContent = 'Binary или ASCII STL';
+    els.newXrMediaFileName.textContent = 'MP4 / WEBM / JPG / PNG / WEBP';
+    els.newXrProjection.value = '360';
     setNewSceneType('panorama');
     els.sceneDialog.showModal();
     setTimeout(() => els.newSceneTitle.focus(), 50);
