@@ -38,6 +38,7 @@
         volume: clamp(options.volume ?? 80, 0, 100),
         controls: options.controls !== false,
         motionControls: options.motionControls !== false,
+        autoRotate: Number(options.autoRotate) || 0,
         threeModuleUrl: options.threeModuleUrl || DEFAULT_THREE_URL,
         onChange: typeof options.onChange === 'function' ? options.onChange : null,
         onReady: typeof options.onReady === 'function' ? options.onReady : null
@@ -53,6 +54,7 @@
       this.xrSession = null;
       this.deviceQuaternion = null;
       this.screenOrientation = 0;
+      this.lastRenderTime = performance.now();
       this.mediaKind = isVideoSource(this.options.kind, this.options.source) ? 'video' : 'image';
       this.stereo = /_(LR|TB)$/.test(this.options.projection);
       this.is180 = this.options.projection.startsWith('180');
@@ -535,6 +537,15 @@
 
     render() {
       if (this.destroyed || !this.renderer || !this.scene || !this.camera) return;
+
+      const now = performance.now();
+      const dt = Math.min(0.1, Math.max(0, (now - this.lastRenderTime) / 1000));
+      this.lastRenderTime = now;
+      if (this.options.autoRotate && !this.dragging && !this.cardboard && !this.xrSession) {
+        this.yaw += this.options.autoRotate * dt;
+        this.emitChange();
+      }
+
       this.resize();
       this.updateCameraOrientation();
       if (this.video) this.updatePlayButton();
@@ -592,9 +603,27 @@
         yaw: this.yaw,
         pitch: this.pitch,
         fov: this.fov,
+        aspect: Math.max(0.001, this.container.clientWidth / Math.max(1, this.container.clientHeight)),
         projection: this.options.projection,
         cardboard: this.cardboard,
         xr: Boolean(this.xrSession)
+      };
+    }
+
+    screenToView(clientX, clientY) {
+      const rect = this.canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        return { yaw: this.yaw, pitch: this.pitch };
+      }
+      const nx = ((clientX - rect.left) / rect.width - 0.5) * 2;
+      const ny = (0.5 - (clientY - rect.top) / rect.height) * 2;
+      const verticalFov = this.fov;
+      const horizontalFov = 2 * Math.atan(
+        Math.tan((verticalFov * DEG) / 2) * (rect.width / rect.height)
+      ) / DEG;
+      return {
+        yaw: this.yaw + nx * horizontalFov * 0.5,
+        pitch: clamp(this.pitch + ny * verticalFov * 0.5, -89, 89)
       };
     }
 
