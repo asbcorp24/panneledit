@@ -450,16 +450,25 @@
         const session = await navigator.xr.requestSession('immersive-vr', {
           optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
         });
+
+        // Three.js adds eye layers 1 / 2 to the layer mask inherited from
+        // the user camera. Remove the ordinary layer 0 while presenting,
+        // otherwise a stereo left-eye mesh placed on 0+1 would also be
+        // visible to the right-eye XR camera through layer 0.
+        this.camera.layers.disableAll();
+
         this.xrSession = session;
         this.xrButton.classList.add('active');
         this.xrButton.textContent = 'ВЫХОД XR';
         await this.renderer.xr.setSession(session);
         session.addEventListener('end', () => {
           this.xrSession = null;
+          this.camera?.layers.set(0);
           this.xrButton.classList.remove('active');
           this.xrButton.textContent = 'XR';
         }, { once: true });
       } catch (error) {
+        this.camera?.layers.set(0);
         console.warn('WebXR:', error);
       }
     }
