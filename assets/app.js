@@ -4269,9 +4269,15 @@
     } else if (meta.sceneType === 'stl') {
       const src = config.stlScenes?.[id]?.source;
       if (src) fetch(src).catch(()=>{});
+    } else if (meta.sceneType === 'xr') {
+      const src = config.xrScenes?.[id]?.source;
+      if (src) {
+        if (config.xrScenes?.[id]?.kind === 'image') { const img = new Image(); img.src = src; }
+        else { const v = document.createElement('video'); v.preload='metadata'; v.src=src; }
+      }
     }
     (meta.mediaObjects || []).forEach((item) => {
-      if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; }
+      if ((item.type === 'image' || item.type === 'stereo-photo') && item.src) { const img = new Image(); img.src = item.src; }
       if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
       if (item.type === 'audio' && item.src) { const a = new Audio(); a.preload='metadata'; a.src=item.src; }
     });
@@ -4290,7 +4296,7 @@
   const showScene = async (id, pushHistory = true, transition = null) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
-    if (id === currentSceneId && (panoViewer || objectViewer || stlViewer)) {
+    if (id === currentSceneId && (panoViewer || objectViewer || stlViewer || xrViewer)) {
       updateMenu(id); updateBackButton(); renderOverlay(id); configureAudio(id); playAutoplayMedia(); return;
     }
     const previous = currentSceneId;
@@ -4324,9 +4330,30 @@
         stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
+      if (meta.sceneType === 'xr') {
+        const data = config.xrScenes?.[id];
+        if (!data || !window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">XR сцена недоступна</div>'; return; }
+        xrViewer = new XRMediaViewer(host,{
+          source:data.source,
+          kind:data.kind,
+          projection:data.projection,
+          yaw:data.yaw,
+          pitch:data.pitch,
+          fov:data.fov,
+          autoplay:data.autoplay,
+          loop:data.loop,
+          muted:false,
+          volume:data.volume,
+          threeModuleUrl:'vendor/three/three.module.min.js',
+          onChange:(state)=>renderDynamicHotspots(id,state)
+        });
+        renderDynamicHotspots(id,xrViewer.getState());
+        xrViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки XR Media</div>';});
+        return;
+      }
       if (!window.pannellum) { host.innerHTML='<div class="viewer-error">Pannellum не загрузился</div>'; return; }
       const panoConfig = {...config,default:{...(config.default||{}),firstScene:id}};
-      ['object360Scenes','stlScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition','offlineAssets'].forEach((key)=>delete panoConfig[key]);
+      ['object360Scenes','stlScenes','xrScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition','offlineAssets'].forEach((key)=>delete panoConfig[key]);
       decorateUniversalHotspots(panoConfig);
       panoViewer = pannellum.viewer('panorama',panoConfig);
       panoViewer.on('scenechange',(sceneId)=>{
@@ -4429,7 +4456,7 @@
         const meta=config.sceneMeta?.[id]||{};
         const option=document.createElement('option');
         option.value=id;
-        option.textContent=(meta.sceneType==='object360'?'◉ ':meta.sceneType==='stl'?'◆ ':'◌ ')+(meta.title||id);
+        option.textContent=(meta.sceneType==='object360'?'◉ ':meta.sceneType==='stl'?'◆ ':meta.sceneType==='xr'?'◈ ':'◌ ')+(meta.title||id);
         menu.appendChild(option);
       });
       menu.addEventListener('change',()=>showScene(menu.value,true,config.defaultTransition||'fade'));
