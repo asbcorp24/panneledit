@@ -6291,7 +6291,8 @@
       const scene = getScene();
       if (!scene) return;
       if (viewer) {
-        openHotspotDialog(viewer.getPitch(), viewer.getYaw());
+        const state = panoramaStateFromXr(viewer.getState());
+        openHotspotDialog(state.pitch, state.yaw);
         return;
       }
       if (objectViewer) {
@@ -6324,8 +6325,8 @@
       if (!scene) return;
       if (viewer) {
         try {
-          const [pitch, yaw] = viewer.mouseEventToCoords(event);
-          openHotspotDialog(pitch, yaw);
+          const point = panoramaPointFromXr(viewer.screenToView(event.clientX, event.clientY));
+          openHotspotDialog(point.pitch, point.yaw);
         } catch (error) {
           console.warn(error);
         }
@@ -6371,10 +6372,10 @@
     });
 
     els.panorama.addEventListener('mousemove', (event) => {
-      if (!viewer || !getScene()) return;
+      if (!viewer || getScene()?.sceneType !== 'panorama') return;
       try {
-        const [pitch, yaw] = viewer.mouseEventToCoords(event);
-        els.coords.textContent = `pitch ${formatNum(pitch)}° · yaw ${formatNum(yaw)}°`;
+        const point = panoramaPointFromXr(viewer.screenToView(event.clientX, event.clientY));
+        els.coords.textContent = 'pitch ' + formatNum(point.pitch) + '° · yaw ' + formatNum(point.yaw) + '°';
       } catch (_) {
         updateCoordsFromViewer();
       }
