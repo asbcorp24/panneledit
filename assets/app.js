@@ -3742,7 +3742,7 @@
       '  <div id="tourStartScreen" class="tour-start-screen" hidden>\n' +
       '    <div class="tour-start-shade"></div>\n' +
       '    <div class="tour-start-card">\n' +
-      '      <span class="tour-start-kicker">360° · OBJECT · 3D</span>\n' +
+      '      <span class="tour-start-kicker">360° · OBJECT · 3D · XR</span>\n' +
       '      <h1 id="tourStartTitle"></h1>\n' +
       '      <p id="tourStartSubtitle"></p>\n' +
       '      <div class="tour-start-actions">\n' +
@@ -5366,7 +5366,7 @@
         if (scene.sceneType === 'xr') return !scene.xr?.data;
         return !scene.imageData;
       })) {
-        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры / STL данные');
+        throw new Error('В импортируемом проекте отсутствуют встроенные изображения / Object360 кадры / STL / XR данные');
       }
 
       project = imported;
@@ -5386,6 +5386,9 @@
   function destroyPreviewViewers() {
     stopPreviewAudio();
     if (els.previewSceneOverlay) {
+      els.previewSceneOverlay.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
+        try { host._xrViewer?.destroy?.(); } catch (_) {}
+      });
       els.previewSceneOverlay.innerHTML = '';
       els.previewSceneOverlay.hidden = true;
     }
