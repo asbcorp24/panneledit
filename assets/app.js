@@ -5303,11 +5303,11 @@
       root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
-      const threeAsset = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.min.js');
+      const threeAsset = await fetchRequiredAsset('vendor/three/three.module.min.js');
       root.file('vendor/three/three.module.min.js', await threeAsset.text());
-      const threeCoreAsset = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.core.min.js');
+      const threeCoreAsset = await fetchRequiredAsset('vendor/three/three.core.min.js');
       root.file('vendor/three/three.core.min.js', await threeCoreAsset.text());
-      const threeLicense = await fetchRequiredAsset('https://cdn.jsdelivr.net/npm/three@0.183.2/LICENSE');
+      const threeLicense = await fetchRequiredAsset('vendor/three/LICENSE');
       root.file('vendor/three/LICENSE', await threeLicense.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       if (config.exportSettings?.pwaEnabled) {
