@@ -586,7 +586,8 @@
       if (this.xrSession || this.renderer.xr.isPresenting) {
         this.spatialOverlay?.update();
         this.renderer.setScissorTest(false);
-        this.renderer.setViewport(0, 0, this.canvas.width, this.canvas.height);
+        // WebXR owns the eye viewport. Do not override it with drawing-buffer
+        // dimensions because WebGLRenderer applies devicePixelRatio internally.
         this.renderer.render(this.scene, this.camera);
         return;
       }
@@ -594,13 +595,14 @@
       if (!this.cardboard) {
         this.camera.layers.set(0);
         this.renderer.setScissorTest(false);
-        this.renderer.setViewport(0, 0, this.canvas.width, this.canvas.height);
+        // renderer.setSize() already restored the full viewport in CSS pixels.
+        // Passing canvas.width/canvas.height here would apply DPR twice.
         this.renderer.render(this.scene, this.camera);
         return;
       }
 
-      const width = this.canvas.width;
-      const height = this.canvas.height;
+      const width = Math.max(1, this.container.clientWidth);
+      const height = Math.max(1, this.container.clientHeight);
       const half = Math.floor(width / 2);
       const aspect = half / Math.max(1, height);
 

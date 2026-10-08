@@ -469,7 +469,7 @@
 
       if(this.cardboard){
         if(this.deviceQuaternion) this.camera.quaternion.copy(this.deviceQuaternion);
-        const width=this.canvas.width,height=this.canvas.height,half=Math.floor(width/2);
+        const width=Math.max(1,this.container.clientWidth),height=Math.max(1,this.container.clientHeight),half=Math.floor(width/2);
         const basePos=this.camera.position.clone();
         const right=new this.THREE.Vector3(1,0,0).applyQuaternion(this.camera.quaternion);
         this.renderer.setScissorTest(true);
