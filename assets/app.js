@@ -3738,7 +3738,6 @@
       '  <meta name="apple-mobile-web-app-capable" content="yes">\n' +
       '  <title>' + title + '</title>\n' +
       (pwa ? '  <link rel="manifest" href="manifest.webmanifest">\n' : '') +
-      '  <link rel="stylesheet" href="vendor/pannellum/build/pannellum.css">\n' +
       '  <link rel="stylesheet" href="assets/tour.css">\n' +
       '</head>\n<body>\n' +
       '  <div id="tourNavBar">\n' +
@@ -3768,7 +3767,6 @@
       '    </div>\n' +
       '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
-      '  <script src="vendor/pannellum/build/pannellum.js"></script>\n' +
       '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
       '  <script src="assets/xr-media-viewer.js"></script>\n' +
@@ -3964,6 +3962,14 @@
 
   const screenHotspotVisible = (hotspot, meta, state, projector = null) => {
     if (hotspot.visible === false) return false;
+    if (meta.sceneType === 'panorama') {
+      if (!state) return true;
+      const dy = (((Number(hotspot.yaw)||0) - (Number(state.yaw)||0) + 540) % 360) - 180;
+      const dp = (Number(hotspot.pitch)||0) - (Number(state.pitch)||0);
+      const hfov = Math.max(30,Number(state.fov)||100);
+      const vfov = hfov / Math.max(.5,Number(state.aspect)||1);
+      return Math.abs(dy) <= hfov*.62 && Math.abs(dp) <= Math.max(35,vfov*.72);
+    }
     if (meta.sceneType === 'object360') {
       if (!state) return true;
       const sectors = Math.max(1, Number(config.object360Scenes?.[currentSceneId]?.sectors) || 1);
@@ -3993,6 +3999,14 @@
   const screenHotspotPosition = (hotspot, meta, state, projector = null) => {
     let x = Number(hotspot.anchorX)||50;
     let y = Number(hotspot.anchorY)||50;
+    if (meta.sceneType === 'panorama' && state) {
+      const dy = (((Number(hotspot.yaw)||0) - (Number(state.yaw)||0) + 540) % 360) - 180;
+      const dp = (Number(hotspot.pitch)||0) - (Number(state.pitch)||0);
+      const hfov = Math.max(30,Number(state.fov)||100);
+      const vfov = hfov / Math.max(.5,Number(state.aspect)||1);
+      x = 50 + (dy / Math.max(1,hfov*.5))*50;
+      y = 50 - (dp / Math.max(1,vfov*.5))*50;
+    }
     if (meta.sceneType === 'stl' && hotspot.anchorMode === 'stl-3d' && hotspot.modelPoint && projector?.projectPoint) {
       const projected = projector.projectPoint(hotspot.modelPoint);
       if (projected) return {x:projected.x,y:projected.y};
@@ -4265,23 +4279,11 @@
     transitionLayer.className = 'tour-transition-layer';
   };
 
-  const decorateUniversalHotspots = (panoConfig) => {
-    Object.values(panoConfig.scenes || {}).forEach((scene) => {
-      (scene.hotSpots || []).forEach((hotspot) => {
-        const target = hotspot.tourTargetSceneId;
-        if (!target) return;
-        hotspot.type = 'info';
-        delete hotspot.sceneId;
-        hotspot.clickHandlerFunc = () => showScene(target, true, hotspot.tourTransition || config.defaultTransition || 'fade');
-      });
-    });
-  };
-
   const preloadScene = (id) => {
     const meta = config.sceneMeta?.[id];
     if (!meta) return;
     if (meta.sceneType === 'panorama') {
-      const p = config.scenes?.[id]?.panorama || config.scenes?.[id]?.multiRes?.equirectangularThumbnail;
+      const p = config.scenes?.[id]?.source;
       if (p) { const img = new Image(); img.src = p; }
     } else if (meta.sceneType === 'object360') {
       const frames = config.object360Scenes?.[id]?.frames || [];
@@ -4306,7 +4308,6 @@
 
   const preloadNeighbors = (id) => {
     const targets = new Set();
-    (config.scenes?.[id]?.hotSpots || []).forEach((h)=>{ if(h.tourTargetSceneId) targets.add(h.tourTargetSceneId); });
     (config.sceneMeta?.[id]?.screenHotspots || []).forEach((h)=>{ if(h.targetSceneId) targets.add(h.targetSceneId); });
     const gi = config.guide?.steps?.findIndex((step)=>step.sceneId===id);
     if (gi >= 0 && config.guide.steps[gi+1]) targets.add(config.guide.steps[gi+1].sceneId);
@@ -4371,17 +4372,34 @@
         xrViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки XR Media</div>';});
         return;
       }
-      if (!window.pannellum) { host.innerHTML='<div class="viewer-error">Pannellum не загрузился</div>'; return; }
-      const panoConfig = {...config,default:{...(config.default||{}),firstScene:id}};
-      ['object360Scenes','stlScenes','xrScenes','sceneMeta','sceneOrder','tourFirstScene','projectAudio','startScreen','guide','exportSettings','defaultTransition','offlineAssets'].forEach((key)=>delete panoConfig[key]);
-      decorateUniversalHotspots(panoConfig);
-      panoViewer = pannellum.viewer('panorama',panoConfig);
-      panoViewer.on('scenechange',(sceneId)=>{
-        if (!sceneId || sceneId===currentSceneId) return;
-        if (currentSceneId) historyStack.push(currentSceneId);
-        currentSceneId = sceneId;
-        updateMenu(sceneId); updateBackButton(); renderOverlay(sceneId); configureAudio(sceneId); playAutoplayMedia(); preloadNeighbors(sceneId);
+      const data = config.scenes?.[id];
+      if (!data || !window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">Three.js panorama недоступна</div>'; return; }
+      panoViewer = new XRMediaViewer(host,{
+        source:data.source,
+        kind:'image',
+        projection:'360',
+        yaw:-(Number(data.yaw)||0),
+        pitch:Number(data.pitch)||0,
+        fov:Number(data.fov)||100,
+        autoRotate:-(Number(config.autoRotate)||0),
+        threeModuleUrl:'assets/three.module.min.js',
+        onChange:(xrState)=>{
+          const state={
+            yaw:-(Number(xrState.yaw)||0),
+            pitch:Number(xrState.pitch)||0,
+            fov:Number(xrState.fov)||100,
+            aspect:Number(xrState.aspect)||1
+          };
+          renderDynamicHotspots(id,state);
+        }
       });
+      panoViewer.ready.then(()=>{
+        const s=panoViewer.getState();
+        renderDynamicHotspots(id,{
+          yaw:-(Number(s.yaw)||0),pitch:Number(s.pitch)||0,
+          fov:Number(s.fov)||100,aspect:Number(s.aspect)||1
+        });
+      }).catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки панорамы</div>';});
     };
 
     await applyTransition(transition || config.defaultTransition || 'fade', switchScene);
