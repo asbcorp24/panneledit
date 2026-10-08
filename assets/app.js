@@ -3251,7 +3251,7 @@
     const payload = cloneProjectForExport();
     payload.exportedAt = new Date().toISOString();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    downloadBlob(blob, safeFilename(project.title) + '.pannellum-project.json');
+    downloadBlob(blob, safeFilename(project.title) + '.xr-tour-project.json');
     showToast('Проект экспортирован');
   }
 
@@ -3769,8 +3769,9 @@
       '    </div>\n' +
       '  </div>\n' +
       '  <noscript>Для просмотра виртуального тура необходимо включить JavaScript.</noscript>\n' +
-      '  <script src="assets/object360.js"></script>\n' +
       '  <script src="assets/stl-viewer.js"></script>\n' +
+      '  <script src="assets/object360-xr-viewer.js"></script>\n' +
+      '  <script src="assets/stl-xr-viewer.js"></script>\n' +
       '  <script src="assets/xr-media-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
       (pwa ? '  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>\n' : '') +
@@ -4336,17 +4337,19 @@
 
       if (meta.sceneType === 'object360') {
         const data = config.object360Scenes?.[id];
-        if (!data || !window.Object360Viewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
-        objectViewer = new Object360Viewer(host,{...data,onFrameChange:(state)=>renderDynamicHotspots(id,state)});
+        if (!data || !window.Object360XRViewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
+        objectViewer = new Object360XRViewer(host,{...data,threeModuleUrl:'assets/three.module.min.js',onFrameChange:(state)=>renderDynamicHotspots(id,state)});
+        objectViewer.ready?.catch?.(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки Object360</div>';});
         renderDynamicHotspots(id,objectViewer.getState());
         return;
       }
       if (meta.sceneType === 'stl') {
         const data = config.stlScenes?.[id];
-        if (!data || !window.StlViewer) { host.innerHTML='<div class="viewer-error">STL сцена недоступна</div>'; return; }
-        stlViewer = new StlViewer(host,{
+        if (!data || !window.StlXRViewer) { host.innerHTML='<div class="viewer-error">STL сцена недоступна</div>'; return; }
+        stlViewer = new StlXRViewer(host,{
           source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
           autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
+          threeModuleUrl:'assets/three.module.min.js',
           onChange:(state)=>renderDynamicHotspots(id,state,stlViewer)
         });
         renderDynamicHotspots(id,stlViewer.getState(),stlViewer);
@@ -4703,7 +4706,7 @@
       "",
       "Write-Host ''",
       "Write-Host '=============================================' -ForegroundColor DarkCyan",
-      "Write-Host '  Pannellum Tour - Local Windows Server' -ForegroundColor Cyan",
+      "Write-Host '  XR Tour - Local Windows Server' -ForegroundColor Cyan",
       "Write-Host '=============================================' -ForegroundColor DarkCyan",
       "Write-Host ''",
       "Write-Host \"Folder: $Root\"",
@@ -4908,7 +4911,7 @@
       "@echo off",
       "setlocal",
       "chcp 65001 >nul",
-      "title Pannellum Tour Editor - Local Server",
+      "title XR Tour Editor - Local Server",
       "",
       "set \"PORT=8080\"",
       "if not \"%~1\"==\"\" set \"PORT=%~1\"",
@@ -5011,9 +5014,10 @@
 
   function exportedServiceWorker(config) {
     const assets = new Set([
-      './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','assets/xr-media-viewer.js',
+      './','index.html','assets/tour.css','assets/tour.js','assets/stl-viewer.js',
+      'assets/object360-xr-viewer.js','assets/stl-xr-viewer.js','assets/xr-media-viewer.js',
       'assets/three.module.min.js','assets/three.core.min.js',
-      'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
+      'manifest.webmanifest','icons/app-icon.svg'
     ]);
 
     Object.values(config.scenes || {}).forEach((scene) => {
@@ -5317,10 +5321,12 @@
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
-      const objectViewerAsset = await fetchRequiredAsset('assets/object360.js');
-      root.file('assets/object360.js', await objectViewerAsset.text());
-      const stlViewerAsset = await fetchRequiredAsset('assets/stl-viewer.js');
-      root.file('assets/stl-viewer.js', await stlViewerAsset.text());
+      const stlParserAsset = await fetchRequiredAsset('assets/stl-viewer.js');
+      root.file('assets/stl-viewer.js', await stlParserAsset.text());
+      const objectXrViewerAsset = await fetchRequiredAsset('assets/object360-xr-viewer.js');
+      root.file('assets/object360-xr-viewer.js', await objectXrViewerAsset.text());
+      const stlXrViewerAsset = await fetchRequiredAsset('assets/stl-xr-viewer.js');
+      root.file('assets/stl-xr-viewer.js', await stlXrViewerAsset.text());
       const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
       const threeAsset = await fetchRequiredAsset('assets/three.module.min.js');
@@ -5360,20 +5366,17 @@
         '- qr-tour.png — QR публичной ссылки (если указан URL)\n' +
         '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
         '- images/icons/ — иконки и авто-превью переходов\n' +
-        '- vendor/pannellum/ — локальная копия Pannellum\n' +
+
         '- start-server.bat — запуск тура в Windows двойным кликом\n' +
         '- server.ps1 — встроенный локальный HTTP-сервер\n' +
         '- tour.json — конфигурация тура\n\n' +
         'Windows:\n1. Распакуйте папку целиком.\n2. Дважды щёлкните start-server.bat.\n3. Тур автоматически откроется в браузере.\n\n' +
         'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
-        'Интернет для просмотра экспортированного тура не требуется.\n'
+        'Интернет для просмотра экспортированного тура не требуется. WebXR на опубликованном сайте требует HTTPS.\n'
       );
 
       button.textContent = 'Windows-сервер…';
       await bundleWindowsLauncher(root);
-
-      button.textContent = 'Pannellum…';
-      await bundlePannellum(root);
 
       button.textContent = 'Создание ZIP…';
       const blob = await zip.generateAsync(
