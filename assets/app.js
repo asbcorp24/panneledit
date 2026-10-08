@@ -3560,6 +3560,7 @@
     multiresScenes = new Map(),
     objectSceneFiles = new Map(),
     stlSceneFiles = new Map(),
+    xrSceneFiles = new Map(),
     audioConfig = { projectMusic: null, scenes: {} },
     mediaConfig = {}
   ) {
@@ -3596,7 +3597,7 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: ['object360', 'stl'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
+        sceneType: ['object360', 'stl', 'xr'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
         textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
         mediaObjects: mediaConfig[scene.id] || [],
         screenHotspots: scene.sceneType === 'panorama' ? [] : (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
@@ -3605,6 +3606,7 @@
     ]));
     config.object360Scenes = Object.fromEntries(objectSceneFiles);
     config.stlScenes = Object.fromEntries(stlSceneFiles);
+    config.xrScenes = Object.fromEntries(xrSceneFiles);
     config.projectAudio = { music: audioConfig.projectMusic || null };
     config.startScreen = normalizeStartScreen(project.startScreen || {}, project.title);
     if (config.startScreen.coverData) {
