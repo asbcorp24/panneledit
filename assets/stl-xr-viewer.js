@@ -45,6 +45,7 @@
           ? String(options.backgroundMode) : 'hitech',
         backgroundImage: String(options.backgroundImage || ''),
         threeModuleUrl: options.threeModuleUrl || DEFAULT_THREE_URL,
+        domOverlayRoot: options.domOverlayRoot && options.domOverlayRoot.nodeType === 1 ? options.domOverlayRoot : null,
         onChange: typeof options.onChange === 'function' ? options.onChange : null
       };
 
@@ -361,19 +362,24 @@
         this.cardboardButton.textContent='CARDBOARD';
       }
       try{
-        const session=await navigator.xr.requestSession('immersive-vr',{
-          optionalFeatures:['local-floor','bounded-floor','hand-tracking']
-        });
+        const sessionInit={optionalFeatures:['local-floor','bounded-floor','hand-tracking']};
+        if(this.options.domOverlayRoot){
+          sessionInit.optionalFeatures.push('dom-overlay');
+          sessionInit.domOverlay={root:this.options.domOverlayRoot};
+        }
+        const session=await navigator.xr.requestSession('immersive-vr',sessionInit);
         this.xrSession=session;
+        this.options.domOverlayRoot?.classList.add('xr-dom-overlay-active');
         this.xrButton.classList.add('active');
         this.xrButton.textContent='ВЫХОД XR';
         await this.renderer.xr.setSession(session);
         session.addEventListener('end',()=>{
           this.xrSession=null;
+          this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');
           this.xrButton.classList.remove('active');
           this.xrButton.textContent='XR';
         },{once:true});
-      }catch(error){console.warn('STL WebXR:',error);}
+      }catch(error){this.options.domOverlayRoot?.classList.remove('xr-dom-overlay-active');console.warn('STL WebXR:',error);}
     }
 
     setColor(color) {

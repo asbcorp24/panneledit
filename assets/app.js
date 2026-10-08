@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const DB_NAME = 'pannellum-tour-editor';
+  const DB_NAME = 'xr-tour-editor';
+  const LEGACY_DB_NAME = 'pannellum-tour-editor';
   const DB_VERSION = 1;
   const STORE_NAME = 'projects';
   const CURRENT_KEY = 'current';
@@ -628,20 +629,61 @@
     }
   }
 
+  async function readStoredProject(db) {
+    if (!db || !db.objectStoreNames.contains(STORE_NAME)) return null;
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const request = tx.objectStore(STORE_NAME).get(CURRENT_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function openLegacyDB() {
+    if (!('indexedDB' in window) || LEGACY_DB_NAME === DB_NAME) return null;
+    if (typeof indexedDB.databases === 'function') {
+      try {
+        const databases = await indexedDB.databases();
+        if (!databases.some((entry) => entry?.name === LEGACY_DB_NAME)) return null;
+      } catch (_) {}
+    }
+    return await new Promise((resolve, reject) => {
+      const request = indexedDB.open(LEGACY_DB_NAME, DB_VERSION);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => resolve(null);
+    });
+  }
+
   async function loadPersistedProject() {
     try {
       const db = await openDB();
       if (!db) {
-        const raw = localStorage.getItem(DB_NAME);
-        return raw ? JSON.parse(raw) : null;
+        const raw = localStorage.getItem(DB_NAME) || localStorage.getItem(LEGACY_DB_NAME);
+        if (!raw) return null;
+        if (!localStorage.getItem(DB_NAME)) localStorage.setItem(DB_NAME, raw);
+        return JSON.parse(raw);
       }
 
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const request = tx.objectStore(STORE_NAME).get(CURRENT_KEY);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(request.error);
-      });
+      const saved = await readStoredProject(db);
+      if (saved) return saved;
+
+      const legacyDb = await openLegacyDB();
+      if (!legacyDb) return null;
+      try {
+        const legacySaved = await readStoredProject(legacyDb);
+        if (!legacySaved) return null;
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put(legacySaved, CURRENT_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('IndexedDB migration aborted'));
+        });
+        return legacySaved;
+      } finally {
+        legacyDb.close();
+      }
     } catch (error) {
       console.warn('Не удалось загрузить сохранённый проект', error);
       return null;
@@ -1266,6 +1308,7 @@
       try {
         host._xrViewer?.destroy?.();
         host._xrViewer = new XRMediaViewer(host, {
+          domOverlayRoot: target,
           source: item.data,
           kind: 'image',
           projection: item.stereoProjection || 'FLAT_LR',
@@ -1902,6 +1945,7 @@
       scene.object360 = data;
       try {
         objectViewer = new Object360XRViewer(els.panorama, {
+          domOverlayRoot: els.sceneOverlay,
           sectors: data.sectors,
           rows: data.rows,
           frames: data.frames,
@@ -1939,6 +1983,7 @@
       scene.stl = data;
       try {
         stlViewer = new StlXRViewer(els.panorama, {
+          domOverlayRoot: els.sceneOverlay,
           source: data.data,
           yaw: data.yaw,
           pitch: data.pitch,
@@ -1980,6 +2025,7 @@
       scene.xr = data;
       try {
         xrViewer = new XRMediaViewer(els.panorama, {
+          domOverlayRoot: els.sceneOverlay,
           source: data.data,
           kind: data.kind,
           projection: data.projection,
@@ -2021,6 +2067,7 @@
 
     try {
       viewer = new XRMediaViewer(els.panorama, {
+        domOverlayRoot: els.sceneOverlay,
         source: scene.imageData,
         kind: 'image',
         projection: '360',
@@ -3790,6 +3837,9 @@
       });
     });
 
+    css += '.scene-text-overlay:xr-overlay{position:fixed!important;inset:0!important;z-index:2147483646!important;pointer-events:none!important;background:transparent!important}\n' +
+      '.scene-text-overlay:xr-overlay .scene-text-object,.scene-text-overlay:xr-overlay .scene-media-object,.scene-text-overlay:xr-overlay .screen-hotspot{pointer-events:auto!important}\n';
+
     return css;
   }
 
@@ -4058,6 +4108,7 @@
       if (item.type === 'stereo-photo' && item.src && el._stereoHost && window.XRMediaViewer) {
         try {
           const stereoViewer = new XRMediaViewer(el._stereoHost, {
+            domOverlayRoot:overlay,
             source:item.src,
             kind:'image',
             projection:item.stereoProjection || 'FLAT_LR',
@@ -4275,7 +4326,7 @@
       if (meta.sceneType === 'object360') {
         const data = config.object360Scenes?.[id];
         if (!data || !window.Object360XRViewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
-        objectViewer = new Object360XRViewer(host,{...data,threeModuleUrl:'assets/three.module.min.js',onFrameChange:(state)=>renderDynamicHotspots(id,state)});
+        objectViewer = new Object360XRViewer(host,{...data,domOverlayRoot:overlay,threeModuleUrl:'assets/three.module.min.js',onFrameChange:(state)=>renderDynamicHotspots(id,state)});
         objectViewer.ready?.catch?.(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки Object360</div>';});
         renderDynamicHotspots(id,objectViewer.getState());
         return;
@@ -4284,6 +4335,7 @@
         const data = config.stlScenes?.[id];
         if (!data || !window.StlXRViewer) { host.innerHTML='<div class="viewer-error">STL сцена недоступна</div>'; return; }
         stlViewer = new StlXRViewer(host,{
+          domOverlayRoot:overlay,
           source:data.source,yaw:data.yaw,pitch:data.pitch,zoom:data.zoom,wireframe:data.wireframe,
           autoRotate:data.autoplay,color:data.color,backgroundMode:data.backgroundMode,backgroundImage:data.backgroundImage||'',
           threeModuleUrl:'assets/three.module.min.js',
@@ -4297,6 +4349,7 @@
         const data = config.xrScenes?.[id];
         if (!data || !window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">XR сцена недоступна</div>'; return; }
         xrViewer = new XRMediaViewer(host,{
+          domOverlayRoot:overlay,
           source:data.source,
           kind:data.kind,
           projection:data.projection,
@@ -4317,6 +4370,7 @@
       const data = config.scenes?.[id];
       if (!data || !window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">Three.js panorama недоступна</div>'; return; }
       panoViewer = new XRMediaViewer(host,{
+        domOverlayRoot:overlay,
         source:data.source,
         kind:'image',
         projection:'360',
@@ -5367,6 +5421,7 @@
       if (!window.Object360XRViewer) return;
       const data = normalizeObject360Data(scene.object360 || {});
       previewObjectViewer = new Object360XRViewer(els.previewPanorama, {
+        domOverlayRoot: els.previewSceneOverlay,
         sectors: data.sectors,
         rows: data.rows,
         frames: data.frames,
@@ -5386,6 +5441,7 @@
       if (!window.StlXRViewer) return;
       const data = normalizeStlData(scene.stl || {});
       previewStlViewer = new StlXRViewer(els.previewPanorama, {
+        domOverlayRoot: els.previewSceneOverlay,
         source: data.data,
         yaw: data.yaw,
         pitch: data.pitch,
@@ -5406,6 +5462,7 @@
       if (!window.XRMediaViewer) return;
       const data = normalizeXrData(scene.xr || {});
       previewXrViewer = new XRMediaViewer(els.previewPanorama, {
+        domOverlayRoot: els.previewSceneOverlay,
         source: data.data,
         kind: data.kind,
         projection: data.projection,
@@ -5425,6 +5482,7 @@
 
     if (!window.XRMediaViewer) return;
     previewViewer = new XRMediaViewer(els.previewPanorama, {
+      domOverlayRoot: els.previewSceneOverlay,
       source: scene.imageData,
       kind: 'image',
       projection: '360',

@@ -154,7 +154,7 @@ $url = "http://127.0.0.1:$actualPort/"
 
 Write-Host ''
 Write-Host '=============================================' -ForegroundColor DarkCyan
-Write-Host '  Pannellum Tour - Local Windows Server' -ForegroundColor Cyan
+Write-Host '  XR Tour Editor - Local Windows Server' -ForegroundColor Cyan
 Write-Host '=============================================' -ForegroundColor DarkCyan
 Write-Host ''
 Write-Host "Folder: $Root"
