@@ -2646,6 +2646,18 @@
     els.mediaAudioStyleRow.hidden = type !== 'audio';
     els.mediaStereoProjectionRow.hidden = !stereoPhoto;
     els.mediaVolumeRow.hidden = type !== 'audio';
+
+    if (stereoPhoto || type === 'image') {
+      els.mediaObjectFile.accept = 'image/jpeg,image/png,image/webp';
+    } else if (type === 'video') {
+      els.mediaObjectFile.accept = 'video/mp4,video/webm,.mp4,.webm';
+    } else if (type === 'audio') {
+      els.mediaObjectFile.accept = 'audio/mpeg,audio/ogg,audio/wav,audio/x-wav,.mp3,.ogg,.wav';
+    } else if (type === 'pdf') {
+      els.mediaObjectFile.accept = 'application/pdf,.pdf';
+    } else {
+      els.mediaObjectFile.accept = 'image/*,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav,application/pdf';
+    }
     els.mediaAutoplayRow.hidden = !timedMedia;
     els.mediaLoopRow.hidden = !timedMedia;
     if (!pendingMediaData) {
@@ -2714,6 +2726,10 @@
 
     if (type === 'gallery' && !pendingMediaGallery.length) {
       showToast('Добавьте изображения галереи');
+      return;
+    }
+    if (type === 'stereo-photo' && pendingMediaData && !/^data:image\/(jpeg|png|webp);/i.test(pendingMediaData)) {
+      showToast('Для стерео фото выберите JPG, PNG или WEBP');
       return;
     }
     if (['image','stereo-photo','video','audio','pdf'].includes(type) && !pendingMediaData) {
