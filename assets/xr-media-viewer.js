@@ -362,7 +362,8 @@
         if (!this.dragging || event.pointerId !== this.pointerId || this.cardboard || this.xrSession) return;
         const dx = event.clientX - this.startX;
         const dy = event.clientY - this.startY;
-        this.yaw = this.startYaw - dx * 0.18;
+        const yawDelta = dx * 0.18;
+        this.yaw = this.startYaw + (this.options.yawDirection === 'right-positive' ? yawDelta : -yawDelta);
         this.pitch = clamp(this.startPitch - dy * 0.16, -89, 89);
         this.emitChange();
       };
