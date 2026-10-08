@@ -166,10 +166,10 @@
               <b>360°</b>
             </div>
             <h1>Добавьте сцену</h1>
-            <p>Панорама 360°, Object360 ZIP или STL 3D-модель.</p>
+            <p>Панорама 360°, Object360, STL 3D или XR 180/360.</p>
             <button class="btn btn-primary" id="btnAddSceneCenter">Добавить сцену</button>
           </div>
-          <div class="drop-overlay" id="dropOverlay">Отпустите панораму, Object360 ZIP или STL здесь</div>
+          <div class="drop-overlay" id="dropOverlay">Отпустите панораму, Object360 ZIP, STL или XR-медиа здесь</div>
         </div>
 
         <div class="hintbar">
@@ -271,6 +271,52 @@
                   <label class="btn btn-small file-btn">Заменить<input id="object360ZipReplace" type="file" accept=".zip,application/zip"></label>
                 </div>
               </label>
+            </div>
+
+            <div id="xrSceneSettings" hidden>
+              <div class="object360-scene-summary">
+                <span class="scene-type-badge xr-badge">XR MEDIA</span>
+                <b id="xrSceneStats">—</b>
+                <small id="xrSceneFile">—</small>
+              </div>
+              <label class="field">
+                <span>Проекция</span>
+                <select id="xrProjection">
+                  <option value="360">360° mono</option>
+                  <option value="180">180° mono</option>
+                  <option value="360_LR">360° stereo LR</option>
+                  <option value="180_LR">180° stereo LR</option>
+                  <option value="360_TB">360° stereo Top/Bottom</option>
+                  <option value="180_TB">180° stereo Top/Bottom</option>
+                </select>
+              </label>
+              <div class="field-grid">
+                <label class="field"><span>Yaw</span><input id="xrYaw" type="number" step="0.1" value="0"></label>
+                <label class="field"><span>Pitch</span><input id="xrPitch" type="number" step="0.1" min="-89" max="89" value="0"></label>
+                <label class="field"><span>FOV</span><input id="xrFov" type="number" step="1" min="35" max="110" value="80"></label>
+              </div>
+              <label class="switch-row" id="xrAutoplayRow">
+                <span><b>Автовоспроизведение</b><small>Только для XR-видео</small></span>
+                <input id="xrAutoplay" type="checkbox">
+              </label>
+              <label class="switch-row" id="xrLoopRow">
+                <span><b>Повторять</b><small>Loop для XR-видео</small></span>
+                <input id="xrLoop" type="checkbox">
+              </label>
+              <label class="range-field" id="xrVolumeRow">
+                <span>Громкость <b id="xrVolumeValue">80%</b></span>
+                <input id="xrVolume" type="range" min="0" max="100" step="1" value="80">
+              </label>
+              <label class="field">
+                <span>XR медиа</span>
+                <div class="file-line">
+                  <span id="xrFilename">—</span>
+                  <label class="btn btn-small file-btn">Заменить<input id="xrFileReplace" type="file" accept="video/mp4,video/webm,image/jpeg,image/png,image/webp,.mp4,.webm"></label>
+                </div>
+              </label>
+              <div class="object360-import-note">
+                XR работает по HTTPS в совместимых браузерах. Cardboard доступен на телефоне без Pannellum.
+              </div>
             </div>
 
             <div id="stlSceneSettings" hidden>
@@ -385,7 +431,7 @@
           <div class="panel-head">
             <div>
               <h2>Медиа</h2>
-              <p>Фото, галерея, видео, аудио, PDF, кнопки</p>
+              <p>Фото, стерео, галерея, видео, аудио, PDF, кнопки</p>
             </div>
             <button class="icon-btn" id="btnAddMediaObject" title="Добавить медиа" disabled>＋</button>
           </div>
@@ -441,14 +487,15 @@
       <div class="modal-head">
         <div>
           <h2>Добавить сцену</h2>
-          <p>Панорама, Object360 ZIP или STL будут храниться внутри проекта.</p>
+          <p>Панорама, Object360, STL и XR Media будут храниться внутри проекта.</p>
         </div>
         <button class="icon-btn" value="cancel" aria-label="Закрыть">×</button>
       </div>
-      <div class="segmented scene-type-control scene-type-control-3" id="sceneTypeControl">
+      <div class="segmented scene-type-control scene-type-control-4" id="sceneTypeControl">
         <button type="button" data-scene-type="panorama" class="active">Панорама 360°</button>
         <button type="button" data-scene-type="object360">Объект 360°</button>
         <button type="button" data-scene-type="stl">STL 3D</button>
+        <button type="button" data-scene-type="xr">XR 180/360</button>
       </div>
       <input id="newSceneType" type="hidden" value="panorama">
 
@@ -484,6 +531,30 @@
         STL будет встроен в проект. Модель автоматически центрируется и масштабируется,
         поддерживает вращение, zoom, solid / wireframe и автоповорот.
       </div>
+
+      <label class="upload-box" id="xrUploadBox" hidden>
+        <input id="newXrMediaFile" type="file" accept="video/mp4,video/webm,image/jpeg,image/png,image/webp,.mp4,.webm">
+        <b>Выбрать XR медиа</b>
+        <span id="newXrMediaFileName">MP4 / WEBM / JPG / PNG / WEBP</span>
+      </label>
+
+      <div class="field-grid" id="xrCreateOptions" hidden>
+        <label class="field">
+          <span>Проекция</span>
+          <select id="newXrProjection">
+            <option value="360">360° mono</option>
+            <option value="180">180° mono</option>
+            <option value="360_LR">360° stereo LR</option>
+            <option value="180_LR">180° stereo LR</option>
+            <option value="360_TB">360° stereo Top/Bottom</option>
+            <option value="180_TB">180° stereo Top/Bottom</option>
+          </select>
+        </label>
+        <div class="field">
+          <span>Режим</span>
+          <div class="object360-import-note">Обычный просмотр + гироскоп + Cardboard + WebXR.</div>
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn" value="cancel">Отмена</button>
         <button class="btn btn-primary" id="confirmAddScene" value="default">Добавить</button>
@@ -506,6 +577,7 @@
         <span>Тип</span>
         <select id="mediaObjectType">
           <option value="image">Фото</option>
+          <option value="stereo-photo">Стерео фото</option>
           <option value="gallery">Галерея</option>
           <option value="video">Видео</option>
           <option value="audio">Аудио</option>
@@ -554,6 +626,13 @@
           </select>
         </label>
       </div>
+      <label class="field" id="mediaStereoProjectionRow" hidden>
+        <span>Формат стерео фото</span>
+        <select id="mediaStereoProjection">
+          <option value="FLAT_LR">Side-by-Side / LR</option>
+          <option value="FLAT_TB">Top-Bottom</option>
+        </select>
+      </label>
       <label class="field" id="mediaAudioStyleRow" hidden>
         <span>Вид аудиоплеера</span>
         <select id="mediaObjectAudioStyle">
@@ -938,6 +1017,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="assets/object360.js?v=20261005-1"></script>
   <script src="assets/stl-viewer.js?v=20261006-1"></script>
-  <script src="assets/app.js?v=20261006-2"></script>
+  <script src="assets/xr-media-viewer.js?v=20261008-1"></script>
+  <script src="assets/app.js?v=20261008-1"></script>
 </body>
 </html>
