@@ -1049,9 +1049,11 @@
 
     const isObject = scene.sceneType === 'object360';
     const isStl = scene.sceneType === 'stl';
-    els.panoramaSceneSettings.hidden = isObject || isStl;
+    const isXr = scene.sceneType === 'xr';
+    els.panoramaSceneSettings.hidden = isObject || isStl || isXr;
     els.object360SceneSettings.hidden = !isObject;
     els.stlSceneSettings.hidden = !isStl;
+    els.xrSceneSettings.hidden = !isXr;
 
     if (isObject) {
       const data = scene.object360 || normalizeObject360Data({});
@@ -1067,6 +1069,26 @@
       els.object360BackgroundImageName.textContent = data.backgroundImageName || 'Файл не выбран';
       updateObject360BackgroundControls();
       els.object360Filename.textContent = scene.filename || 'object360.zip';
+    } else if (isXr) {
+      const data = normalizeXrData(scene.xr || {});
+      scene.xr = data;
+      els.xrSceneStats.textContent =
+        (data.kind === 'image' ? 'XR фото' : 'XR видео') + ' · ' + data.projection;
+      els.xrSceneFile.textContent = data.kind === 'image'
+        ? 'Изображение для Three.js / Cardboard / XR'
+        : 'Видео для Three.js / Cardboard / WebXR';
+      els.xrProjection.value = data.projection;
+      els.xrYaw.value = String(data.yaw);
+      els.xrPitch.value = String(data.pitch);
+      els.xrFov.value = String(data.fov);
+      els.xrAutoplay.checked = Boolean(data.autoplay);
+      els.xrLoop.checked = Boolean(data.loop);
+      els.xrVolume.value = String(data.volume);
+      els.xrVolumeValue.textContent = data.volume + '%';
+      els.xrAutoplayRow.hidden = data.kind !== 'video';
+      els.xrLoopRow.hidden = data.kind !== 'video';
+      els.xrVolumeRow.hidden = data.kind !== 'video';
+      els.xrFilename.textContent = scene.filename || data.filename || (data.kind === 'image' ? 'xr.jpg' : 'xr.mp4');
     } else if (isStl) {
       const data = normalizeStlData(scene.stl || {});
       const sx = data.size.x ? data.size.x.toFixed(1) : '—';
