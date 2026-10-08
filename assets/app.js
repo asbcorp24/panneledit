@@ -4144,7 +4144,7 @@
             fov:55,
             controls:true,
             motionControls:true,
-            threeModuleUrl:'vendor/three/three.module.min.js'
+            threeModuleUrl:'assets/three.module.min.js'
           });
           mediaXrViewers.push(stereoViewer);
           stereoViewer.ready.catch(console.error);
@@ -4364,7 +4364,7 @@
           loop:data.loop,
           muted:false,
           volume:data.volume,
-          threeModuleUrl:'vendor/three/three.module.min.js',
+          threeModuleUrl:'assets/three.module.min.js',
           onChange:(state)=>renderDynamicHotspots(id,state)
         });
         renderDynamicHotspots(id,xrViewer.getState());
@@ -4992,7 +4992,7 @@
   function exportedServiceWorker(config) {
     const assets = new Set([
       './','index.html','assets/tour.css','assets/tour.js','assets/object360.js','assets/stl-viewer.js','assets/xr-media-viewer.js',
-      'vendor/three/three.module.min.js','vendor/three/three.core.min.js',
+      'assets/three.module.min.js','assets/three.core.min.js',
       'vendor/pannellum/build/pannellum.js','vendor/pannellum/build/pannellum.css','manifest.webmanifest','icons/app-icon.svg'
     ]);
 
@@ -5303,12 +5303,12 @@
       root.file('assets/stl-viewer.js', await stlViewerAsset.text());
       const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
-      const threeAsset = await fetchRequiredAsset('vendor/three/three.module.min.js');
-      root.file('vendor/three/three.module.min.js', await threeAsset.text());
-      const threeCoreAsset = await fetchRequiredAsset('vendor/three/three.core.min.js');
-      root.file('vendor/three/three.core.min.js', await threeCoreAsset.text());
-      const threeLicense = await fetchRequiredAsset('vendor/three/LICENSE');
-      root.file('vendor/three/LICENSE', await threeLicense.text());
+      const threeAsset = await fetchRequiredAsset('assets/three.module.min.js');
+      root.file('assets/three.module.min.js', await threeAsset.text());
+      const threeCoreAsset = await fetchRequiredAsset('assets/three.core.min.js');
+      root.file('assets/three.core.min.js', await threeCoreAsset.text());
+      const threeLicense = await fetchRequiredAsset('assets/THREE-LICENSE.txt');
+      root.file('assets/THREE-LICENSE.txt', await threeLicense.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
       if (config.exportSettings?.pwaEnabled) {
         root.file('manifest.webmanifest', exportedManifest());
@@ -5332,7 +5332,7 @@
         '- object360/ — кадры сцен «Объект 360°»\n' +
         '- models/ — STL-модели 3D-сцен\n' +
         '- xr/ — XR 180/360 видео и изображения\n' +
-        '- vendor/three/ — three.module.min.js + three.core.min.js + LICENSE для XR / Cardboard\n' +
+        '- assets/three.module.min.js + assets/three.core.min.js — локальная Three.js для XR / Cardboard\n' +
         '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
         '- audio/ — музыка тура, музыка сцен и озвучка\n' +
         '- media/ — фото, видео, PDF и галереи\n' +
