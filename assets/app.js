@@ -3585,32 +3585,24 @@
     audioConfig = { projectMusic: null, scenes: {} },
     mediaConfig = {}
   ) {
-    const firstPanorama = project.scenes.find((scene) => scene.sceneType === 'panorama')?.id || null;
-    const config = buildPannellumConfig({ useEmbeddedImages: false, firstSceneId: firstPanorama });
+    const config = {
+      default: {
+        firstScene: project.firstScene || project.scenes[0]?.id || null
+      },
+      scenes: {}
+    };
 
-    project.scenes.filter((scene) => scene.sceneType === 'panorama').forEach((scene) => {
-      const sceneConfig = config.scenes[scene.id];
-      if (!sceneConfig) return;
-
-      const multi = multiresScenes.get(scene.id);
-      if (multi) {
-        delete sceneConfig.panorama;
-        sceneConfig.type = 'multires';
-        sceneConfig.multiRes = {
-          basePath: 'multires/' + multi.sceneDir + '/',
-          path: '%l/%s%y_%x',
-          fallbackPath: 'fallback/%s',
-          extension: 'jpg',
-          tileResolution: multi.tileResolution,
-          maxLevel: multi.maxLevel,
-          cubeResolution: multi.cubeResolution,
-          equirectangularThumbnail: multi.thumbnail
+    project.scenes
+      .filter((scene) => scene.sceneType === 'panorama')
+      .forEach((scene) => {
+        config.scenes[scene.id] = {
+          type: 'panorama',
+          source: 'images/' + sceneFiles.get(scene.id),
+          yaw: Number(scene.yaw) || 0,
+          pitch: Number(scene.pitch) || 0,
+          fov: Number(scene.hfov) || 100
         };
-      } else {
-        sceneConfig.type = 'equirectangular';
-        sceneConfig.panorama = 'images/' + sceneFiles.get(scene.id);
-      }
-    });
+      });
 
     config.tourFirstScene = project.firstScene || project.scenes[0]?.id || null;
     config.sceneOrder = project.scenes.map((scene) => scene.id);
@@ -3621,7 +3613,7 @@
         sceneType: ['object360', 'stl', 'xr'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
         textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
         mediaObjects: mediaConfig[scene.id] || [],
-        screenHotspots: scene.sceneType === 'panorama' ? [] : (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
+        screenHotspots: (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
         audio: audioConfig.scenes?.[scene.id] || { music: null, narration: null }
       }
     ]));
@@ -3637,7 +3629,10 @@
     config.guide = normalizeGuide(project.guide || {}, project.scenes);
     config.exportSettings = normalizeExportSettings(project.exportSettings || {});
     config.defaultTransition = project.settings.defaultTransition || 'fade';
-    config.offlineAssets = [...multiresScenes.values()].flatMap((item) => item.files || []);
+    config.autoRotate = project.settings.autoRotateEnabled
+      ? Number(project.settings.autoRotate || -2)
+      : 0;
+    config.offlineAssets = [];
     return config;
   }
 
