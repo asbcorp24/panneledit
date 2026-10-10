@@ -2188,9 +2188,11 @@
       try { xrViewer.destroy(); } catch (error) { console.warn(error); }
       xrViewer = null;
     }
+    releaseAssetUrlPool(viewerAssetUrls);
   }
 
-  function renderViewer() {
+  async function renderViewer() {
+    const token = ++renderViewerToken;
     updateToolbarState();
     const scene = getScene();
 
@@ -2212,6 +2214,11 @@
           sectors: data.sectors,
           rows: data.rows,
           frames: data.frames,
+          frameProvider: async (row, sector) => {
+            const value = data.frames[row]?.[sector] || '';
+            return isAssetRef(value) ? await resolveTransientAssetSource(value) : value;
+          },
+          releaseFrameSource: releaseAssetUrl,
           startSector: data.startSector,
           startRow: data.startRow,
           autoplay: data.autoplay,
@@ -2245,9 +2252,12 @@
       const data = normalizeStlData(scene.stl || {});
       scene.stl = data;
       try {
+        const source = await resolveAssetSource(data.data, viewerAssetUrls);
+        const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         stlViewer = new StlXRViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
-          source: data.data,
+          source,
           yaw: data.yaw,
           pitch: data.pitch,
           zoom: data.zoom,
@@ -2255,7 +2265,7 @@
           autoRotate: data.autoplay,
           color: data.color,
           backgroundMode: data.backgroundMode,
-          backgroundImage: stlBackgroundImageForData(data),
+          backgroundImage,
           threeModuleUrl: 'assets/three.module.min.js',
           onChange: (state) => {
             els.coords.textContent =
@@ -2287,9 +2297,11 @@
       const data = normalizeXrData(scene.xr || {});
       scene.xr = data;
       try {
+        const source = await resolveAssetSource(data.data, viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         xrViewer = new XRMediaViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
-          source: data.data,
+          source,
           kind: data.kind,
           projection: data.projection,
           yaw: data.yaw,
@@ -2329,9 +2341,11 @@
     refreshCustomHotspotStyles();
 
     try {
+      const source = await resolveAssetSource(scene.imageData, viewerAssetUrls);
+      if (token !== renderViewerToken) return;
       viewer = new XRMediaViewer(els.panorama, {
         domOverlayRoot: els.sceneOverlay,
-        source: scene.imageData,
+        source,
         kind: 'image',
         projection: '360',
         yawDirection: 'right-positive',
