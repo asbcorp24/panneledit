@@ -5603,14 +5603,15 @@
 
         if (backgroundMode === 'image' && data.backgroundImageData) {
           const settings = normalizeExportSettings(project.exportSettings || {});
+          const bgSourceData = await assetValueToDataUrl(data.backgroundImageData);
           const bgData = settings.optimizeEnabled
             ? await optimizeImageDataUrl(
-                data.backgroundImageData,
+                bgSourceData,
                 Math.min(settings.maxImageWidth, 4096),
                 settings.jpegQuality,
-                /^data:image\/(png|webp)/i.test(data.backgroundImageData)
+                /^data:image\/(png|webp)/i.test(bgSourceData)
               )
-            : data.backgroundImageData;
+            : bgSourceData;
           const bgPayload = dataUrlPayload(bgData);
           const bgMime = String(bgPayload.mime || '').toLowerCase();
           const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
@@ -5728,9 +5729,10 @@
 
       if (project.startScreen?.coverData) {
         const settings = normalizeExportSettings(project.exportSettings || {});
+        const coverSourceData = await assetValueToDataUrl(project.startScreen.coverData);
         const coverData = settings.optimizeEnabled
-          ? await optimizeImageDataUrl(project.startScreen.coverData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
-          : project.startScreen.coverData;
+          ? await optimizeImageDataUrl(coverSourceData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
+          : coverSourceData;
         const coverExt = extensionForDataUrl(coverData, '.jpg');
         bundleDataUrlFile(root, coverData, 'images/start-cover' + coverExt);
         project.startScreen.__exportCoverExt = coverExt;
