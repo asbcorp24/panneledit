@@ -2339,7 +2339,6 @@
       xrViewer = null;
     }
     releaseAssetUrlPool(viewerAssetUrls);
-    releaseAssetUrlPool(editorOverlayAssetUrls);
   }
 
   async function renderViewer() {
