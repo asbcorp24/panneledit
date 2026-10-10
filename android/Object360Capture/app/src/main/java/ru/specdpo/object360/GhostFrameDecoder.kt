@@ -69,6 +69,47 @@ object GhostFrameDecoder {
         return applyExifOrientation(file, bitmap)
     }
 
+    fun decodeFullResolution(file: File): Bitmap? {
+        if (!file.exists()) return null
+
+        val bitmap = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        ) ?: return null
+
+        return applyExifOrientation(file, bitmap)
+    }
+
+    fun orientedDimensions(file: File): Pair<Int, Int>? {
+        if (!file.exists()) return null
+
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        return when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90,
+            ExifInterface.ORIENTATION_ROTATE_270,
+            ExifInterface.ORIENTATION_TRANSPOSE,
+            ExifInterface.ORIENTATION_TRANSVERSE ->
+                bounds.outHeight to bounds.outWidth
+
+            else ->
+                bounds.outWidth to bounds.outHeight
+        }
+    }
+
     private fun applyExifOrientation(file: File, bitmap: Bitmap): Bitmap {
         val orientation = runCatching {
             ExifInterface(file.absolutePath).getAttributeInt(
