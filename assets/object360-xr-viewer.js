@@ -21,6 +21,9 @@
         sectors: Math.max(1, Number(options.sectors) || 36),
         rows: Math.max(1, Number(options.rows) || 1),
         frames: Array.isArray(options.frames) ? options.frames : [[]],
+        frameProvider: typeof options.frameProvider === 'function' ? options.frameProvider : null,
+        releaseFrameSource: typeof options.releaseFrameSource === 'function' ? options.releaseFrameSource : null,
+        preloadNeighbours: Boolean(options.preloadNeighbours),
         startSector: Math.max(0, Number(options.startSector) || 0),
         startRow: Math.max(0, Number(options.startRow) || 0),
         dragPixelsPerFrame: Math.max(4, Number(options.dragPixelsPerFrame) || 14),
@@ -135,7 +138,7 @@
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(48, 1, .01, 100);
       this.renderer = new THREE.WebGLRenderer({canvas:this.canvas,antialias:true,alpha:true});
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, this.options.backgroundMode === 'transparent' ? 0 : 1);
 
@@ -180,31 +183,53 @@
       return r[this.normalizeSector(sector)] || '';
     }
 
-    nearestFrame(row,sector) {
-      const direct=this.frameAt(row,sector);
+    async resolveFrame(row,sector) {
+      const normalized=this.normalizeSector(sector);
+      if(this.options.frameProvider){
+        try{
+          return await this.options.frameProvider(row,normalized) || '';
+        }catch(error){
+          console.warn('Object360 frame provider:',error);
+          return '';
+        }
+      }
+      return this.frameAt(row,normalized);
+    }
+
+    async nearestFrame(row,sector) {
+      const direct=await this.resolveFrame(row,sector);
       if(direct) return direct;
       for(let d=1;d<this.options.sectors;d++){
-        const before=this.frameAt(row,sector-d); if(before) return before;
-        const after=this.frameAt(row,sector+d); if(after) return after;
+        const before=await this.resolveFrame(row,sector-d); if(before) return before;
+        const after=await this.resolveFrame(row,sector+d); if(after) return after;
       }
       return '';
     }
 
+    releaseSource(src) {
+      if(!src || !this.options.releaseFrameSource) return;
+      try{this.options.releaseFrameSource(src);}catch(_){}
+    }
+
     async updateTexture() {
       if(!this.THREE || !this.material) return;
-      const src=this.nearestFrame(this.row,this.sector);
-      if(!src) {
-        this.loading.hidden=false;
-        this.loading.textContent='Кадр отсутствует';
-        return;
-      }
-
       const token=++this.textureToken;
       this.loading.hidden=false;
       this.loading.textContent='Загрузка кадра…';
 
+      let src='';
       try {
+        src=await this.nearestFrame(this.row,this.sector);
+        if(!src) {
+          if(token===this.textureToken){
+            this.loading.hidden=false;
+            this.loading.textContent='Кадр отсутствует';
+          }
+          return;
+        }
         const texture=await new this.THREE.TextureLoader().loadAsync(src);
+        this.releaseSource(src);
+        src='';
         if(this.destroyed || token!==this.textureToken) {
           texture.dispose();
           return;
@@ -212,6 +237,7 @@
         texture.colorSpace=this.THREE.SRGBColorSpace;
         texture.minFilter=this.THREE.LinearFilter;
         texture.magFilter=this.THREE.LinearFilter;
+        texture.generateMipmaps=false;
 
         const img=texture.image;
         const w=img?.naturalWidth || img?.width || 4;
@@ -222,11 +248,19 @@
         this.plane.geometry.dispose();
         this.plane.geometry=new this.THREE.PlaneGeometry(width,height);
 
-        this.material.map?.dispose?.();
+        const previousTexture=this.material.map;
         this.material.map=texture;
         this.material.needsUpdate=true;
+        if(previousTexture){
+          previousTexture.dispose?.();
+          try{
+            if(previousTexture.image && 'src' in previousTexture.image) previousTexture.image.src='';
+          }catch(_){}
+          try{previousTexture.image=null;}catch(_){}
+        }
         this.loading.hidden=true;
       } catch(error) {
+        if(src) this.releaseSource(src);
         if(token!==this.textureToken) return;
         this.loading.hidden=false;
         this.loading.textContent='Ошибка кадра';
@@ -394,9 +428,22 @@
     }
 
     preloadNeighbours() {
-      [-2,-1,1,2].forEach(delta=>{
-        const src=this.frameAt(this.row,this.sector+delta);
-        if(src){const img=new Image();img.src=src;}
+      if(!this.options.preloadNeighbours) return;
+      [-1,1].forEach(async delta=>{
+        let src='';
+        try{
+          src=await this.resolveFrame(this.row,this.sector+delta);
+          if(!src) return;
+          await new Promise((resolve)=>{
+            const img=new Image();
+            const done=()=>{img.onload=null;img.onerror=null;resolve();};
+            img.onload=done;
+            img.onerror=done;
+            img.src=src;
+          });
+        }finally{
+          if(src) this.releaseSource(src);
+        }
       });
     }
 
@@ -455,6 +502,14 @@
       this.camera.updateProjectionMatrix();
     }
 
+    releaseCurrentFrameCpuCopy() {
+      const texture=this.material?.map;
+      if(!texture?.image) return;
+      const image=texture.image;
+      try{if('src' in image) image.src='';}catch(_){}
+      try{texture.image=null;}catch(_){}
+    }
+
     renderFrame() {
       if(this.destroyed || !this.renderer || !this.camera || !this.scene) return;
       this.resize();
@@ -464,6 +519,7 @@
         this.spatialOverlay?.update();
         this.renderer.setScissorTest(false);
         this.renderer.render(this.scene,this.camera);
+        this.releaseCurrentFrameCpuCopy();
         return;
       }
 
@@ -488,6 +544,7 @@
 
         this.camera.position.copy(basePos);
         this.renderer.setScissorTest(false);
+        this.releaseCurrentFrameCpuCopy();
         return;
       }
 
@@ -495,6 +552,7 @@
       this.camera.position.set(0,0,0);
       this.renderer.setScissorTest(false);
       this.renderer.render(this.scene,this.camera);
+      this.releaseCurrentFrameCpuCopy();
     }
 
     destroy() {
@@ -512,10 +570,17 @@
       this.root?.removeEventListener('wheel',this.onWheel);
       this.spatialOverlay?.destroy();
       this.spatialOverlay=null;
-      this.material?.map?.dispose?.();
+      if(this.material?.map){
+        const texture=this.material.map;
+        texture.dispose?.();
+        try{if(texture.image && 'src' in texture.image) texture.image.src='';}catch(_){}
+        try{texture.image=null;}catch(_){}
+        this.material.map=null;
+      }
       this.material?.dispose?.();
       this.plane?.geometry?.dispose?.();
       this.renderer?.dispose?.();
+      this.renderer?.forceContextLoss?.();
       this.container.classList.remove('object360-host');
       this.container.innerHTML='';
     }

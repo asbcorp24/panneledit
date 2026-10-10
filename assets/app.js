@@ -3,10 +3,12 @@
 
   const DB_NAME = 'xr-tour-editor';
   const LEGACY_DB_NAME = 'pannellum-tour-editor';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = 'projects';
+  const ASSET_STORE_NAME = 'assets';
+  const ASSET_PREFIX = 'asset:';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 8;
+  const PROJECT_VERSION = 9;
 
   const $ = (id) => document.getElementById(id);
 
@@ -314,7 +316,18 @@
   let redoStack = [];
   let historySnapshot = '';
   let applyingHistory = false;
-  const HISTORY_LIMIT = 60;
+  let historyBinaryPool = new Map();
+  let historyBinaryReverse = new Map();
+  let historyBinaryCounter = 0;
+  let renderViewerToken = 0;
+  let previewRenderToken = 0;
+  const viewerAssetUrls = new Set();
+  const previewAssetUrls = new Set();
+  const editorOverlayAssetUrls = new Set();
+  const previewOverlayAssetUrls = new Set();
+  const previewAudioAssetUrls = new Set();
+  const HISTORY_LIMIT = 30;
+  const HISTORY_INLINE_LIMIT = 32 * 1024;
 
   function createEmptyProject() {
     return {
@@ -339,7 +352,7 @@
       exportSettings: {
         optimizeEnabled: true,
         jpegQuality: 84,
-        maxImageWidth: 8192,
+        maxImageWidth: 4096,
         objectFrameWidth: 1280,
         pwaEnabled: true,
         kioskMode: false,
@@ -383,8 +396,34 @@
       .slice(0, 42) || 'scene';
   }
 
-  function cloneProjectForExport() {
-    return JSON.parse(JSON.stringify(project));
+  async function cloneProjectForExport() {
+    const assetCache = new Map();
+
+    async function cloneValue(value) {
+      if (isAssetRef(value)) {
+        if (!assetCache.has(value)) assetCache.set(value, await assetValueToDataUrl(value));
+        return assetCache.get(value);
+      }
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value) out.push(await cloneValue(item));
+        return out;
+      }
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const [key, item] of Object.entries(value)) {
+          if (key === 'viewerImageData' || key === 'viewerData') {
+            out[key] = '';
+            continue;
+          }
+          out[key] = await cloneValue(item);
+        }
+        return out;
+      }
+      return value;
+    }
+
+    return await cloneValue(project);
   }
 
   function getScene(id = currentSceneId) {
@@ -475,6 +514,7 @@
     const kind = input.kind === 'image' ? 'image' : 'video';
     return {
       data: String(input.data || ''),
+      viewerData: String(input.viewerData || ''),
       filename: String(input.filename || ''),
       kind,
       projection,
@@ -598,12 +638,380 @@
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME);
         }
+        if (!db.objectStoreNames.contains(ASSET_STORE_NAME)) {
+          db.createObjectStore(ASSET_STORE_NAME);
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
 
     return dbPromise;
+  }
+
+  function isAssetRef(value) {
+    return typeof value === 'string' && value.startsWith(ASSET_PREFIX) && value.length > ASSET_PREFIX.length;
+  }
+
+  function assetIdFromRef(value) {
+    return isAssetRef(value) ? value.slice(ASSET_PREFIX.length) : '';
+  }
+
+  function releaseAssetUrl(url) {
+    if (!url || !String(url).startsWith('blob:')) return;
+    try { URL.revokeObjectURL(url); } catch (_) {}
+    viewerAssetUrls.delete(url);
+    previewAssetUrls.delete(url);
+  }
+
+  function releaseAssetUrlPool(pool) {
+    pool.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    pool.clear();
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Не удалось прочитать Blob'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function dataUrlToBlob(value) {
+    const response = await fetch(value);
+    if (!response.ok) throw new Error('Не удалось преобразовать встроенный файл');
+    return await response.blob();
+  }
+
+  async function putAssetBlob(blob, filename = '') {
+    if (!(blob instanceof Blob)) throw new Error('Некорректный Blob');
+    const db = await openDB();
+    if (!db) return await blobToDataUrl(blob);
+
+    const id = uid('asset');
+    const record = {
+      blob,
+      filename: String(filename || ''),
+      type: String(blob.type || 'application/octet-stream'),
+      size: Number(blob.size) || 0,
+      createdAt: Date.now()
+    };
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readwrite');
+      tx.objectStore(ASSET_STORE_NAME).put(record, id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Asset transaction aborted'));
+    });
+
+    return ASSET_PREFIX + id;
+  }
+
+  async function putAssetFile(file) {
+    return await putAssetBlob(file, file?.name || '');
+  }
+
+  async function getAssetRecord(ref) {
+    const id = assetIdFromRef(ref);
+    if (!id) return null;
+    const db = await openDB();
+    if (!db || !db.objectStoreNames.contains(ASSET_STORE_NAME)) return null;
+
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readonly');
+      const request = tx.objectStore(ASSET_STORE_NAME).get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getAssetBlob(ref) {
+    const record = await getAssetRecord(ref);
+    return record?.blob instanceof Blob ? record.blob : null;
+  }
+
+  async function resolveAssetSource(value, pool = null) {
+    if (!isAssetRef(value)) return String(value || '');
+    const blob = await getAssetBlob(value);
+    if (!blob) throw new Error('Медиафайл проекта не найден в локальном хранилище');
+    const url = URL.createObjectURL(blob);
+    if (pool) pool.add(url);
+    return url;
+  }
+
+  async function resolveTransientAssetSource(value) {
+    return await resolveAssetSource(value, null);
+  }
+
+  async function assetValueToDataUrl(value) {
+    if (!isAssetRef(value)) return String(value || '');
+    const blob = await getAssetBlob(value);
+    if (!blob) throw new Error('Медиафайл проекта не найден в локальном хранилище');
+    return await blobToDataUrl(blob);
+  }
+
+  async function makeImageThumbnail(source, maxWidth = 360, maxHeight = 220, quality = 0.72) {
+    const sourceUrl = source instanceof Blob ? URL.createObjectURL(source) : String(source || '');
+    const shouldRevoke = source instanceof Blob;
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Не удалось создать миниатюру'));
+        img.src = sourceUrl;
+      });
+      const scale = Math.min(
+        1,
+        maxWidth / Math.max(1, image.naturalWidth || image.width),
+        maxHeight / Math.max(1, image.naturalHeight || image.height)
+      );
+      const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+      const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.drawImage(image, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', quality);
+    } finally {
+      if (shouldRevoke) URL.revokeObjectURL(sourceUrl);
+    }
+  }
+  async function makeViewerImageProxy(source, maxWidth = 4096, maxHeight = 4096, quality = 0.88) {
+    const sourceUrl = source instanceof Blob ? URL.createObjectURL(source) : String(source || '');
+    const shouldRevoke = source instanceof Blob;
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Не удалось создать рабочую копию изображения'));
+        img.src = sourceUrl;
+      });
+
+      const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+      const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+      const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight);
+      if (scale >= 0.999) return null;
+
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { alpha:false });
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error('Не удалось сохранить рабочую копию')),
+          'image/jpeg',
+          quality
+        );
+      });
+    } finally {
+      if (shouldRevoke) URL.revokeObjectURL(sourceUrl);
+    }
+  }
+
+
+  async function migrateHeavySceneAssets(targetProject) {
+    let changed = false;
+
+    for (const scene of targetProject.scenes || []) {
+      const sceneType = (scene.sceneType === 'xr' || scene.xr)
+        ? 'xr'
+        : ((scene.sceneType === 'stl' || scene.stl)
+          ? 'stl'
+          : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'));
+
+      if (sceneType === 'panorama') {
+        const legacyPanorama = String(scene.imageData || scene.panorama || '');
+        if (/^data:/i.test(legacyPanorama)) {
+          scene.imageData = legacyPanorama;
+          if (!scene.thumbnailData) {
+            try { scene.thumbnailData = await makeImageThumbnail(legacyPanorama); } catch (_) {}
+          }
+          const blob = await dataUrlToBlob(legacyPanorama);
+          scene.imageData = await putAssetBlob(blob, scene.filename || ((scene.id || 'panorama') + '.jpg'));
+          if ('panorama' in scene) scene.panorama = '';
+          changed = true;
+        }
+
+        if (!scene.viewerImageData && isAssetRef(scene.imageData)) {
+          const sourceBlob = await getAssetBlob(scene.imageData);
+          if (sourceBlob) {
+            const proxy = await makeViewerImageProxy(sourceBlob);
+            if (proxy) {
+              scene.viewerImageData = await putAssetBlob(
+                proxy,
+                (scene.filename || scene.id || 'panorama') + '.viewer.jpg'
+              );
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (sceneType === 'object360' && scene.object360) {
+        const data = scene.object360;
+        const firstInline = (data.frames || []).flat().find((frame) => /^data:/i.test(frame || '')) || '';
+
+        if ((!data.coverData || data.coverData.length > 128 * 1024) && firstInline) {
+          try { data.coverData = await makeImageThumbnail(firstInline); }
+          catch (_) { data.coverData = ''; }
+          scene.imageData = data.coverData || scene.imageData;
+          scene.thumbnailData = data.coverData || scene.thumbnailData || '';
+          changed = true;
+        }
+
+        for (let row = 0; row < (data.frames || []).length; row++) {
+          for (let sector = 0; sector < (data.frames[row] || []).length; sector++) {
+            const frame = data.frames[row][sector];
+            if (!/^data:/i.test(frame || '')) continue;
+            const blob = await dataUrlToBlob(frame);
+            data.frames[row][sector] = await putAssetBlob(
+              blob,
+              'frame_' + String(sector).padStart(3, '0') +
+                (blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg')
+            );
+            changed = true;
+          }
+        }
+      }
+
+      if (sceneType === 'stl' && /^data:/i.test(scene.stl?.data || '')) {
+        const blob = await dataUrlToBlob(scene.stl.data);
+        scene.stl.data = await putAssetBlob(
+          blob,
+          scene.stl.filename || scene.filename || 'model.stl'
+        );
+        changed = true;
+      }
+
+      if (sceneType === 'xr' && scene.xr) {
+        if (/^data:/i.test(scene.xr.data || '')) {
+          if (scene.xr.kind === 'image' && !scene.thumbnailData) {
+            try { scene.thumbnailData = await makeImageThumbnail(scene.xr.data); } catch (_) {}
+          }
+          const blob = await dataUrlToBlob(scene.xr.data);
+          scene.xr.data = await putAssetBlob(
+            blob,
+            scene.xr.filename || scene.filename || 'xr-media'
+          );
+          scene.imageData = scene.xr.kind === 'image'
+            ? (scene.thumbnailData || xrPlaceholderDataUrl(scene.xr.projection))
+            : xrPlaceholderDataUrl(scene.xr.projection);
+          changed = true;
+        }
+
+        if (scene.xr.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
+          const sourceBlob = await getAssetBlob(scene.xr.data);
+          if (sourceBlob) {
+            const proxy = await makeViewerImageProxy(sourceBlob);
+            if (proxy) {
+              scene.xr.viewerData = await putAssetBlob(
+                proxy,
+                (scene.xr.filename || scene.filename || 'xr-image') + '.viewer.jpg'
+              );
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (scene.object360 && /^data:/i.test(scene.object360.backgroundImageData || '')) {
+        const blob = await dataUrlToBlob(scene.object360.backgroundImageData);
+        scene.object360.backgroundImageData = await putAssetBlob(
+          blob,
+          scene.object360.backgroundImageName || 'object360-background'
+        );
+        changed = true;
+      }
+
+      if (scene.stl && /^data:/i.test(scene.stl.backgroundImageData || '')) {
+        const blob = await dataUrlToBlob(scene.stl.backgroundImageData);
+        scene.stl.backgroundImageData = await putAssetBlob(
+          blob,
+          scene.stl.backgroundImageName || 'stl-background'
+        );
+        changed = true;
+      }
+
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      for (const slotName of ['music', 'narration']) {
+        const slot = scene.audio[slotName];
+        if (!/^data:/i.test(slot?.data || '')) continue;
+        const blob = await dataUrlToBlob(slot.data);
+        slot.data = await putAssetBlob(blob, slot.filename || ('scene-' + slotName));
+        changed = true;
+      }
+
+      scene.mediaObjects = Array.isArray(scene.mediaObjects)
+        ? scene.mediaObjects.map(normalizeMediaObject)
+        : [];
+
+      for (const item of scene.mediaObjects) {
+        if (/^data:/i.test(item.data || '')) {
+          const blob = await dataUrlToBlob(item.data);
+          item.data = await putAssetBlob(
+            blob,
+            item.filename || item.title || ('media-' + item.id)
+          );
+          changed = true;
+        }
+
+        for (const entry of item.gallery || []) {
+          if (!/^data:/i.test(entry.data || '')) continue;
+          const blob = await dataUrlToBlob(entry.data);
+          entry.data = await putAssetBlob(blob, entry.filename || 'gallery-image');
+          changed = true;
+        }
+      }
+    }
+
+    targetProject.audio = {
+      music: normalizeAudioSlot(targetProject.audio?.music || {}, { volume:35, loop:true })
+    };
+    if (/^data:/i.test(targetProject.audio.music.data || '')) {
+      const blob = await dataUrlToBlob(targetProject.audio.music.data);
+      targetProject.audio.music.data = await putAssetBlob(
+        blob,
+        targetProject.audio.music.filename || 'project-music'
+      );
+      changed = true;
+    }
+
+    targetProject.startScreen = normalizeStartScreen(
+      targetProject.startScreen || {},
+      targetProject.title
+    );
+    if (/^data:/i.test(targetProject.startScreen.coverData || '')) {
+      const blob = await dataUrlToBlob(targetProject.startScreen.coverData);
+      targetProject.startScreen.coverData = await putAssetBlob(
+        blob,
+        targetProject.startScreen.coverFilename || 'start-cover'
+      );
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  async function clearAssetStore() {
+    const db = await openDB();
+    if (!db || !db.objectStoreNames.contains(ASSET_STORE_NAME)) return;
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readwrite');
+      tx.objectStore(ASSET_STORE_NAME).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
   async function persistProject() {
@@ -648,7 +1056,7 @@
       } catch (_) {}
     }
     return await new Promise((resolve, reject) => {
-      const request = indexedDB.open(LEGACY_DB_NAME, DB_VERSION);
+      const request = indexedDB.open(LEGACY_DB_NAME);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
       request.onblocked = () => resolve(null);
@@ -702,6 +1110,7 @@
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    await clearAssetStore();
   }
 
   function markDirty({ rerenderViewer = false } = {}) {
@@ -829,7 +1238,7 @@
     return {
       optimizeEnabled: input.optimizeEnabled !== false,
       jpegQuality: clampNumber(input.jpegQuality, 45, 100, 84),
-      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 8192),
+      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 4096),
       objectFrameWidth: clampNumber(input.objectFrameWidth, 480, 4096, 1280),
       pwaEnabled: input.pwaEnabled !== false,
       kioskMode: Boolean(input.kioskMode),
@@ -837,13 +1246,51 @@
     };
   }
 
+  function historyBinaryToken(value) {
+    let token = historyBinaryReverse.get(value);
+    if (token) return token;
+    token = '__history_asset_' + (++historyBinaryCounter) + '__';
+    historyBinaryReverse.set(value, token);
+    historyBinaryPool.set(token, value);
+    return token;
+  }
+
   function snapshotProject() {
-    try { return JSON.stringify(project); } catch (_) { return ''; }
+    try {
+      return JSON.stringify(project, (_key, value) => {
+        if (
+          typeof value === 'string' &&
+          value.length > HISTORY_INLINE_LIMIT &&
+          /^data:/i.test(value)
+        ) {
+          return historyBinaryToken(value);
+        }
+        return value;
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function parseHistorySnapshot(snapshot) {
+    return JSON.parse(snapshot, (_key, value) => {
+      if (
+        typeof value === 'string' &&
+        value.startsWith('__history_asset_') &&
+        historyBinaryPool.has(value)
+      ) {
+        return historyBinaryPool.get(value);
+      }
+      return value;
+    });
   }
 
   function resetHistory() {
     undoStack = [];
     redoStack = [];
+    historyBinaryPool = new Map();
+    historyBinaryReverse = new Map();
+    historyBinaryCounter = 0;
     historySnapshot = snapshotProject();
   }
 
@@ -871,7 +1318,7 @@
     applyingHistory = true;
     try {
       if (current) targetStack.push(current);
-      project = normalizeProject(JSON.parse(snapshot));
+      project = normalizeProject(parseHistorySnapshot(snapshot));
       currentSceneId = project.scenes.some((scene) => scene.id === currentSceneId)
         ? currentSceneId
         : (project.firstScene || project.scenes[0]?.id || null);
@@ -904,6 +1351,9 @@
     };
     next.startScreen = normalizeStartScreen(input.startScreen || {}, next.title);
     next.exportSettings = normalizeExportSettings(input.exportSettings || {});
+    if ((Number(input.version) || 0) < 9 && Number(input.exportSettings?.maxImageWidth) === 8192) {
+      next.exportSettings.maxImageWidth = 4096;
+    }
     next.settings = { ...next.settings, ...(input.settings || {}) };
     next.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(next.settings.defaultTransition)
       ? next.settings.defaultTransition
@@ -930,6 +1380,8 @@
         ((scene.sceneType === 'xr' || scene.xr) ? xrPlaceholderDataUrl(scene.xr?.projection) :
           ((scene.sceneType === 'stl' || scene.stl) ? stlPlaceholderDataUrl() : ''))
       ),
+      thumbnailData: String(scene.thumbnailData || ''),
+      viewerImageData: String(scene.viewerImageData || ''),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
       stl: scene.sceneType === 'stl' || scene.stl ? normalizeStlData(scene.stl || {}) : null,
       xr: scene.sceneType === 'xr' || scene.xr ? normalizeXrData(scene.xr || {}) : null,
@@ -1014,7 +1466,11 @@
       const isObject = scene.sceneType === 'object360';
       const isStl = scene.sceneType === 'stl';
       const isXr = scene.sceneType === 'xr';
-      const thumb = scene.imageData || scene.object360?.coverData || (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''));
+      const rawThumb = scene.thumbnailData || scene.object360?.coverData || scene.imageData ||
+        (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''));
+      const thumb = isAssetRef(rawThumb)
+        ? (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''))
+        : rawThumb;
       const kind = isObject
         ? '<span class="scene-kind">ОБЪЕКТ 360</span>'
         : (isStl
@@ -1247,22 +1703,26 @@
 
     let body = '';
     if (item.type === 'image' && item.data) {
-      body = '<img src="' + escapeHtml(item.data) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
+      const src = isAssetRef(item.data) ? '' : item.data;
+      body = '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
     } else if (item.type === 'stereo-photo' && item.data) {
       body = '<div class="scene-stereo-viewer-host" data-stereo-projection="' +
         escapeHtml(item.stereoProjection || 'FLAT_LR') + '"></div>';
     } else if (item.type === 'gallery') {
       const first = item.gallery?.[0]?.data || '';
+      const firstSrc = isAssetRef(first) ? '' : first;
       body = first
-        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(first) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
+        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(firstSrc) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
         : '<div class="scene-media-placeholder">Галерея</div>';
     } else if (item.type === 'video' && item.data) {
-      body = '<video src="' + escapeHtml(item.data) + '" controls playsinline ' +
+      const src = isAssetRef(item.data) ? '' : item.data;
+      body = '<video src="' + escapeHtml(src) + '" controls playsinline ' +
         (item.autoplay ? 'autoplay muted ' : '') + (item.loop ? 'loop ' : '') + '></video>';
     } else if (item.type === 'audio' && item.data) {
       const audioStyle = ['compact','large','hidden'].includes(item.audioStyle) ? item.audioStyle : 'compact';
+      const src = isAssetRef(item.data) ? '' : item.data;
       const audio = '<audio class="scene-audio-element" data-media-volume="' + item.volume +
-        '" data-media-autoplay="' + (item.autoplay ? '1' : '0') + '" src="' + escapeHtml(item.data) +
+        '" data-media-autoplay="' + (item.autoplay ? '1' : '0') + '" src="' + escapeHtml(src) +
         '" preload="metadata" ' + (audioStyle === 'hidden' ? '' : 'controls ') + (item.loop ? 'loop ' : '') + '></audio>';
       if (audioStyle === 'hidden') {
         body = (editor
@@ -1287,40 +1747,101 @@
       body + (editor && !item.locked ? '<span class="scene-media-drag-hint">перетащить</span>' : '') + '</div>';
   }
 
+  async function hydrateSceneMediaAssets(items, target, { editor = true, generation = null } = {}) {
+    const pool = target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls;
+
+    for (const item of items) {
+      const wrapper = target.querySelector('[data-media-object-id="' + CSS.escape(item.id) + '"]');
+      if (!wrapper || target._mediaAssetGeneration !== generation) return;
+
+      try {
+        if (item.type === 'image' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const image = wrapper.querySelector('img');
+          if (image) image.src = source;
+        } else if (item.type === 'gallery' && item.gallery?.[0]?.data) {
+          const source = await resolveAssetSource(item.gallery[0].data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const image = wrapper.querySelector('.scene-gallery-frame img');
+          if (image) image.src = source;
+        } else if (item.type === 'video' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const video = wrapper.querySelector('video');
+          if (video) {
+            video.src = source;
+            video.load();
+            if (!editor && item.autoplay) video.play().catch(() => {});
+          }
+        } else if (item.type === 'audio' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const audio = wrapper.querySelector('audio.scene-audio-element');
+          if (audio) {
+            audio.src = source;
+            audio.volume = clampNumber(item.volume / 100, 0, 1, 0.8);
+            audio.load();
+            if (!editor && item.autoplay) audio.play().catch(() => {});
+          }
+        } else if (item.type === 'stereo-photo' && item.data && window.XRMediaViewer) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const host = wrapper.querySelector('.scene-stereo-viewer-host');
+          if (host) {
+            host._xrViewer?.destroy?.();
+            host._xrViewer = new XRMediaViewer(host, {
+              domOverlayRoot: target,
+              source,
+              kind: 'image',
+              projection: item.stereoProjection || 'FLAT_LR',
+              fov: 55,
+              controls: true,
+              motionControls: true
+            });
+            host._xrViewer.ready.catch(console.error);
+          }
+        }
+      } catch (error) {
+        console.warn('Media asset:', item.id, error);
+      }
+    }
+  }
+
   function renderSceneMediaOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = true } = {}) {
     if (!target) return;
+    const pool = target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls;
+    releaseAssetUrlPool(pool);
+
     const items = Array.isArray(scene?.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
     if (scene) scene.mediaObjects = items;
+    const generation = String(Date.now()) + ':' + Math.random();
+    target._mediaAssetGeneration = generation;
+
     const markup = items.map((item) => mediaObjectMarkup(item, { editor })).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
+
     target.querySelectorAll('audio.scene-audio-element').forEach((audio) => {
       audio.volume = clampNumber(Number(audio.dataset.mediaVolume) / 100, 0, 1, 0.8);
-      if (!editor && audio.dataset.mediaAutoplay === '1') {
-        audio.play().catch(() => {});
-      }
     });
 
-    target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
-      const wrapper = host.closest('[data-media-object-id]');
-      const item = items.find((entry) => entry.id === wrapper?.dataset.mediaObjectId);
-      if (!item?.data || !window.XRMediaViewer) return;
-      try {
-        host._xrViewer?.destroy?.();
-        host._xrViewer = new XRMediaViewer(host, {
-          domOverlayRoot: target,
-          source: item.data,
-          kind: 'image',
-          projection: item.stereoProjection || 'FLAT_LR',
-          fov: 55,
-          controls: true,
-          motionControls: true
-        });
-        host._xrViewer.ready.catch(console.error);
-      } catch (error) {
-        console.error('Stereo photo:', error);
-      }
-    });
+    hydrateSceneMediaAssets(items, target, { editor, generation }).catch(console.error);
   }
 
   function panoramaStateFromXr(state = {}) {
@@ -1446,6 +1967,14 @@
     target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
       try { host._xrViewer?.destroy?.(); } catch (_) {}
     });
+    target.querySelectorAll('video,audio').forEach((media) => {
+      try { media.pause(); } catch (_) {}
+      try { media.removeAttribute('src'); media.load(); } catch (_) {}
+    });
+    target.querySelectorAll('img').forEach((image) => {
+      try { image.removeAttribute('src'); } catch (_) {}
+    });
+    releaseAssetUrlPool(target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls);
     target.innerHTML = '';
     if (!scene) {
       target.hidden = true;
@@ -1782,9 +2311,12 @@
       document.body.appendChild(host);
 
       let tempStl = null;
+      const tempUrls = new Set();
       try {
+        const source = await resolveAssetSource(data.data, tempUrls);
+        const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), tempUrls);
         tempStl = new StlXRViewer(host, {
-          source: data.data,
+          source,
           yaw: data.yaw,
           pitch: data.pitch,
           zoom: data.zoom,
@@ -1792,7 +2324,7 @@
           autoRotate: false,
           color: data.color,
           backgroundMode: data.backgroundMode,
-          backgroundImage: stlBackgroundImageForData(data)
+          backgroundImage
         });
         await tempStl.ready;
         tempStl.render();
@@ -1801,6 +2333,7 @@
         return imageData;
       } finally {
         try { tempStl?.destroy(); } catch (_) {}
+        releaseAssetUrlPool(tempUrls);
         host.remove();
       }
     }
@@ -1815,9 +2348,11 @@
     document.body.appendChild(host);
 
     let tempViewer = null;
+    const tempUrls = new Set();
     try {
+      const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, tempUrls);
       tempViewer = new XRMediaViewer(host, {
-        source: scene.imageData,
+        source,
         kind: 'image',
         projection: '360',
         yawDirection: 'right-positive',
@@ -1834,6 +2369,7 @@
       return imageData;
     } finally {
       try { tempViewer?.destroy(); } catch (_) {}
+      releaseAssetUrlPool(tempUrls);
       host.remove();
     }
   }
@@ -1933,9 +2469,11 @@
       try { xrViewer.destroy(); } catch (error) { console.warn(error); }
       xrViewer = null;
     }
+    releaseAssetUrlPool(viewerAssetUrls);
   }
 
-  function renderViewer() {
+  async function renderViewer() {
+    const token = ++renderViewerToken;
     updateToolbarState();
     const scene = getScene();
 
@@ -1952,17 +2490,24 @@
       const data = normalizeObject360Data(scene.object360 || {});
       scene.object360 = data;
       try {
+        const backgroundImage = await resolveAssetSource(data.backgroundImageData, viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         objectViewer = new Object360XRViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
           sectors: data.sectors,
           rows: data.rows,
           frames: data.frames,
+          frameProvider: async (row, sector) => {
+            const value = data.frames[row]?.[sector] || '';
+            return isAssetRef(value) ? await resolveTransientAssetSource(value) : value;
+          },
+          releaseFrameSource: releaseAssetUrl,
           startSector: data.startSector,
           startRow: data.startRow,
           autoplay: data.autoplay,
           backgroundMode: data.backgroundMode,
           backgroundColor: data.backgroundColor,
-          backgroundImage: data.backgroundImageData,
+          backgroundImage,
           threeModuleUrl: 'assets/three.module.min.js',
           onFrameChange: (state) => {
             els.coords.textContent =
@@ -1990,9 +2535,12 @@
       const data = normalizeStlData(scene.stl || {});
       scene.stl = data;
       try {
+        const source = await resolveAssetSource(data.data, viewerAssetUrls);
+        const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         stlViewer = new StlXRViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
-          source: data.data,
+          source,
           yaw: data.yaw,
           pitch: data.pitch,
           zoom: data.zoom,
@@ -2000,7 +2548,7 @@
           autoRotate: data.autoplay,
           color: data.color,
           backgroundMode: data.backgroundMode,
-          backgroundImage: stlBackgroundImageForData(data),
+          backgroundImage,
           threeModuleUrl: 'assets/three.module.min.js',
           onChange: (state) => {
             els.coords.textContent =
@@ -2032,9 +2580,11 @@
       const data = normalizeXrData(scene.xr || {});
       scene.xr = data;
       try {
+        const source = await resolveAssetSource(data.kind === 'image' ? (data.viewerData || data.data) : data.data, viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         xrViewer = new XRMediaViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
-          source: data.data,
+          source,
           kind: data.kind,
           projection: data.projection,
           yaw: data.yaw,
@@ -2074,9 +2624,11 @@
     refreshCustomHotspotStyles();
 
     try {
+      const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, viewerAssetUrls);
+      if (token !== renderViewerToken) return;
       viewer = new XRMediaViewer(els.panorama, {
         domOverlayRoot: els.sceneOverlay,
-        source: scene.imageData,
+        source,
         kind: 'image',
         projection: '360',
         yawDirection: 'right-positive',
@@ -2159,8 +2711,15 @@
       return null;
     }
 
-    const imageData = await fileToDataURL(file);
-    const dimensions = await getImageDimensions(imageData);
+    const tempUrl = URL.createObjectURL(file);
+    const dimensions = await getImageDimensions(tempUrl);
+    URL.revokeObjectURL(tempUrl);
+    const thumbnailData = await makeImageThumbnail(file);
+    const imageData = await putAssetFile(file);
+    const viewerProxyBlob = await makeViewerImageProxy(file);
+    const viewerImageData = viewerProxyBlob
+      ? await putAssetBlob(viewerProxyBlob, (file.name || 'panorama') + '.viewer.jpg')
+      : '';
     if (dimensions) {
       const ratio = dimensions.width / dimensions.height;
       if (ratio < 1.8 || ratio > 2.2) {
@@ -2179,6 +2738,8 @@
       sceneType: 'panorama',
       filename: file.name || (id + '.jpg'),
       imageData,
+      thumbnailData,
+      viewerImageData,
       object360: null,
       pitch: 0,
       yaw: 0,
@@ -2205,7 +2766,7 @@
 
     const buffer = await file.arrayBuffer();
     const parsed = StlTools.parseStl(buffer);
-    const stlDataUrl = await fileToDataURL(file);
+    const stlDataUrl = await putAssetFile(file);
 
     const baseId = slugify(title || file.name.replace(/\.stl$/i, ''));
     let id = baseId;
@@ -2235,6 +2796,7 @@
       sceneType: 'stl',
       filename: file.name || (id + '.stl'),
       imageData: stlPlaceholderDataUrl(),
+      thumbnailData: '',
       object360: null,
       stl,
       pitch: 0,
@@ -2260,9 +2822,15 @@
     const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
     if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
 
-    const data = await fileToDataURL(file);
+    const data = await putAssetFile(file);
+    const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
+    const viewerProxyBlob = isImage ? await makeViewerImageProxy(file) : null;
+    const viewerData = viewerProxyBlob
+      ? await putAssetBlob(viewerProxyBlob, (file.name || 'xr-image') + '.viewer.jpg')
+      : '';
     const xr = normalizeXrData({
       data,
+      viewerData,
       filename: file.name,
       kind: isImage ? 'image' : 'video',
       projection,
@@ -2285,7 +2853,8 @@
       title: String(title || file.name.replace(/\.[^.]+$/, '') || 'XR Media'),
       sceneType: 'xr',
       filename: file.name || (id + (isImage ? '.jpg' : '.mp4')),
-      imageData: isImage ? data : xrPlaceholderDataUrl(xr.projection),
+      imageData: isImage ? thumbnailData : xrPlaceholderDataUrl(xr.projection),
+      thumbnailData,
       object360: null,
       stl: null,
       xr,
@@ -2379,14 +2948,15 @@
     const sectors = Math.max(inferredSectors, Number(config.sectors) || 1);
     const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
 
+    let coverData = '';
     for (let i = 0; i < frameEntries.length; i++) {
       const entry = frameEntries[i];
-      const base64 = await zip.file(entry.name).async('base64');
-      const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+      const blob = await zip.file(entry.name).async('blob');
+      frames[entry.row][entry.sector] = await putAssetBlob(blob, entry.name.split('/').pop() || ('frame_' + entry.sector));
+      if (!coverData) {
+        try { coverData = await makeImageThumbnail(blob); } catch (_) {}
+      }
     }
-
-    const coverData = frames.flat().find(Boolean) || '';
     const baseId = slugify(title || file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
     let id = baseId;
     let n = 2;
@@ -2413,6 +2983,7 @@
       sceneType: 'object360',
       filename: file.name || (id + '.object360.zip'),
       imageData: coverData,
+      thumbnailData: coverData,
       object360,
       pitch: 0,
       yaw: 0,
@@ -2565,14 +3136,19 @@
         audio.pause();
         audio.currentTime = 0;
       } catch (_) {}
+      try {
+        audio.removeAttribute('src');
+        audio.load();
+      } catch (_) {}
     }
     previewMusicAudio = null;
     previewNarrationAudio = null;
+    releaseAssetUrlPool(previewAudioAssetUrls);
     els.previewMusicButton?.classList.remove('active');
     els.previewNarrationButton?.classList.remove('active');
   }
 
-  function configurePreviewAudio(scene) {
+  async function configurePreviewAudio(scene) {
     stopPreviewAudio();
     if (!scene) return;
 
@@ -2581,7 +3157,8 @@
     const music = scene.audio.music.data ? scene.audio.music : projectMusic;
 
     if (music.data) {
-      previewMusicAudio = new Audio(music.data);
+      const musicSource = await resolveAssetSource(music.data, previewAudioAssetUrls);
+      previewMusicAudio = new Audio(musicSource);
       previewMusicAudio.volume = music.volume / 100;
       previewMusicAudio.loop = Boolean(music.loop);
       els.previewMusicButton.hidden = false;
@@ -2590,7 +3167,8 @@
     }
 
     if (scene.audio.narration.data) {
-      previewNarrationAudio = new Audio(scene.audio.narration.data);
+      const narrationSource = await resolveAssetSource(scene.audio.narration.data, previewAudioAssetUrls);
+      previewNarrationAudio = new Audio(narrationSource);
       previewNarrationAudio.volume = scene.audio.narration.volume / 100;
       els.previewNarrationButton.hidden = false;
     } else {
@@ -2691,7 +3269,7 @@
       showToast('Добавьте изображения галереи');
       return;
     }
-    if (type === 'stereo-photo' && pendingMediaData && !/^data:image\/(jpeg|png|webp);/i.test(pendingMediaData)) {
+    if (type === 'stereo-photo' && pendingMediaData && !isAssetRef(pendingMediaData) && !/^data:image\/(jpeg|png|webp);/i.test(pendingMediaData)) {
       showToast('Для стерео фото выберите JPG, PNG или WEBP');
       return;
     }
@@ -3200,12 +3778,12 @@
     return normalized || fallback;
   }
 
-  function exportProject() {
+  async function exportProject() {
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
       return;
     }
-    const payload = cloneProjectForExport();
+    const payload = await cloneProjectForExport();
     payload.exportedAt = new Date().toISOString();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     downloadBlob(blob, safeFilename(project.title) + '.xr-tour-project.json');
@@ -3453,7 +4031,9 @@
   }
 
   async function generateSceneMultires(root, scene, sceneIndex, sceneCount, button) {
-    const image = await loadImageElement(scene.imageData);
+    const sourceUrls = new Set();
+    const sourceUrl = await resolveAssetSource(scene.imageData, sourceUrls);
+    const image = await loadImageElement(sourceUrl);
     const limits = getMultiresWebGLLimits();
     const spec = calculateMultiresSpec(image, limits);
     const source = prepareMultiresSource(image, limits.maxTextureSize);
@@ -3523,6 +4103,7 @@
       }
     } finally {
       projector.destroy();
+      releaseAssetUrlPool(sourceUrls);
     }
 
     return {
@@ -3630,28 +4211,38 @@
         const settings = normalizeExportSettings(project.exportSettings || {});
 
         if (item.data && ['image','stereo-photo','video','audio','pdf'].includes(item.type)) {
-          let fileData = item.data;
-          if ((item.type === 'image' || item.type === 'stereo-photo') && settings.optimizeEnabled) {
-            fileData = await optimizeImageDataUrl(
-              item.data,
-              Math.min(settings.maxImageWidth, 2560),
-              settings.jpegQuality,
-              /^data:image\/(png|webp)/i.test(item.data)
-            );
+          if (isAssetRef(item.data) && ['video','audio','pdf'].includes(item.type)) {
+            const blob = await getAssetBlob(item.data);
+            if (!blob) throw new Error('Медиафайл не найден: ' + (item.filename || item.title || item.id));
+            const fallback = item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.mp3';
+            const filenameExt = String(item.filename || '').toLowerCase().match(/(\.[a-z0-9]{2,5})$/)?.[1] || fallback;
+            const path = dir + '/' + base + filenameExt;
+            root.file(path, blob);
+            exported.src = path;
+          } else {
+            let fileData = await assetValueToDataUrl(item.data);
+            if ((item.type === 'image' || item.type === 'stereo-photo') && settings.optimizeEnabled) {
+              fileData = await optimizeImageDataUrl(
+                fileData,
+                Math.min(settings.maxImageWidth, 2560),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(fileData)
+              );
+            }
+            const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : item.type === 'audio' ? '.mp3' : '.jpg');
+            exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
           }
-          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : item.type === 'audio' ? '.mp3' : '.jpg');
-          exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
         }
         if (item.type === 'gallery') {
           for (let galleryIndex = 0; galleryIndex < (item.gallery || []).length; galleryIndex++) {
             const entry = item.gallery[galleryIndex];
-            let fileData = entry.data;
+            let fileData = await assetValueToDataUrl(entry.data);
             if (settings.optimizeEnabled) {
               fileData = await optimizeImageDataUrl(
-                entry.data,
+                fileData,
                 Math.min(settings.maxImageWidth, 2560),
                 settings.jpegQuality,
-                /^data:image\/(png|webp)/i.test(entry.data)
+                /^data:image\/(png|webp)/i.test(fileData)
               );
             }
             const ext = extensionForDataUrl(fileData, '.jpg');
@@ -3666,16 +4257,23 @@
     return output;
   }
 
-  function bundleAudioSlot(root, slot, baseName) {
+  async function bundleAudioSlot(root, slot, baseName) {
     const data = normalizeAudioSlot(slot || {}, { volume: 50, loop: false });
     if (!data.data) return null;
 
     const ext = audioExtension(data);
     const filename = safeFilename(baseName, 'audio') + '.' + ext;
     const path = 'audio/' + filename;
-    const payload = dataUrlPayload(data.data);
-    if (payload.base64) root.file(path, payload.data, { base64: true });
-    else root.file(path, decodeURIComponent(payload.data));
+
+    if (isAssetRef(data.data)) {
+      const blob = await getAssetBlob(data.data);
+      if (!blob) throw new Error('Аудиофайл не найден: ' + (data.filename || filename));
+      root.file(path, blob);
+    } else {
+      const payload = dataUrlPayload(data.data);
+      if (payload.base64) root.file(path, payload.data, { base64: true });
+      else root.file(path, decodeURIComponent(payload.data));
+    }
 
     return {
       src: path,
@@ -4009,6 +4607,11 @@
     if (!overlay) return;
     mediaXrViewers.forEach((viewer)=>{ try { viewer.destroy(); } catch (_) {} });
     mediaXrViewers = [];
+    overlay.querySelectorAll('video,audio').forEach((media)=>{
+      try { media.pause(); } catch (_) {}
+      try { media.removeAttribute('src'); media.load(); } catch (_) {}
+    });
+    overlay.querySelectorAll('img').forEach((image)=>{ try { image.removeAttribute('src'); } catch (_) {} });
     overlay.innerHTML = '';
     const meta = config.sceneMeta?.[id] || {};
 
@@ -4226,6 +4829,7 @@
   const stopNarration = () => {
     if (narrationAudio) {
       try { narrationAudio.pause(); narrationAudio.currentTime = 0; } catch (_) {}
+      try { narrationAudio.removeAttribute('src'); narrationAudio.load(); } catch (_) {}
     }
     narrationAudio = null;
     narrationButton?.classList.remove('active');
@@ -4246,7 +4850,10 @@
     if (musicButton) musicButton.hidden = !music?.src;
     const nextKey = music?.src || '';
     if (nextKey !== musicKey) {
-      if (musicAudio) { try { musicAudio.pause(); } catch (_) {} }
+      if (musicAudio) {
+        try { musicAudio.pause(); } catch (_) {}
+        try { musicAudio.removeAttribute('src'); musicAudio.load(); } catch (_) {}
+      }
       musicAudio = null; musicKey = nextKey;
       if (music?.src) {
         musicAudio = new Audio(music.src);
@@ -4284,40 +4891,10 @@
     transitionLayer.className = 'tour-transition-layer';
   };
 
-  const preloadScene = (id) => {
-    const meta = config.sceneMeta?.[id];
-    if (!meta) return;
-    if (meta.sceneType === 'panorama') {
-      const p = config.scenes?.[id]?.source;
-      if (p) { const img = new Image(); img.src = p; }
-    } else if (meta.sceneType === 'object360') {
-      const frames = config.object360Scenes?.[id]?.frames || [];
-      (frames[0] || []).slice(0,4).forEach((src) => { if (src) { const img=new Image(); img.src=src; } });
-    } else if (meta.sceneType === 'stl') {
-      const src = config.stlScenes?.[id]?.source;
-      if (src) fetch(src).catch(()=>{});
-    } else if (meta.sceneType === 'xr') {
-      const src = config.xrScenes?.[id]?.source;
-      if (src) {
-        if (config.xrScenes?.[id]?.kind === 'image') { const img = new Image(); img.src = src; }
-        else { const v = document.createElement('video'); v.preload='metadata'; v.src=src; }
-      }
-    }
-    (meta.mediaObjects || []).forEach((item) => {
-      if ((item.type === 'image' || item.type === 'stereo-photo') && item.src) { const img = new Image(); img.src = item.src; }
-      if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
-      if (item.type === 'audio' && item.src) { const a = new Audio(); a.preload='metadata'; a.src=item.src; }
-    });
-    [meta.audio?.music?.src,meta.audio?.narration?.src].filter(Boolean).forEach((src)=>{ const a=new Audio(); a.preload='metadata'; a.src=src; });
-  };
-
-  const preloadNeighbors = (id) => {
-    const targets = new Set();
-    (config.sceneMeta?.[id]?.screenHotspots || []).forEach((h)=>{ if(h.targetSceneId) targets.add(h.targetSceneId); });
-    const gi = config.guide?.steps?.findIndex((step)=>step.sceneId===id);
-    if (gi >= 0 && config.guide.steps[gi+1]) targets.add(config.guide.steps[gi+1].sceneId);
-    [...targets].slice(0,4).forEach(preloadScene);
-  };
+  // Heavy scene/media preloading was intentionally removed.
+  // Browser HTTP/PWA cache still keeps downloaded files available, while
+  // images/video are decoded only when their scene actually becomes active.
+  const preloadNeighbors = (_id) => {};
 
   const showScene = async (id, pushHistory = true, transition = null) => {
     const meta = config.sceneMeta?.[id];
@@ -4939,7 +5516,7 @@
       img.src = dataUrl;
     });
 
-    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 8192));
+    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 4096));
     const ratio = targetWidth / Math.max(1, image.naturalWidth || image.width);
     const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
     if (ratio >= 0.999 && /image\/jpe?g/i.test(dataUrl) && quality >= 92) return dataUrl;
@@ -5009,6 +5586,9 @@
         if (item.src) assets.add(item.src);
         (item.gallery || []).forEach((entry) => { if (entry.src) assets.add(entry.src); });
       });
+      (meta.screenHotspots || []).forEach((hotspot) => {
+        if (hotspot.iconData && !/^data:/i.test(hotspot.iconData)) assets.add(hotspot.iconData);
+      });
       if (meta.audio?.music?.src) assets.add(meta.audio.music.src);
       if (meta.audio?.narration?.src) assets.add(meta.audio.narration.src);
     });
@@ -5017,7 +5597,7 @@
     (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
-    return "const CACHE='xr-tour-v10';\n" +
+    return "const CACHE='xr-tour-v11';\n" +
       "const CORE=" + list + ";\n" +
       "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
       "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
@@ -5071,7 +5651,8 @@
       for (let index = 0; index < panoramaScenes.length; index++) {
         const scene = panoramaScenes[index];
         const settings = normalizeExportSettings(project.exportSettings || {});
-        const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
+        const panoramaData = await assetValueToDataUrl(scene.imageData);
+        const optimized = await optimizeImageDataUrl(panoramaData, settings.maxImageWidth, settings.jpegQuality);
         const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
         const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
         let filename = baseName + '.' + ext;
@@ -5096,7 +5677,8 @@
             const frame = data.frames[row]?.[sector] || '';
             if (!frame) continue;
             const settings = normalizeExportSettings(project.exportSettings || {});
-            const optimizedFrame = await optimizeImageDataUrl(frame, settings.objectFrameWidth, settings.jpegQuality);
+            const frameData = await assetValueToDataUrl(frame);
+            const optimizedFrame = await optimizeImageDataUrl(frameData, settings.objectFrameWidth, settings.jpegQuality);
             const payload = dataUrlPayload(optimizedFrame);
             const mime = String(payload.mime || '').toLowerCase();
             const ext = settings.optimizeEnabled ? 'jpg' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
@@ -5124,7 +5706,6 @@
         const data = normalizeStlData(scene.stl || {});
         if (!data.data) throw new Error('STL данные отсутствуют: ' + scene.title);
 
-        const payload = dataUrlPayload(data.data);
         const baseName = safeFilename(scene.title || scene.id, 'model-' + (sceneIndex + 1));
         let filename = baseName + '.stl';
         let suffix = 2;
@@ -5134,22 +5715,30 @@
         usedNames.add(filename.toLowerCase());
 
         const modelPath = 'models/' + filename;
-        if (payload.base64) root.file(modelPath, payload.data, { base64: true });
-        else root.file(modelPath, decodeURIComponent(payload.data));
+        if (isAssetRef(data.data)) {
+          const modelBlob = await getAssetBlob(data.data);
+          if (!modelBlob) throw new Error('STL данные отсутствуют: ' + scene.title);
+          root.file(modelPath, modelBlob);
+        } else {
+          const payload = dataUrlPayload(data.data);
+          if (payload.base64) root.file(modelPath, payload.data, { base64: true });
+          else root.file(modelPath, decodeURIComponent(payload.data));
+        }
 
         let backgroundImage = '';
         let backgroundMode = data.backgroundMode || 'hitech';
 
         if (backgroundMode === 'image' && data.backgroundImageData) {
           const settings = normalizeExportSettings(project.exportSettings || {});
+          const bgSourceData = await assetValueToDataUrl(data.backgroundImageData);
           const bgData = settings.optimizeEnabled
             ? await optimizeImageDataUrl(
-                data.backgroundImageData,
+                bgSourceData,
                 Math.min(settings.maxImageWidth, 4096),
                 settings.jpegQuality,
-                /^data:image\/(png|webp)/i.test(data.backgroundImageData)
+                /^data:image\/(png|webp)/i.test(bgSourceData)
               )
-            : data.backgroundImageData;
+            : bgSourceData;
           const bgPayload = dataUrlPayload(bgData);
           const bgMime = String(bgPayload.mime || '').toLowerCase();
           const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
@@ -5161,9 +5750,10 @@
           const bgScene = getScene(data.backgroundSceneId);
           if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
             const settings = normalizeExportSettings(project.exportSettings || {});
+            const bgSourceData = await assetValueToDataUrl(bgScene.imageData);
             const bgData = settings.optimizeEnabled
-              ? await optimizeImageDataUrl(bgScene.imageData, settings.maxImageWidth, settings.jpegQuality, false)
-              : bgScene.imageData;
+              ? await optimizeImageDataUrl(bgSourceData, settings.maxImageWidth, settings.jpegQuality, false)
+              : bgSourceData;
             const bgPayload = dataUrlPayload(bgData);
             const bgMime = String(bgPayload.mime || '').toLowerCase();
             const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
@@ -5197,18 +5787,22 @@
 
         let mediaData = data.data;
         if (data.kind === 'image') {
+          mediaData = await assetValueToDataUrl(data.data);
           const settings = normalizeExportSettings(project.exportSettings || {});
           if (settings.optimizeEnabled) {
             mediaData = await optimizeImageDataUrl(
-              data.data,
+              mediaData,
               Math.min(settings.maxImageWidth, 8192),
               settings.jpegQuality,
-              /^data:image\/(png|webp)/i.test(data.data)
+              /^data:image\/(png|webp)/i.test(mediaData)
             );
           }
         }
 
-        const ext = extensionForDataUrl(mediaData, data.kind === 'image' ? '.jpg' : '.mp4');
+        const filenameExt = String(data.filename || scene.filename || '').toLowerCase().match(/(\.[a-z0-9]{2,5})$/)?.[1] || '';
+        const ext = data.kind === 'image'
+          ? extensionForDataUrl(mediaData, '.jpg')
+          : (filenameExt || '.mp4');
         const baseName = safeFilename(scene.title || scene.id, 'xr-' + (sceneIndex + 1));
         let filename = baseName + ext;
         let suffix = 2;
@@ -5218,7 +5812,13 @@
         usedNames.add(filename.toLowerCase());
 
         const sourcePath = 'xr/' + filename;
-        bundleDataUrlFile(root, mediaData, sourcePath);
+        if (data.kind === 'video' && isAssetRef(data.data)) {
+          const mediaBlob = await getAssetBlob(data.data);
+          if (!mediaBlob) throw new Error('XR данные отсутствуют: ' + scene.title);
+          root.file(sourcePath, mediaBlob);
+        } else {
+          bundleDataUrlFile(root, mediaData, sourcePath);
+        }
 
         xrSceneFiles.set(scene.id, {
           source: sourcePath,
@@ -5235,7 +5835,7 @@
       }
 
       const audioConfig = {
-        projectMusic: bundleAudioSlot(
+        projectMusic: await bundleAudioSlot(
           root,
           project.audio?.music,
           'project-music'
@@ -5243,21 +5843,23 @@
         scenes: {}
       };
 
-      project.scenes.forEach((scene, index) => {
+      for (let index = 0; index < project.scenes.length; index++) {
+        const scene = project.scenes[index];
         const audio = normalizeSceneAudio(scene.audio || {});
         audioConfig.scenes[scene.id] = {
-          music: bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
-          narration: bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
+          music: await bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
+          narration: await bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
         };
-      });
+      }
 
       const mediaConfig = await bundleMediaObjects(root);
 
       if (project.startScreen?.coverData) {
         const settings = normalizeExportSettings(project.exportSettings || {});
+        const coverSourceData = await assetValueToDataUrl(project.startScreen.coverData);
         const coverData = settings.optimizeEnabled
-          ? await optimizeImageDataUrl(project.startScreen.coverData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
-          : project.startScreen.coverData;
+          ? await optimizeImageDataUrl(coverSourceData, Math.min(settings.maxImageWidth, 2560), settings.jpegQuality, false)
+          : coverSourceData;
         const coverExt = extensionForDataUrl(coverData, '.jpg');
         bundleDataUrlFile(root, coverData, 'images/start-cover' + coverExt);
         project.startScreen.__exportCoverExt = coverExt;
@@ -5274,6 +5876,12 @@
       );
       if (project.startScreen && '__exportCoverExt' in project.startScreen) delete project.startScreen.__exportCoverExt;
       const customIconFiles = await bundleTransitionIcons(root);
+      customIconFiles.forEach((filename, hotspotId) => {
+        Object.values(config.sceneMeta || {}).forEach((meta) => {
+          const hotspot = (meta.screenHotspots || []).find((item) => item.id === hotspotId);
+          if (hotspot) hotspot.iconData = 'images/icons/' + filename;
+        });
+      });
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
@@ -5357,6 +5965,7 @@
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
+      await migrateHeavySceneAssets(parsed);
       const imported = normalizeProject(parsed);
       if (!imported.scenes.length) {
         throw new Error('В проекте нет сцен');
@@ -5390,6 +5999,13 @@
       els.previewSceneOverlay.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
         try { host._xrViewer?.destroy?.(); } catch (_) {}
       });
+      els.previewSceneOverlay.querySelectorAll('video,audio').forEach((media) => {
+        try { media.pause(); } catch (_) {}
+        try { media.removeAttribute('src'); media.load(); } catch (_) {}
+      });
+      els.previewSceneOverlay.querySelectorAll('img').forEach((image) => {
+        try { image.removeAttribute('src'); } catch (_) {}
+      });
       els.previewSceneOverlay.innerHTML = '';
       els.previewSceneOverlay.hidden = true;
     }
@@ -5409,11 +6025,14 @@
       try { previewXrViewer.destroy(); } catch (_) {}
       previewXrViewer = null;
     }
+    releaseAssetUrlPool(previewAssetUrls);
+    releaseAssetUrlPool(previewOverlayAssetUrls);
     els.previewPanorama.innerHTML = '';
     previewSceneId = null;
   }
 
-  function renderPreviewScene(sceneId) {
+  async function renderPreviewScene(sceneId) {
+    const token = ++previewRenderToken;
     const scene = getScene(sceneId);
     if (!scene) return;
     previewSceneId = scene.id;
@@ -5421,22 +6040,30 @@
     destroyPreviewViewers();
     previewSceneId = scene.id;
     renderCompositeOverlay(scene, els.previewSceneOverlay, null, { editor: false });
-    configurePreviewAudio(scene);
+    await configurePreviewAudio(scene);
+    if (token !== previewRenderToken) return;
 
     if (scene.sceneType === 'object360') {
       if (!window.Object360XRViewer) return;
       const data = normalizeObject360Data(scene.object360 || {});
+      const backgroundImage = await resolveAssetSource(data.backgroundImageData, previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewObjectViewer = new Object360XRViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
         sectors: data.sectors,
         rows: data.rows,
         frames: data.frames,
+        frameProvider: async (row, sector) => {
+          const value = data.frames[row]?.[sector] || '';
+          return isAssetRef(value) ? await resolveTransientAssetSource(value) : value;
+        },
+        releaseFrameSource: releaseAssetUrl,
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
         backgroundMode: data.backgroundMode,
         backgroundColor: data.backgroundColor,
-        backgroundImage: data.backgroundImageData,
+        backgroundImage,
         onFrameChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
@@ -5446,9 +6073,12 @@
     if (scene.sceneType === 'stl') {
       if (!window.StlXRViewer) return;
       const data = normalizeStlData(scene.stl || {});
+      const source = await resolveAssetSource(data.data, previewAssetUrls);
+      const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewStlViewer = new StlXRViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
-        source: data.data,
+        source,
         yaw: data.yaw,
         pitch: data.pitch,
         zoom: data.zoom,
@@ -5456,7 +6086,7 @@
         autoRotate: data.autoplay,
         color: data.color,
         backgroundMode: data.backgroundMode,
-        backgroundImage: stlBackgroundImageForData(data),
+        backgroundImage,
         onChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
@@ -5467,9 +6097,11 @@
     if (scene.sceneType === 'xr') {
       if (!window.XRMediaViewer) return;
       const data = normalizeXrData(scene.xr || {});
+      const source = await resolveAssetSource(data.kind === 'image' ? (data.viewerData || data.data) : data.data, previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewXrViewer = new XRMediaViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
-        source: data.data,
+        source,
         kind: data.kind,
         projection: data.projection,
         yaw: data.yaw,
@@ -5487,9 +6119,11 @@
     }
 
     if (!window.XRMediaViewer) return;
+    const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, previewAssetUrls);
+    if (token !== previewRenderToken) return;
     previewViewer = new XRMediaViewer(els.previewPanorama, {
       domOverlayRoot: els.previewSceneOverlay,
-      source: scene.imageData,
+      source,
       kind: 'image',
       projection: '360',
       yawDirection: 'right-positive',
@@ -5690,27 +6324,51 @@
     return /;base64/i.test(header) ? Math.floor(payload.length * 0.75) : decodeURIComponent(payload).length;
   }
 
-  function analyzeProjectSize() {
+  async function storedValueByteSize(value) {
+    if (isAssetRef(value)) {
+      const record = await getAssetRecord(value);
+      return Number(record?.size) || Number(record?.blob?.size) || 0;
+    }
+    return dataUrlByteSize(value);
+  }
+
+  async function analyzeProjectSize() {
     const totals = { panoramas:0, object360:0, stl:0, audio:0, media:0, backgrounds:0 };
-    project.scenes.forEach((scene) => {
-      if (scene.sceneType === 'panorama') totals.panoramas += dataUrlByteSize(scene.imageData);
+    els.projectSizeReport.innerHTML = '<span>Считаю размер файлов…</span>';
+
+    for (const scene of project.scenes) {
+      if (scene.sceneType === 'panorama') {
+        totals.panoramas += await storedValueByteSize(scene.imageData);
+      }
+
       if (scene.sceneType === 'object360') {
-        (scene.object360?.frames || []).forEach((row) => (row || []).forEach((frame) => {
-          totals.object360 += dataUrlByteSize(frame);
-        }));
+        for (const row of scene.object360?.frames || []) {
+          for (const frame of row || []) {
+            totals.object360 += await storedValueByteSize(frame);
+          }
+        }
+        totals.backgrounds += await storedValueByteSize(scene.object360?.backgroundImageData);
       }
+
       if (scene.sceneType === 'stl') {
-        totals.stl += dataUrlByteSize(scene.stl?.data);
-        totals.backgrounds += dataUrlByteSize(scene.stl?.backgroundImageData);
+        totals.stl += await storedValueByteSize(scene.stl?.data);
+        totals.backgrounds += await storedValueByteSize(scene.stl?.backgroundImageData);
       }
-      totals.audio += dataUrlByteSize(scene.audio?.music?.data) + dataUrlByteSize(scene.audio?.narration?.data);
-      (scene.mediaObjects || []).forEach((item) => {
-        totals.media += dataUrlByteSize(item.data);
-        (item.gallery || []).forEach((entry) => { totals.media += dataUrlByteSize(entry.data); });
-      });
-    });
-    totals.audio += dataUrlByteSize(project.audio?.music?.data);
-    totals.media += dataUrlByteSize(project.startScreen?.coverData);
+
+      totals.audio += await storedValueByteSize(scene.audio?.music?.data);
+      totals.audio += await storedValueByteSize(scene.audio?.narration?.data);
+
+      for (const item of scene.mediaObjects || []) {
+        totals.media += await storedValueByteSize(item.data);
+        for (const entry of item.gallery || []) {
+          totals.media += await storedValueByteSize(entry.data);
+        }
+      }
+    }
+
+    totals.audio += await storedValueByteSize(project.audio?.music?.data);
+    totals.media += await storedValueByteSize(project.startScreen?.coverData);
+
     const total = Object.values(totals).reduce((a,b) => a+b, 0);
     const fmt = (bytes) => formatFileSize(bytes);
     els.projectSizeReport.innerHTML =
@@ -5720,7 +6378,8 @@
       '<span>STL: ' + fmt(totals.stl) + '</span>' +
       '<span>Аудио: ' + fmt(totals.audio) + '</span>' +
       '<span>Медиа: ' + fmt(totals.media) + '</span>' +
-      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>';
+      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>' +
+      '<small>Тяжёлые файлы хранятся как Blob в IndexedDB и не дублируются в истории Undo/Redo.</small>';
   }
 
   function renderQrPreview() {
@@ -5946,7 +6605,7 @@
       try {
         project.startScreen = normalizeStartScreen({
           ...project.startScreen,
-          coverData:await fileToDataURL(file),
+          coverData:await putAssetFile(file),
           coverFilename:file.name
         }, project.title);
         els.startScreenCoverName.textContent = file.name;
@@ -6078,7 +6737,7 @@
       const file = els.mediaObjectFile.files?.[0];
       if (!file) return;
       try {
-        pendingMediaData = await fileToDataURL(file);
+        pendingMediaData = await putAssetFile(file);
         pendingMediaFilename = file.name;
         els.mediaObjectFilename.textContent = file.name;
       } catch (error) {
@@ -6092,7 +6751,7 @@
       try {
         pendingMediaGallery = [];
         for (const file of files.slice(0, 30)) {
-          pendingMediaGallery.push({ data: await fileToDataURL(file), filename:file.name });
+          pendingMediaGallery.push({ data: await putAssetFile(file), filename:file.name });
         }
         els.mediaGalleryCount.textContent = pendingMediaGallery.length + ' изображений';
       } catch (error) {
@@ -6448,7 +7107,7 @@
         project.audio = {
           music: normalizeAudioSlot({
             ...current,
-            data: await fileToDataURL(file),
+            data: await putAssetFile(file),
             filename: file.name
           }, { volume: 35, loop: true })
         };
@@ -6494,7 +7153,7 @@
         scene.object360 = normalizeObject360Data({
           ...scene.object360,
           backgroundMode: 'image',
-          backgroundImageData: await fileToDataURL(file),
+          backgroundImageData: await putAssetFile(file),
           backgroundImageName: file.name
         });
         els.object360BackgroundMode.value = 'image';
@@ -6526,7 +7185,7 @@
         scene.stl = normalizeStlData({
           ...scene.stl,
           backgroundMode: 'image',
-          backgroundImageData: await fileToDataURL(file),
+          backgroundImageData: await putAssetFile(file),
           backgroundImageName: file.name
         });
         els.stlBackgroundMode.value = 'image';
@@ -6559,7 +7218,7 @@
         scene.audio = normalizeSceneAudio(scene.audio || {});
         scene.audio.music = normalizeAudioSlot({
           ...scene.audio.music,
-          data: await fileToDataURL(file),
+          data: await putAssetFile(file),
           filename: file.name
         }, { volume: 45, loop: true });
         els.sceneMusicName.textContent = file.name;
@@ -6593,7 +7252,7 @@
         scene.audio = normalizeSceneAudio(scene.audio || {});
         scene.audio.narration = normalizeAudioSlot({
           ...scene.audio.narration,
-          data: await fileToDataURL(file),
+          data: await putAssetFile(file),
           filename: file.name
         }, { volume: 80, loop: false });
         els.sceneNarrationName.textContent = file.name;
@@ -6623,7 +7282,12 @@
       const file = els.sceneImageReplace.files?.[0];
       if (!scene || scene.sceneType !== 'panorama' || !file) return;
       try {
-        scene.imageData = await fileToDataURL(file);
+        scene.thumbnailData = await makeImageThumbnail(file);
+        scene.imageData = await putAssetFile(file);
+        const viewerProxyBlob = await makeViewerImageProxy(file);
+        scene.viewerImageData = viewerProxyBlob
+          ? await putAssetBlob(viewerProxyBlob, (file.name || 'panorama') + '.viewer.jpg')
+          : '';
         scene.filename = file.name;
         let updated = 0;
         try {
@@ -6674,22 +7338,29 @@
         const sectors = Math.max(Number(config.sectors) || 1, Math.max(...entries.map((item) => item.sector)) + 1);
         const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
 
+        let coverData = '';
         for (const entry of entries) {
-          const base64 = await zip.file(entry.name).async('base64');
-          const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
-          frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+          const blob = await zip.file(entry.name).async('blob');
+          frames[entry.row][entry.sector] = await putAssetBlob(
+            blob,
+            entry.name.split('/').pop() || ('frame_' + entry.sector)
+          );
+          if (!coverData) {
+            try { coverData = await makeImageThumbnail(blob); } catch (_) {}
+          }
         }
 
         scene.id = oldId;
         scene.title = oldTitle;
         scene.filename = file.name;
-        scene.imageData = frames.flat().find(Boolean) || '';
+        scene.imageData = coverData;
+        scene.thumbnailData = coverData;
         scene.object360 = normalizeObject360Data({
           ...config,
           sectors,
           rows,
           frames,
-          coverData: scene.imageData,
+          coverData,
           frameCount: entries.length,
           startSector: 0,
           startRow: rows === 3 ? 1 : 0,
@@ -6718,7 +7389,7 @@
 
         const buffer = await file.arrayBuffer();
         const parsed = StlTools.parseStl(buffer);
-        const data = await fileToDataURL(file);
+        const data = await putAssetFile(file);
         scene.filename = file.name;
         scene.stl = normalizeStlData({
           ...scene.stl,
@@ -6748,17 +7419,24 @@
         const isImage = /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
         const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
         if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
-        const data = await fileToDataURL(file);
+        const data = await putAssetFile(file);
+        const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
+        const viewerProxyBlob = isImage ? await makeViewerImageProxy(file) : null;
+        const viewerData = viewerProxyBlob
+          ? await putAssetBlob(viewerProxyBlob, (file.name || 'xr-image') + '.viewer.jpg')
+          : '';
         scene.filename = file.name;
         scene.xr = normalizeXrData({
           ...scene.xr,
           data,
+          viewerData,
           filename: file.name,
           kind: isImage ? 'image' : 'video',
           autoplay: isVideo ? scene.xr?.autoplay : false,
           loop: isVideo ? scene.xr?.loop : false
         });
-        scene.imageData = isImage ? data : xrPlaceholderDataUrl(scene.xr.projection);
+        scene.thumbnailData = thumbnailData;
+        scene.imageData = isImage ? thumbnailData : xrPlaceholderDataUrl(scene.xr.projection);
         markDirty();
         renderViewer();
         showToast('XR медиа заменено');
@@ -6796,7 +7474,7 @@
         console.warn(error);
       }
     });
-    els.previewSceneOverlay.addEventListener('click', (event) => {
+    els.previewSceneOverlay.addEventListener('click', async (event) => {
       const scene = getScene(previewSceneId);
       const hotspotEl = event.target.closest('[data-screen-hotspot-id]');
       if (hotspotEl && scene) {
@@ -6812,7 +7490,22 @@
       if (!item) return;
       if (item.type === 'button' && item.targetSceneId) renderPreviewScene(item.targetSceneId);
       else if (item.type === 'button' && item.url) window.open(item.url, '_blank', 'noopener');
-      else if (item.type === 'pdf' && item.data) window.open(item.data, '_blank', 'noopener');
+      else if (item.type === 'pdf' && item.data) {
+        if (!isAssetRef(item.data)) {
+          window.open(item.data, '_blank', 'noopener');
+        } else {
+          const tab = window.open('about:blank', '_blank');
+          try {
+            const url = await resolveTransientAssetSource(item.data);
+            if (tab) tab.location.href = url;
+            setTimeout(() => releaseAssetUrl(url), 60000);
+          } catch (error) {
+            try { tab?.close(); } catch (_) {}
+            console.warn(error);
+            showToast('Не удалось открыть PDF');
+          }
+        }
+      }
     });
 
     els.previewNarrationButton.addEventListener('click', async () => {
@@ -6921,13 +7614,24 @@
     setupEvents();
 
     const saved = await loadPersistedProject();
+    let migrated = false;
     if (saved) {
       try {
+        // First migrate the raw saved object so normalizeProject() never
+        // duplicates large legacy Base64 strings in memory.
+        migrated = await migrateHeavySceneAssets(saved);
         project = normalizeProject(saved);
       } catch (error) {
         console.warn('Сохранённый проект повреждён, создан новый', error);
         project = createEmptyProject();
       }
+    }
+
+    try {
+      if (migrated) await persistProject();
+    } catch (error) {
+      console.warn('Не удалось сохранить Blob-миграцию проекта', error);
+      showToast('Медиа перенесены, но не удалось сохранить обновлённый проект', 4200);
     }
 
     currentSceneId = project.firstScene || project.scenes[0]?.id || null;

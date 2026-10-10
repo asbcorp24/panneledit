@@ -148,7 +148,7 @@
         antialias: true,
         alpha: false
       });
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, 1);
 
@@ -209,6 +209,7 @@
         this.texture.colorSpace = THREE.SRGBColorSpace;
         this.texture.minFilter = THREE.LinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
+        this.texture.generateMipmaps = false;
         return;
       }
 
@@ -216,6 +217,7 @@
       this.texture.colorSpace = THREE.SRGBColorSpace;
       this.texture.minFilter = THREE.LinearFilter;
       this.texture.magFilter = THREE.LinearFilter;
+      this.texture.generateMipmaps = false;
     }
 
     makeMaterial(eye = 'left') {
@@ -568,6 +570,13 @@
       this.camera.rotation.set(this.pitch * DEG, cameraYaw * DEG, 0, 'YXZ');
     }
 
+    releaseStaticTextureCpuCopy() {
+      if (this.mediaKind === 'video' || !this.texture?.image) return;
+      const image = this.texture.image;
+      try { if ('src' in image) image.src = ''; } catch (_) {}
+      try { this.texture.image = null; } catch (_) {}
+    }
+
     render() {
       if (this.destroyed || !this.renderer || !this.scene || !this.camera) return;
 
@@ -589,6 +598,7 @@
         // WebXR owns the eye viewport. Do not override it with drawing-buffer
         // dimensions because WebGLRenderer applies devicePixelRatio internally.
         this.renderer.render(this.scene, this.camera);
+        this.releaseStaticTextureCpuCopy();
         return;
       }
 
@@ -598,6 +608,7 @@
         // renderer.setSize() already restored the full viewport in CSS pixels.
         // Passing canvas.width/canvas.height here would apply DPR twice.
         this.renderer.render(this.scene, this.camera);
+        this.releaseStaticTextureCpuCopy();
         return;
       }
 
@@ -621,6 +632,7 @@
       this.renderer.render(this.scene, this.camera);
 
       this.renderer.setScissorTest(false);
+      this.releaseStaticTextureCpuCopy();
     }
 
     resize() {
@@ -731,8 +743,18 @@
       this.spatialOverlay?.destroy();
       this.spatialOverlay = null;
       this.disposeMeshes();
-      this.texture?.dispose?.();
+      if (this.texture) {
+        this.texture.dispose?.();
+        if (this.mediaKind !== 'video') {
+          try {
+            if (this.texture.image && 'src' in this.texture.image) this.texture.image.src = '';
+          } catch (_) {}
+        }
+        try { this.texture.image = null; } catch (_) {}
+        this.texture = null;
+      }
       this.renderer?.dispose?.();
+      this.renderer?.forceContextLoss?.();
       this.container?.classList.remove('xr-media-host');
       if (this.container) this.container.innerHTML = '';
     }
