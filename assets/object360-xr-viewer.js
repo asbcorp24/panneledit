@@ -248,9 +248,16 @@
         this.plane.geometry.dispose();
         this.plane.geometry=new this.THREE.PlaneGeometry(width,height);
 
-        this.material.map?.dispose?.();
+        const previousTexture=this.material.map;
         this.material.map=texture;
         this.material.needsUpdate=true;
+        if(previousTexture){
+          previousTexture.dispose?.();
+          try{
+            if(previousTexture.image && 'src' in previousTexture.image) previousTexture.image.src='';
+          }catch(_){}
+          try{previousTexture.image=null;}catch(_){}
+        }
         this.loading.hidden=true;
       } catch(error) {
         if(src) this.releaseSource(src);
@@ -552,7 +559,13 @@
       this.root?.removeEventListener('wheel',this.onWheel);
       this.spatialOverlay?.destroy();
       this.spatialOverlay=null;
-      this.material?.map?.dispose?.();
+      if(this.material?.map){
+        const texture=this.material.map;
+        texture.dispose?.();
+        try{if(texture.image && 'src' in texture.image) texture.image.src='';}catch(_){}
+        try{texture.image=null;}catch(_){}
+        this.material.map=null;
+      }
       this.material?.dispose?.();
       this.plane?.geometry?.dispose?.();
       this.renderer?.dispose?.();
