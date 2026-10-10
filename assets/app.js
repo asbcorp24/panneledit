@@ -352,7 +352,7 @@
       exportSettings: {
         optimizeEnabled: true,
         jpegQuality: 84,
-        maxImageWidth: 8192,
+        maxImageWidth: 4096,
         objectFrameWidth: 1280,
         pwaEnabled: true,
         kioskMode: false,
@@ -1119,7 +1119,7 @@
     return {
       optimizeEnabled: input.optimizeEnabled !== false,
       jpegQuality: clampNumber(input.jpegQuality, 45, 100, 84),
-      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 8192),
+      maxImageWidth: clampNumber(input.maxImageWidth, 1024, 16384, 4096),
       objectFrameWidth: clampNumber(input.objectFrameWidth, 480, 4096, 1280),
       pwaEnabled: input.pwaEnabled !== false,
       kioskMode: Boolean(input.kioskMode),
@@ -1232,6 +1232,9 @@
     };
     next.startScreen = normalizeStartScreen(input.startScreen || {}, next.title);
     next.exportSettings = normalizeExportSettings(input.exportSettings || {});
+    if ((Number(input.version) || 0) < 9 && Number(input.exportSettings?.maxImageWidth) === 8192) {
+      next.exportSettings.maxImageWidth = 4096;
+    }
     next.settings = { ...next.settings, ...(input.settings || {}) };
     next.settings.defaultTransition = ['fade','zoom','blur','portal','glitch','black'].includes(next.settings.defaultTransition)
       ? next.settings.defaultTransition
