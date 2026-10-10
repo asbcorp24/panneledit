@@ -502,6 +502,14 @@
       this.camera.updateProjectionMatrix();
     }
 
+    releaseCurrentFrameCpuCopy() {
+      const texture=this.material?.map;
+      if(!texture?.image) return;
+      const image=texture.image;
+      try{if('src' in image) image.src='';}catch(_){}
+      try{texture.image=null;}catch(_){}
+    }
+
     renderFrame() {
       if(this.destroyed || !this.renderer || !this.camera || !this.scene) return;
       this.resize();
@@ -511,6 +519,7 @@
         this.spatialOverlay?.update();
         this.renderer.setScissorTest(false);
         this.renderer.render(this.scene,this.camera);
+        this.releaseCurrentFrameCpuCopy();
         return;
       }
 
@@ -535,6 +544,7 @@
 
         this.camera.position.copy(basePos);
         this.renderer.setScissorTest(false);
+        this.releaseCurrentFrameCpuCopy();
         return;
       }
 
@@ -542,6 +552,7 @@
       this.camera.position.set(0,0,0);
       this.renderer.setScissorTest(false);
       this.renderer.render(this.scene,this.camera);
+      this.releaseCurrentFrameCpuCopy();
     }
 
     destroy() {
