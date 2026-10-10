@@ -186,10 +186,10 @@
       const normalized=this.normalizeSector(sector);
       if(this.options.frameProvider){
         try{
-          const provided=await this.options.frameProvider(row,normalized);
-          if(provided) return provided;
+          return await this.options.frameProvider(row,normalized) || '';
         }catch(error){
           console.warn('Object360 frame provider:',error);
+          return '';
         }
       }
       return this.frameAt(row,normalized);
