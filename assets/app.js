@@ -3136,6 +3136,10 @@
         audio.pause();
         audio.currentTime = 0;
       } catch (_) {}
+      try {
+        audio.removeAttribute('src');
+        audio.load();
+      } catch (_) {}
     }
     previewMusicAudio = null;
     previewNarrationAudio = null;
@@ -5994,6 +5998,13 @@
     if (els.previewSceneOverlay) {
       els.previewSceneOverlay.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
         try { host._xrViewer?.destroy?.(); } catch (_) {}
+      });
+      els.previewSceneOverlay.querySelectorAll('video,audio').forEach((media) => {
+        try { media.pause(); } catch (_) {}
+        try { media.removeAttribute('src'); media.load(); } catch (_) {}
+      });
+      els.previewSceneOverlay.querySelectorAll('img').forEach((image) => {
+        try { image.removeAttribute('src'); } catch (_) {}
       });
       els.previewSceneOverlay.innerHTML = '';
       els.previewSceneOverlay.hidden = true;
