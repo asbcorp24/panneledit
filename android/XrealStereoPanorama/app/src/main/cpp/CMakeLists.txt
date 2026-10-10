@@ -7,6 +7,7 @@ add_library(xrealstereo SHARED
 )
 
 find_library(log-lib log)
+find_library(dl-lib dl)
 
 target_include_directories(xrealstereo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(xrealstereo ${log-lib})
+target_link_libraries(xrealstereo ${log-lib} ${dl-lib})
