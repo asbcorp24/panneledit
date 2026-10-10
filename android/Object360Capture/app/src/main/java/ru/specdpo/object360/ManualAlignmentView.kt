@@ -224,7 +224,7 @@ class ManualAlignmentView(context: Context) : View(context) {
                 if (event.pointerCount >= 2) {
                     val angle = pointerAngle(event)
                     val previous = lastAngle
-                    if (previous != null && !scaleDetector.isInProgress) {
+                    if (previous != null) {
                         val delta = shortestAngle(angle - previous)
                         if (kotlin.math.abs(delta) < 12f) {
                             transform.rotation = normalizeAngle(transform.rotation + delta)
