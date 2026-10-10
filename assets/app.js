@@ -5802,6 +5802,8 @@
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
+      await clearAssetStore();
+      await migrateHeavySceneAssets(parsed);
       const imported = normalizeProject(parsed);
       if (!imported.scenes.length) {
         throw new Error('В проекте нет сцен');
@@ -5816,7 +5818,6 @@
       }
 
       project = imported;
-      await migrateHeavySceneAssets(project);
       currentSceneId = project.firstScene || project.scenes[0].id;
       resetHistory();
       await persistProject();
@@ -7395,8 +7396,12 @@
     setupEvents();
 
     const saved = await loadPersistedProject();
+    let migrated = false;
     if (saved) {
       try {
+        // First migrate the raw saved object so normalizeProject() never
+        // duplicates large legacy Base64 strings in memory.
+        migrated = await migrateHeavySceneAssets(saved);
         project = normalizeProject(saved);
       } catch (error) {
         console.warn('Сохранённый проект повреждён, создан новый', error);
@@ -7405,11 +7410,10 @@
     }
 
     try {
-      const migrated = await migrateHeavySceneAssets(project);
       if (migrated) await persistProject();
     } catch (error) {
-      console.warn('Не удалось полностью перенести медиа в Blob-хранилище', error);
-      showToast('Часть старых медиа осталась во встроенном формате', 4200);
+      console.warn('Не удалось сохранить Blob-миграцию проекта', error);
+      showToast('Медиа перенесены, но не удалось сохранить обновлённый проект', 4200);
     }
 
     currentSceneId = project.firstScene || project.scenes[0]?.id || null;
