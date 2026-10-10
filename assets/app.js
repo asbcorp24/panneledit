@@ -5802,7 +5802,6 @@
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      await clearAssetStore();
       await migrateHeavySceneAssets(parsed);
       const imported = normalizeProject(parsed);
       if (!imported.scenes.length) {
