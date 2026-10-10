@@ -393,8 +393,28 @@
       .slice(0, 42) || 'scene';
   }
 
-  function cloneProjectForExport() {
-    return JSON.parse(JSON.stringify(project));
+  async function cloneProjectForExport() {
+    const assetCache = new Map();
+
+    async function cloneValue(value) {
+      if (isAssetRef(value)) {
+        if (!assetCache.has(value)) assetCache.set(value, await assetValueToDataUrl(value));
+        return assetCache.get(value);
+      }
+      if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value) out.push(await cloneValue(item));
+        return out;
+      }
+      if (value && typeof value === 'object') {
+        const out = {};
+        for (const [key, item] of Object.entries(value)) out[key] = await cloneValue(item);
+        return out;
+      }
+      return value;
+    }
+
+    return await cloneValue(project);
   }
 
   function getScene(id = currentSceneId) {
@@ -914,6 +934,7 @@
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    await clearAssetStore();
   }
 
   function markDirty({ rerenderViewer = false } = {}) {
@@ -3478,12 +3499,12 @@
     return normalized || fallback;
   }
 
-  function exportProject() {
+  async function exportProject() {
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
       return;
     }
-    const payload = cloneProjectForExport();
+    const payload = await cloneProjectForExport();
     payload.exportedAt = new Date().toISOString();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     downloadBlob(blob, safeFilename(project.title) + '.xr-tour-project.json');
