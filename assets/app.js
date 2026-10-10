@@ -7188,6 +7188,10 @@
       try {
         scene.thumbnailData = await makeImageThumbnail(file);
         scene.imageData = await putAssetFile(file);
+        const viewerProxyBlob = await makeViewerImageProxy(file);
+        scene.viewerImageData = viewerProxyBlob
+          ? await putAssetBlob(viewerProxyBlob, (file.name || 'panorama') + '.viewer.jpg')
+          : '';
         scene.filename = file.name;
         let updated = 0;
         try {
@@ -7321,10 +7325,15 @@
         if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
         const data = await putAssetFile(file);
         const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
+        const viewerProxyBlob = isImage ? await makeViewerImageProxy(file) : null;
+        const viewerData = viewerProxyBlob
+          ? await putAssetBlob(viewerProxyBlob, (file.name || 'xr-image') + '.viewer.jpg')
+          : '';
         scene.filename = file.name;
         scene.xr = normalizeXrData({
           ...scene.xr,
           data,
+          viewerData,
           filename: file.name,
           kind: isImage ? 'image' : 'video',
           autoplay: isVideo ? scene.xr?.autoplay : false,
