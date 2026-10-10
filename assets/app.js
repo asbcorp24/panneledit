@@ -7030,7 +7030,7 @@
         scene.audio = normalizeSceneAudio(scene.audio || {});
         scene.audio.music = normalizeAudioSlot({
           ...scene.audio.music,
-          data: await fileToDataURL(file),
+          data: await putAssetFile(file),
           filename: file.name
         }, { volume: 45, loop: true });
         els.sceneMusicName.textContent = file.name;
@@ -7064,7 +7064,7 @@
         scene.audio = normalizeSceneAudio(scene.audio || {});
         scene.audio.narration = normalizeAudioSlot({
           ...scene.audio.narration,
-          data: await fileToDataURL(file),
+          data: await putAssetFile(file),
           filename: file.name
         }, { volume: 80, loop: false });
         els.sceneNarrationName.textContent = file.name;
