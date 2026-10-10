@@ -3759,7 +3759,9 @@
   }
 
   async function generateSceneMultires(root, scene, sceneIndex, sceneCount, button) {
-    const image = await loadImageElement(scene.imageData);
+    const sourceUrls = new Set();
+    const sourceUrl = await resolveAssetSource(scene.imageData, sourceUrls);
+    const image = await loadImageElement(sourceUrl);
     const limits = getMultiresWebGLLimits();
     const spec = calculateMultiresSpec(image, limits);
     const source = prepareMultiresSource(image, limits.maxTextureSize);
@@ -3829,6 +3831,7 @@
       }
     } finally {
       projector.destroy();
+      releaseAssetUrlPool(sourceUrls);
     }
 
     return {
