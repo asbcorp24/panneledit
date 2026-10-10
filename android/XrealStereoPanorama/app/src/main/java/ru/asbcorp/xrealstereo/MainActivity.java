@@ -16,6 +16,7 @@ import android.widget.*;
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import org.json.*;
 
 public class MainActivity extends Activity implements SensorEventListener {
     private static final int REQ_CAMERA = 10;
@@ -88,11 +89,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.addView(captureButton,lp(-1,dp(60)));
 
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
-        Button reset=button("Сброс"), settings=button("Настройки"), diag=button("Диагностика");
+        Button reset=button("Сброс"), settings=button("Настройки"), diag=button("Camera2"), v4l2=button("V4L2");
         reset.setOnClickListener(v->resetSession());
         settings.setOnClickListener(v->chooseSettings());
         diag.setOnClickListener(v->showDiagnostics());
-        for(Button b:new Button[]{reset,settings,diag})row.addView(b,new LinearLayout.LayoutParams(0,dp(52),1f));
+        v4l2.setOnClickListener(v->showV4L2Diagnostics());
+        for(Button b:new Button[]{reset,settings,diag,v4l2})row.addView(b,new LinearLayout.LayoutParams(0,dp(52),1f));
         root.addView(row);
 
         TextView hint=tv("Важно: при первом запуске штатной камеры выберите режим Spatial/3D. Beam Pro обычно запоминает последний выбранный режим.",12,false);
@@ -255,6 +257,111 @@ public class MainActivity extends Activity implements SensorEventListener {
         TextView t=tv(x.toString(),12,false);t.setTextColor(0xff111111);t.setPadding(dp(12),dp(12),dp(12),dp(12));t.setTextIsSelectable(true);
         ScrollView s=new ScrollView(this);s.addView(t);
         new AlertDialog.Builder(this).setTitle("Beam Pro diagnostics").setView(s).setPositiveButton("OK",null).show();
+    }
+
+
+    private void showV4L2Diagnostics(){
+        status.setText("Сканирую /dev/video* через NDK/V4L2…");
+        new Thread(() -> {
+            String json;
+            try{
+                json=NativeV4L2.probeJson();
+            }catch(Throwable e){
+                json="{\"error\":\""+esc(String.valueOf(e))+"\"}";
+            }
+            final String result=json;
+            runOnUiThread(() -> {
+                try{
+                    JSONObject root=new JSONObject(result);
+                    StringBuilder x=new StringBuilder();
+                    if(root.has("error")) x.append("ERROR: ").append(root.optString("error")).append("\n");
+                    JSONArray arr=root.optJSONArray("devices");
+                    if(arr==null||arr.length()==0){
+                        x.append("Видео-устройства /dev/video* не найдены.\n");
+                    }else{
+                        for(int i=0;i<arr.length();i++){
+                            JSONObject d=arr.getJSONObject(i);
+                            x.append(d.optString("path")).append("\n");
+                            x.append(" opened=").append(d.optBoolean("opened"))
+                             .append(" querycap=").append(d.optBoolean("querycap")).append("\n");
+                            x.append(" driver=").append(d.optString("driver")).append("\n");
+                            x.append(" card=").append(d.optString("card")).append("\n");
+                            x.append(" bus=").append(d.optString("bus")).append("\n");
+                            String err=d.optString("error");
+                            if(!err.isEmpty())x.append(" error=").append(err).append("\n");
+                            JSONArray fs=d.optJSONArray("formats");
+                            if(fs!=null){
+                                for(int j=0;j<fs.length();j++){
+                                    JSONObject q=fs.getJSONObject(j);
+                                    x.append("  ").append(q.optString("fourcc")).append(" ")
+                                     .append(q.optInt("w")).append("x").append(q.optInt("h"));
+                                    int fn=q.optInt("fpsNum"),fd=q.optInt("fpsDen");
+                                    if(fn>0&&fd>0)x.append(" @ ").append((float)fn/fd);
+                                    x.append("\n");
+                                }
+                            }
+                            x.append("\n");
+                        }
+                    }
+
+                    TextView t=tv(x.toString(),12,false);
+                    t.setTextColor(0xff111111);t.setPadding(dp(12),dp(12),dp(12),dp(12));t.setTextIsSelectable(true);
+                    ScrollView s=new ScrollView(this);s.addView(t);
+                    new AlertDialog.Builder(this)
+                            .setTitle("XREAL V4L2 /dev/video diagnostics")
+                            .setView(s)
+                            .setPositiveButton("OK",null)
+                            .setNeutralButton("Тест кадра",(d,w)->testFirstV4L2Frame(result))
+                            .show();
+                    status.setText("V4L2 диагностика завершена.");
+                }catch(Exception e){
+                    status.setText("V4L2 JSON: "+e.getMessage()+"\n"+result);
+                }
+            });
+        }).start();
+    }
+
+    private void testFirstV4L2Frame(String json){
+        new Thread(() -> {
+            String msg="Подходящее V4L2 устройство не найдено.";
+            try{
+                JSONObject root=new JSONObject(json);
+                JSONArray arr=root.optJSONArray("devices");
+                if(arr!=null){
+                    outer:
+                    for(int i=0;i<arr.length();i++){
+                        JSONObject d=arr.getJSONObject(i);
+                        if(!d.optBoolean("opened")||!d.optBoolean("querycap"))continue;
+                        JSONArray fs=d.optJSONArray("formats");
+                        if(fs==null)continue;
+                        for(int j=0;j<fs.length();j++){
+                            JSONObject q=fs.getJSONObject(j);
+                            int w=q.optInt("w"),h=q.optInt("h");
+                            String four=q.optString("fourcc");
+                            int fi=q.optInt("fourccInt");
+                            boolean preferred=(w==1536&&h==512)||(w==1280&&h==512)||(w==640&&h==512);
+                            if(!preferred)continue;
+                            byte[] data=NativeV4L2.captureFrame(d.optString("path"),w,h,fi);
+                            if(data!=null&&data.length>0){
+                                File dir=getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
+                                File out=new File(dir,"xreal_v4l2_test_"+System.currentTimeMillis()+"_"+w+"x"+h+"_"+four+".bin");
+                                try(FileOutputStream os=new FileOutputStream(out)){os.write(data);}
+                                msg="УСПЕХ: "+d.optString("path")+" "+four+" "+w+"x"+h+
+                                        "\nПолучено "+data.length+" байт"+
+                                        "\nФайл: "+out.getAbsolutePath();
+                            }else{
+                                msg="Устройство найдено, но получить кадр не удалось: "+d.optString("path")+" "+four+" "+w+"x"+h;
+                            }
+                            break outer;
+                        }
+                    }
+                }
+            }catch(Throwable e){
+                msg="V4L2 capture error: "+e;
+            }
+            final String outMsg=msg;
+            runOnUiThread(() -> status.setText(outMsg));
+        }).start();
     }
 
     private void resetSession(){zeroYaw=null;step=0;shots.clear();sessionDir=null;lastAcceptedDateSec=0;updateProgress();status.setText("Сессия сброшена.");}
