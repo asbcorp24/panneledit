@@ -6417,7 +6417,7 @@
       try {
         project.startScreen = normalizeStartScreen({
           ...project.startScreen,
-          coverData:await fileToDataURL(file),
+          coverData:await putAssetFile(file),
           coverFilename:file.name
         }, project.title);
         els.startScreenCoverName.textContent = file.name;
@@ -6549,7 +6549,7 @@
       const file = els.mediaObjectFile.files?.[0];
       if (!file) return;
       try {
-        pendingMediaData = await fileToDataURL(file);
+        pendingMediaData = await putAssetFile(file);
         pendingMediaFilename = file.name;
         els.mediaObjectFilename.textContent = file.name;
       } catch (error) {
@@ -6563,7 +6563,7 @@
       try {
         pendingMediaGallery = [];
         for (const file of files.slice(0, 30)) {
-          pendingMediaGallery.push({ data: await fileToDataURL(file), filename:file.name });
+          pendingMediaGallery.push({ data: await putAssetFile(file), filename:file.name });
         }
         els.mediaGalleryCount.textContent = pendingMediaGallery.length + ' изображений';
       } catch (error) {
@@ -6919,7 +6919,7 @@
         project.audio = {
           music: normalizeAudioSlot({
             ...current,
-            data: await fileToDataURL(file),
+            data: await putAssetFile(file),
             filename: file.name
           }, { volume: 35, loop: true })
         };
@@ -6965,7 +6965,7 @@
         scene.object360 = normalizeObject360Data({
           ...scene.object360,
           backgroundMode: 'image',
-          backgroundImageData: await fileToDataURL(file),
+          backgroundImageData: await putAssetFile(file),
           backgroundImageName: file.name
         });
         els.object360BackgroundMode.value = 'image';
@@ -6997,7 +6997,7 @@
         scene.stl = normalizeStlData({
           ...scene.stl,
           backgroundMode: 'image',
-          backgroundImageData: await fileToDataURL(file),
+          backgroundImageData: await putAssetFile(file),
           backgroundImageName: file.name
         });
         els.stlBackgroundMode.value = 'image';
