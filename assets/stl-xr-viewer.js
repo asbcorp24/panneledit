@@ -521,6 +521,7 @@
       this.geometry?.dispose?.();
       this.material?.dispose?.();
       this.renderer?.dispose?.();
+      this.renderer?.forceContextLoss?.();
       this.container.classList.remove('stl-host');
       this.container.innerHTML='';
     }
