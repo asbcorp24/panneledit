@@ -5440,7 +5440,7 @@
     (config.offlineAssets || []).forEach((src) => { if (src) assets.add(src); });
 
     const list = JSON.stringify([...assets]);
-    return "const CACHE='xr-tour-v10';\n" +
+    return "const CACHE='xr-tour-v11';\n" +
       "const CORE=" + list + ";\n" +
       "self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(async c=>{for(const u of CORE){try{await c.add(u)}catch(_){}}}).then(()=>self.skipWaiting())));\n" +
       "self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\n" +
