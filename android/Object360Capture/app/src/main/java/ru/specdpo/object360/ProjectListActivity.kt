@@ -213,13 +213,22 @@ class ProjectListActivity : AppCompatActivity() {
         card.addView(actionsBottom)
 
         actionsBottom.addView(
-            actionButton("Экспорт") {
-                exportProject(project, share = false)
+            actionButton("Выровнять") {
+                startActivity(
+                    Intent(this, ManualAlignmentActivity::class.java)
+                        .putExtra(EXTRA_SESSION_ID, project.sessionId)
+                )
             },
             actionParams()
         )
         actionsBottom.addView(
-            actionButton("Отправить на ПК") {
+            actionButton("Экспорт") {
+                exportProject(project, share = false)
+            },
+            actionParams(startMargin = 6)
+        )
+        actionsBottom.addView(
+            actionButton("На ПК") {
                 exportProject(project, share = true)
             },
             actionParams(startMargin = 6)
