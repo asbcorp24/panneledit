@@ -45,8 +45,14 @@ public class MainActivity extends Activity implements SensorEventListener {
         sensorManager=(SensorManager)getSystemService(Context.SENSOR_SERVICE);
         rotationSensor=sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         cameraManager=(CameraManager)getSystemService(Context.CAMERA_SERVICE);
-        if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.CAMERA},REQ_CAMERA);
+        ArrayList<String> perms=new ArrayList<>();
+        if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED) perms.add(Manifest.permission.CAMERA);
+        if(Build.VERSION.SDK_INT>=33){
+            if(checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES)!=PackageManager.PERMISSION_GRANTED) perms.add(Manifest.permission.READ_MEDIA_IMAGES);
+        }else{
+            if(checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED) perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+        }
+        if(!perms.isEmpty()) requestPermissions(perms.toArray(new String[0]),REQ_CAMERA);
     }
 
     private void buildUi(){
