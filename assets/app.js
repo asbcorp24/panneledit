@@ -5512,6 +5512,9 @@
         if (item.src) assets.add(item.src);
         (item.gallery || []).forEach((entry) => { if (entry.src) assets.add(entry.src); });
       });
+      (meta.screenHotspots || []).forEach((hotspot) => {
+        if (hotspot.iconData && !/^data:/i.test(hotspot.iconData)) assets.add(hotspot.iconData);
+      });
       if (meta.audio?.music?.src) assets.add(meta.audio.music.src);
       if (meta.audio?.narration?.src) assets.add(meta.audio.narration.src);
     });
@@ -5799,6 +5802,12 @@
       );
       if (project.startScreen && '__exportCoverExt' in project.startScreen) delete project.startScreen.__exportCoverExt;
       const customIconFiles = await bundleTransitionIcons(root);
+      customIconFiles.forEach((filename, hotspotId) => {
+        Object.values(config.sceneMeta || {}).forEach((meta) => {
+          const hotspot = (meta.screenHotspots || []).find((item) => item.id === hotspotId);
+          if (hotspot) hotspot.iconData = 'images/icons/' + filename;
+        });
+      });
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
