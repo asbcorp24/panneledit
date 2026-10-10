@@ -5365,7 +5365,7 @@
       img.src = dataUrl;
     });
 
-    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 8192));
+    const targetWidth = Math.min(image.naturalWidth || image.width, Math.max(320, Number(maxWidth) || 4096));
     const ratio = targetWidth / Math.max(1, image.naturalWidth || image.width);
     const targetHeight = Math.max(1, Math.round((image.naturalHeight || image.height) * ratio));
     if (ratio >= 0.999 && /image\/jpe?g/i.test(dataUrl) && quality >= 92) return dataUrl;
