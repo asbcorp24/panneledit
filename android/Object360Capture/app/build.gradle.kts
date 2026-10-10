@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace = "ru.specdpo.object360"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ru.specdpo.object360"
         minSdk = 24
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 11
         versionName = "0.8.0"
     }
