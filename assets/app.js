@@ -6155,27 +6155,51 @@
     return /;base64/i.test(header) ? Math.floor(payload.length * 0.75) : decodeURIComponent(payload).length;
   }
 
-  function analyzeProjectSize() {
+  async function storedValueByteSize(value) {
+    if (isAssetRef(value)) {
+      const record = await getAssetRecord(value);
+      return Number(record?.size) || Number(record?.blob?.size) || 0;
+    }
+    return dataUrlByteSize(value);
+  }
+
+  async function analyzeProjectSize() {
     const totals = { panoramas:0, object360:0, stl:0, audio:0, media:0, backgrounds:0 };
-    project.scenes.forEach((scene) => {
-      if (scene.sceneType === 'panorama') totals.panoramas += dataUrlByteSize(scene.imageData);
+    els.projectSizeReport.innerHTML = '<span>Считаю размер файлов…</span>';
+
+    for (const scene of project.scenes) {
+      if (scene.sceneType === 'panorama') {
+        totals.panoramas += await storedValueByteSize(scene.imageData);
+      }
+
       if (scene.sceneType === 'object360') {
-        (scene.object360?.frames || []).forEach((row) => (row || []).forEach((frame) => {
-          totals.object360 += dataUrlByteSize(frame);
-        }));
+        for (const row of scene.object360?.frames || []) {
+          for (const frame of row || []) {
+            totals.object360 += await storedValueByteSize(frame);
+          }
+        }
+        totals.backgrounds += await storedValueByteSize(scene.object360?.backgroundImageData);
       }
+
       if (scene.sceneType === 'stl') {
-        totals.stl += dataUrlByteSize(scene.stl?.data);
-        totals.backgrounds += dataUrlByteSize(scene.stl?.backgroundImageData);
+        totals.stl += await storedValueByteSize(scene.stl?.data);
+        totals.backgrounds += await storedValueByteSize(scene.stl?.backgroundImageData);
       }
-      totals.audio += dataUrlByteSize(scene.audio?.music?.data) + dataUrlByteSize(scene.audio?.narration?.data);
-      (scene.mediaObjects || []).forEach((item) => {
-        totals.media += dataUrlByteSize(item.data);
-        (item.gallery || []).forEach((entry) => { totals.media += dataUrlByteSize(entry.data); });
-      });
-    });
-    totals.audio += dataUrlByteSize(project.audio?.music?.data);
-    totals.media += dataUrlByteSize(project.startScreen?.coverData);
+
+      totals.audio += await storedValueByteSize(scene.audio?.music?.data);
+      totals.audio += await storedValueByteSize(scene.audio?.narration?.data);
+
+      for (const item of scene.mediaObjects || []) {
+        totals.media += await storedValueByteSize(item.data);
+        for (const entry of item.gallery || []) {
+          totals.media += await storedValueByteSize(entry.data);
+        }
+      }
+    }
+
+    totals.audio += await storedValueByteSize(project.audio?.music?.data);
+    totals.media += await storedValueByteSize(project.startScreen?.coverData);
+
     const total = Object.values(totals).reduce((a,b) => a+b, 0);
     const fmt = (bytes) => formatFileSize(bytes);
     els.projectSizeReport.innerHTML =
@@ -6185,7 +6209,8 @@
       '<span>STL: ' + fmt(totals.stl) + '</span>' +
       '<span>Аудио: ' + fmt(totals.audio) + '</span>' +
       '<span>Медиа: ' + fmt(totals.media) + '</span>' +
-      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>';
+      '<span>Фоны: ' + fmt(totals.backgrounds) + '</span>' +
+      '<small>Тяжёлые файлы хранятся как Blob в IndexedDB и не дублируются в истории Undo/Redo.</small>';
   }
 
   function renderQrPreview() {
