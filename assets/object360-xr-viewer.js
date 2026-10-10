@@ -23,6 +23,7 @@
         frames: Array.isArray(options.frames) ? options.frames : [[]],
         frameProvider: typeof options.frameProvider === 'function' ? options.frameProvider : null,
         releaseFrameSource: typeof options.releaseFrameSource === 'function' ? options.releaseFrameSource : null,
+        preloadNeighbours: Boolean(options.preloadNeighbours),
         startSector: Math.max(0, Number(options.startSector) || 0),
         startRow: Math.max(0, Number(options.startRow) || 0),
         dragPixelsPerFrame: Math.max(4, Number(options.dragPixelsPerFrame) || 14),
@@ -420,6 +421,7 @@
     }
 
     preloadNeighbours() {
+      if(!this.options.preloadNeighbours) return;
       [-1,1].forEach(async delta=>{
         let src='';
         try{
