@@ -1847,6 +1847,7 @@
     target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
       try { host._xrViewer?.destroy?.(); } catch (_) {}
     });
+    releaseAssetUrlPool(target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls);
     target.innerHTML = '';
     if (!scene) {
       target.hidden = true;
