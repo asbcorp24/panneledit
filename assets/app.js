@@ -7296,7 +7296,7 @@
         console.warn(error);
       }
     });
-    els.previewSceneOverlay.addEventListener('click', (event) => {
+    els.previewSceneOverlay.addEventListener('click', async (event) => {
       const scene = getScene(previewSceneId);
       const hotspotEl = event.target.closest('[data-screen-hotspot-id]');
       if (hotspotEl && scene) {
@@ -7312,7 +7312,22 @@
       if (!item) return;
       if (item.type === 'button' && item.targetSceneId) renderPreviewScene(item.targetSceneId);
       else if (item.type === 'button' && item.url) window.open(item.url, '_blank', 'noopener');
-      else if (item.type === 'pdf' && item.data) window.open(item.data, '_blank', 'noopener');
+      else if (item.type === 'pdf' && item.data) {
+        if (!isAssetRef(item.data)) {
+          window.open(item.data, '_blank', 'noopener');
+        } else {
+          const tab = window.open('about:blank', '_blank');
+          try {
+            const url = await resolveTransientAssetSource(item.data);
+            if (tab) tab.location.href = url;
+            setTimeout(() => releaseAssetUrl(url), 60000);
+          } catch (error) {
+            try { tab?.close(); } catch (_) {}
+            console.warn(error);
+            showToast('Не удалось открыть PDF');
+          }
+        }
+      }
     });
 
     els.previewNarrationButton.addEventListener('click', async () => {
