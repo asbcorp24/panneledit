@@ -826,7 +826,61 @@
           : xrPlaceholderDataUrl(scene.xr.projection);
         changed = true;
       }
+
+      if (scene.object360 && /^data:/i.test(scene.object360.backgroundImageData || '')) {
+        const blob = await dataUrlToBlob(scene.object360.backgroundImageData);
+        scene.object360.backgroundImageData = await putAssetBlob(blob, scene.object360.backgroundImageName || 'object360-background');
+        changed = true;
+      }
+
+      if (scene.stl && /^data:/i.test(scene.stl.backgroundImageData || '')) {
+        const blob = await dataUrlToBlob(scene.stl.backgroundImageData);
+        scene.stl.backgroundImageData = await putAssetBlob(blob, scene.stl.backgroundImageName || 'stl-background');
+        changed = true;
+      }
+
+      scene.audio = normalizeSceneAudio(scene.audio || {});
+      for (const slotName of ['music', 'narration']) {
+        const slot = scene.audio[slotName];
+        if (/^data:/i.test(slot?.data || '')) {
+          const blob = await dataUrlToBlob(slot.data);
+          slot.data = await putAssetBlob(blob, slot.filename || ('scene-' + slotName));
+          changed = true;
+        }
+      }
+
+      scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+      for (const item of scene.mediaObjects) {
+        if (/^data:/i.test(item.data || '')) {
+          const blob = await dataUrlToBlob(item.data);
+          item.data = await putAssetBlob(blob, item.filename || item.title || ('media-' + item.id));
+          changed = true;
+        }
+        for (const entry of item.gallery || []) {
+          if (!/^data:/i.test(entry.data || '')) continue;
+          const blob = await dataUrlToBlob(entry.data);
+          entry.data = await putAssetBlob(blob, entry.filename || 'gallery-image');
+          changed = true;
+        }
+      }
     }
+
+    targetProject.audio = {
+      music: normalizeAudioSlot(targetProject.audio?.music || {}, { volume:35, loop:true })
+    };
+    if (/^data:/i.test(targetProject.audio.music.data || '')) {
+      const blob = await dataUrlToBlob(targetProject.audio.music.data);
+      targetProject.audio.music.data = await putAssetBlob(blob, targetProject.audio.music.filename || 'project-music');
+      changed = true;
+    }
+
+    targetProject.startScreen = normalizeStartScreen(targetProject.startScreen || {}, targetProject.title);
+    if (/^data:/i.test(targetProject.startScreen.coverData || '')) {
+      const blob = await dataUrlToBlob(targetProject.startScreen.coverData);
+      targetProject.startScreen.coverData = await putAssetBlob(blob, targetProject.startScreen.coverFilename || 'start-cover');
+      changed = true;
+    }
+
     return changed;
   }
 
