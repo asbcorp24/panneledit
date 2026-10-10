@@ -822,12 +822,13 @@
 
   async function migrateHeavySceneAssets(targetProject) {
     let changed = false;
+
     for (const scene of targetProject.scenes || []) {
-      const sceneType = (sceneType === 'xr' || scene.xr)
+      const sceneType = (scene.sceneType === 'xr' || scene.xr)
         ? 'xr'
-        : ((sceneType === 'stl' || scene.stl)
+        : ((scene.sceneType === 'stl' || scene.stl)
           ? 'stl'
-          : ((sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'));
+          : ((scene.sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'));
 
       if (sceneType === 'panorama') {
         const legacyPanorama = String(scene.imageData || scene.panorama || '');
@@ -837,20 +838,22 @@
             try { scene.thumbnailData = await makeImageThumbnail(legacyPanorama); } catch (_) {}
           }
           const blob = await dataUrlToBlob(legacyPanorama);
-          scene.imageData = await putAssetBlob(blob, scene.filename || (scene.id + '.jpg'));
+          scene.imageData = await putAssetBlob(blob, scene.filename || ((scene.id || 'panorama') + '.jpg'));
           if ('panorama' in scene) scene.panorama = '';
           changed = true;
         }
-      }
 
-      if (sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
-      if (sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
-        const sourceBlob = await getAssetBlob(scene.imageData);
-        if (sourceBlob) {
-          const proxy = await makeViewerImageProxy(sourceBlob);
-          if (proxy) {
-            scene.viewerImageData = await putAssetBlob(proxy, (scene.filename || scene.id || 'panorama') + '.viewer.jpg');
-            changed = true;
+        if (!scene.viewerImageData && isAssetRef(scene.imageData)) {
+          const sourceBlob = await getAssetBlob(scene.imageData);
+          if (sourceBlob) {
+            const proxy = await makeViewerImageProxy(sourceBlob);
+            if (proxy) {
+              scene.viewerImageData = await putAssetBlob(
+                proxy,
+                (scene.filename || scene.id || 'panorama') + '.viewer.jpg'
+              );
+              changed = true;
+            }
           }
         }
       }
@@ -858,11 +861,15 @@
       if (sceneType === 'object360' && scene.object360) {
         const data = scene.object360;
         const firstInline = (data.frames || []).flat().find((frame) => /^data:/i.test(frame || '')) || '';
+
         if ((!data.coverData || data.coverData.length > 128 * 1024) && firstInline) {
-          try { data.coverData = await makeImageThumbnail(firstInline); } catch (_) { data.coverData = ''; }
+          try { data.coverData = await makeImageThumbnail(firstInline); }
+          catch (_) { data.coverData = ''; }
           scene.imageData = data.coverData || scene.imageData;
+          scene.thumbnailData = data.coverData || scene.thumbnailData || '';
           changed = true;
         }
+
         for (let row = 0; row < (data.frames || []).length; row++) {
           for (let sector = 0; sector < (data.frames[row] || []).length; sector++) {
             const frame = data.frames[row][sector];
@@ -870,7 +877,8 @@
             const blob = await dataUrlToBlob(frame);
             data.frames[row][sector] = await putAssetBlob(
               blob,
-              'frame_' + String(sector).padStart(3, '0') + (blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg')
+              'frame_' + String(sector).padStart(3, '0') +
+                (blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg')
             );
             changed = true;
           }
@@ -879,61 +887,85 @@
 
       if (sceneType === 'stl' && /^data:/i.test(scene.stl?.data || '')) {
         const blob = await dataUrlToBlob(scene.stl.data);
-        scene.stl.data = await putAssetBlob(blob, scene.stl.filename || scene.filename || 'model.stl');
+        scene.stl.data = await putAssetBlob(
+          blob,
+          scene.stl.filename || scene.filename || 'model.stl'
+        );
         changed = true;
       }
 
-      if (sceneType === 'xr' && /^data:/i.test(scene.xr?.data || '')) {
-        if (scene.xr.kind === 'image' && !scene.thumbnailData) {
-          try { scene.thumbnailData = await makeImageThumbnail(scene.xr.data); } catch (_) {}
+      if (sceneType === 'xr' && scene.xr) {
+        if (/^data:/i.test(scene.xr.data || '')) {
+          if (scene.xr.kind === 'image' && !scene.thumbnailData) {
+            try { scene.thumbnailData = await makeImageThumbnail(scene.xr.data); } catch (_) {}
+          }
+          const blob = await dataUrlToBlob(scene.xr.data);
+          scene.xr.data = await putAssetBlob(
+            blob,
+            scene.xr.filename || scene.filename || 'xr-media'
+          );
+          scene.imageData = scene.xr.kind === 'image'
+            ? (scene.thumbnailData || xrPlaceholderDataUrl(scene.xr.projection))
+            : xrPlaceholderDataUrl(scene.xr.projection);
+          changed = true;
         }
-        const blob = await dataUrlToBlob(scene.xr.data);
-        scene.xr.data = await putAssetBlob(blob, scene.xr.filename || scene.filename || 'xr-media');
-        scene.imageData = scene.xr.kind === 'image'
-          ? (scene.thumbnailData || xrPlaceholderDataUrl(scene.xr.projection))
-          : xrPlaceholderDataUrl(scene.xr.projection);
-        changed = true;
-      }
-      if (sceneType === 'xr' && scene.xr?.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
-        const sourceBlob = await getAssetBlob(scene.xr.data);
-        if (sourceBlob) {
-          const proxy = await makeViewerImageProxy(sourceBlob);
-          if (proxy) {
-            scene.xr.viewerData = await putAssetBlob(proxy, (scene.xr.filename || scene.filename || 'xr-image') + '.viewer.jpg');
-            changed = true;
+
+        if (scene.xr.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
+          const sourceBlob = await getAssetBlob(scene.xr.data);
+          if (sourceBlob) {
+            const proxy = await makeViewerImageProxy(sourceBlob);
+            if (proxy) {
+              scene.xr.viewerData = await putAssetBlob(
+                proxy,
+                (scene.xr.filename || scene.filename || 'xr-image') + '.viewer.jpg'
+              );
+              changed = true;
+            }
           }
         }
       }
 
       if (scene.object360 && /^data:/i.test(scene.object360.backgroundImageData || '')) {
         const blob = await dataUrlToBlob(scene.object360.backgroundImageData);
-        scene.object360.backgroundImageData = await putAssetBlob(blob, scene.object360.backgroundImageName || 'object360-background');
+        scene.object360.backgroundImageData = await putAssetBlob(
+          blob,
+          scene.object360.backgroundImageName || 'object360-background'
+        );
         changed = true;
       }
 
       if (scene.stl && /^data:/i.test(scene.stl.backgroundImageData || '')) {
         const blob = await dataUrlToBlob(scene.stl.backgroundImageData);
-        scene.stl.backgroundImageData = await putAssetBlob(blob, scene.stl.backgroundImageName || 'stl-background');
+        scene.stl.backgroundImageData = await putAssetBlob(
+          blob,
+          scene.stl.backgroundImageName || 'stl-background'
+        );
         changed = true;
       }
 
       scene.audio = normalizeSceneAudio(scene.audio || {});
       for (const slotName of ['music', 'narration']) {
         const slot = scene.audio[slotName];
-        if (/^data:/i.test(slot?.data || '')) {
-          const blob = await dataUrlToBlob(slot.data);
-          slot.data = await putAssetBlob(blob, slot.filename || ('scene-' + slotName));
-          changed = true;
-        }
+        if (!/^data:/i.test(slot?.data || '')) continue;
+        const blob = await dataUrlToBlob(slot.data);
+        slot.data = await putAssetBlob(blob, slot.filename || ('scene-' + slotName));
+        changed = true;
       }
 
-      scene.mediaObjects = Array.isArray(scene.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
+      scene.mediaObjects = Array.isArray(scene.mediaObjects)
+        ? scene.mediaObjects.map(normalizeMediaObject)
+        : [];
+
       for (const item of scene.mediaObjects) {
         if (/^data:/i.test(item.data || '')) {
           const blob = await dataUrlToBlob(item.data);
-          item.data = await putAssetBlob(blob, item.filename || item.title || ('media-' + item.id));
+          item.data = await putAssetBlob(
+            blob,
+            item.filename || item.title || ('media-' + item.id)
+          );
           changed = true;
         }
+
         for (const entry of item.gallery || []) {
           if (!/^data:/i.test(entry.data || '')) continue;
           const blob = await dataUrlToBlob(entry.data);
@@ -948,14 +980,23 @@
     };
     if (/^data:/i.test(targetProject.audio.music.data || '')) {
       const blob = await dataUrlToBlob(targetProject.audio.music.data);
-      targetProject.audio.music.data = await putAssetBlob(blob, targetProject.audio.music.filename || 'project-music');
+      targetProject.audio.music.data = await putAssetBlob(
+        blob,
+        targetProject.audio.music.filename || 'project-music'
+      );
       changed = true;
     }
 
-    targetProject.startScreen = normalizeStartScreen(targetProject.startScreen || {}, targetProject.title);
+    targetProject.startScreen = normalizeStartScreen(
+      targetProject.startScreen || {},
+      targetProject.title
+    );
     if (/^data:/i.test(targetProject.startScreen.coverData || '')) {
       const blob = await dataUrlToBlob(targetProject.startScreen.coverData);
-      targetProject.startScreen.coverData = await putAssetBlob(blob, targetProject.startScreen.coverFilename || 'start-cover');
+      targetProject.startScreen.coverData = await putAssetBlob(
+        blob,
+        targetProject.startScreen.coverFilename || 'start-cover'
+      );
       changed = true;
     }
 
