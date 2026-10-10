@@ -1526,22 +1526,26 @@
 
     let body = '';
     if (item.type === 'image' && item.data) {
-      body = '<img src="' + escapeHtml(item.data) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
+      const src = isAssetRef(item.data) ? '' : item.data;
+      body = '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(item.title || '') + '" style="object-fit:' + item.fit + '">';
     } else if (item.type === 'stereo-photo' && item.data) {
       body = '<div class="scene-stereo-viewer-host" data-stereo-projection="' +
         escapeHtml(item.stereoProjection || 'FLAT_LR') + '"></div>';
     } else if (item.type === 'gallery') {
       const first = item.gallery?.[0]?.data || '';
+      const firstSrc = isAssetRef(first) ? '' : first;
       body = first
-        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(first) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
+        ? '<div class="scene-gallery-frame"><img src="' + escapeHtml(firstSrc) + '" alt=""><span>1 / ' + item.gallery.length + '</span></div>'
         : '<div class="scene-media-placeholder">Галерея</div>';
     } else if (item.type === 'video' && item.data) {
-      body = '<video src="' + escapeHtml(item.data) + '" controls playsinline ' +
+      const src = isAssetRef(item.data) ? '' : item.data;
+      body = '<video src="' + escapeHtml(src) + '" controls playsinline ' +
         (item.autoplay ? 'autoplay muted ' : '') + (item.loop ? 'loop ' : '') + '></video>';
     } else if (item.type === 'audio' && item.data) {
       const audioStyle = ['compact','large','hidden'].includes(item.audioStyle) ? item.audioStyle : 'compact';
+      const src = isAssetRef(item.data) ? '' : item.data;
       const audio = '<audio class="scene-audio-element" data-media-volume="' + item.volume +
-        '" data-media-autoplay="' + (item.autoplay ? '1' : '0') + '" src="' + escapeHtml(item.data) +
+        '" data-media-autoplay="' + (item.autoplay ? '1' : '0') + '" src="' + escapeHtml(src) +
         '" preload="metadata" ' + (audioStyle === 'hidden' ? '' : 'controls ') + (item.loop ? 'loop ' : '') + '></audio>';
       if (audioStyle === 'hidden') {
         body = (editor
@@ -1566,40 +1570,101 @@
       body + (editor && !item.locked ? '<span class="scene-media-drag-hint">перетащить</span>' : '') + '</div>';
   }
 
+  async function hydrateSceneMediaAssets(items, target, { editor = true, generation = null } = {}) {
+    const pool = target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls;
+
+    for (const item of items) {
+      const wrapper = target.querySelector('[data-media-object-id="' + CSS.escape(item.id) + '"]');
+      if (!wrapper || target._mediaAssetGeneration !== generation) return;
+
+      try {
+        if (item.type === 'image' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const image = wrapper.querySelector('img');
+          if (image) image.src = source;
+        } else if (item.type === 'gallery' && item.gallery?.[0]?.data) {
+          const source = await resolveAssetSource(item.gallery[0].data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const image = wrapper.querySelector('.scene-gallery-frame img');
+          if (image) image.src = source;
+        } else if (item.type === 'video' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const video = wrapper.querySelector('video');
+          if (video) {
+            video.src = source;
+            video.load();
+            if (!editor && item.autoplay) video.play().catch(() => {});
+          }
+        } else if (item.type === 'audio' && item.data) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const audio = wrapper.querySelector('audio.scene-audio-element');
+          if (audio) {
+            audio.src = source;
+            audio.volume = clampNumber(item.volume / 100, 0, 1, 0.8);
+            audio.load();
+            if (!editor && item.autoplay) audio.play().catch(() => {});
+          }
+        } else if (item.type === 'stereo-photo' && item.data && window.XRMediaViewer) {
+          const source = await resolveAssetSource(item.data, pool);
+          if (target._mediaAssetGeneration !== generation) {
+            releaseAssetUrl(source);
+            return;
+          }
+          const host = wrapper.querySelector('.scene-stereo-viewer-host');
+          if (host) {
+            host._xrViewer?.destroy?.();
+            host._xrViewer = new XRMediaViewer(host, {
+              domOverlayRoot: target,
+              source,
+              kind: 'image',
+              projection: item.stereoProjection || 'FLAT_LR',
+              fov: 55,
+              controls: true,
+              motionControls: true
+            });
+            host._xrViewer.ready.catch(console.error);
+          }
+        }
+      } catch (error) {
+        console.warn('Media asset:', item.id, error);
+      }
+    }
+  }
+
   function renderSceneMediaOverlay(scene = getScene(), target = els.sceneOverlay, { editor = true, append = true } = {}) {
     if (!target) return;
+    const pool = target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls;
+    releaseAssetUrlPool(pool);
+
     const items = Array.isArray(scene?.mediaObjects) ? scene.mediaObjects.map(normalizeMediaObject) : [];
     if (scene) scene.mediaObjects = items;
+    const generation = String(Date.now()) + ':' + Math.random();
+    target._mediaAssetGeneration = generation;
+
     const markup = items.map((item) => mediaObjectMarkup(item, { editor })).join('');
     if (append) target.insertAdjacentHTML('beforeend', markup);
     else target.innerHTML = markup;
+
     target.querySelectorAll('audio.scene-audio-element').forEach((audio) => {
       audio.volume = clampNumber(Number(audio.dataset.mediaVolume) / 100, 0, 1, 0.8);
-      if (!editor && audio.dataset.mediaAutoplay === '1') {
-        audio.play().catch(() => {});
-      }
     });
 
-    target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
-      const wrapper = host.closest('[data-media-object-id]');
-      const item = items.find((entry) => entry.id === wrapper?.dataset.mediaObjectId);
-      if (!item?.data || !window.XRMediaViewer) return;
-      try {
-        host._xrViewer?.destroy?.();
-        host._xrViewer = new XRMediaViewer(host, {
-          domOverlayRoot: target,
-          source: item.data,
-          kind: 'image',
-          projection: item.stereoProjection || 'FLAT_LR',
-          fov: 55,
-          controls: true,
-          motionControls: true
-        });
-        host._xrViewer.ready.catch(console.error);
-      } catch (error) {
-        console.error('Stereo photo:', error);
-      }
-    });
+    hydrateSceneMediaAssets(items, target, { editor, generation }).catch(console.error);
   }
 
   function panoramaStateFromXr(state = {}) {
