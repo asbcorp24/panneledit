@@ -2285,6 +2285,7 @@
       xrViewer = null;
     }
     releaseAssetUrlPool(viewerAssetUrls);
+    releaseAssetUrlPool(editorOverlayAssetUrls);
   }
 
   async function renderViewer() {
@@ -2942,11 +2943,12 @@
     }
     previewMusicAudio = null;
     previewNarrationAudio = null;
+    releaseAssetUrlPool(previewAudioAssetUrls);
     els.previewMusicButton?.classList.remove('active');
     els.previewNarrationButton?.classList.remove('active');
   }
 
-  function configurePreviewAudio(scene) {
+  async function configurePreviewAudio(scene) {
     stopPreviewAudio();
     if (!scene) return;
 
@@ -2955,7 +2957,8 @@
     const music = scene.audio.music.data ? scene.audio.music : projectMusic;
 
     if (music.data) {
-      previewMusicAudio = new Audio(music.data);
+      const musicSource = await resolveAssetSource(music.data, previewAudioAssetUrls);
+      previewMusicAudio = new Audio(musicSource);
       previewMusicAudio.volume = music.volume / 100;
       previewMusicAudio.loop = Boolean(music.loop);
       els.previewMusicButton.hidden = false;
@@ -2964,7 +2967,8 @@
     }
 
     if (scene.audio.narration.data) {
-      previewNarrationAudio = new Audio(scene.audio.narration.data);
+      const narrationSource = await resolveAssetSource(scene.audio.narration.data, previewAudioAssetUrls);
+      previewNarrationAudio = new Audio(narrationSource);
       previewNarrationAudio.volume = scene.audio.narration.volume / 100;
       els.previewNarrationButton.hidden = false;
     } else {
@@ -5807,6 +5811,7 @@
       previewXrViewer = null;
     }
     releaseAssetUrlPool(previewAssetUrls);
+    releaseAssetUrlPool(previewOverlayAssetUrls);
     els.previewPanorama.innerHTML = '';
     previewSceneId = null;
   }
@@ -5820,7 +5825,8 @@
     destroyPreviewViewers();
     previewSceneId = scene.id;
     renderCompositeOverlay(scene, els.previewSceneOverlay, null, { editor: false });
-    configurePreviewAudio(scene);
+    await configurePreviewAudio(scene);
+    if (token !== previewRenderToken) return;
 
     if (scene.sceneType === 'object360') {
       if (!window.Object360XRViewer) return;
