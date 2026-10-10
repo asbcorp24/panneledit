@@ -4737,40 +4737,10 @@
     transitionLayer.className = 'tour-transition-layer';
   };
 
-  const preloadScene = (id) => {
-    const meta = config.sceneMeta?.[id];
-    if (!meta) return;
-    if (meta.sceneType === 'panorama') {
-      const p = config.scenes?.[id]?.source;
-      if (p) { const img = new Image(); img.src = p; }
-    } else if (meta.sceneType === 'object360') {
-      const frames = config.object360Scenes?.[id]?.frames || [];
-      (frames[0] || []).slice(0,4).forEach((src) => { if (src) { const img=new Image(); img.src=src; } });
-    } else if (meta.sceneType === 'stl') {
-      const src = config.stlScenes?.[id]?.source;
-      if (src) fetch(src).catch(()=>{});
-    } else if (meta.sceneType === 'xr') {
-      const src = config.xrScenes?.[id]?.source;
-      if (src) {
-        if (config.xrScenes?.[id]?.kind === 'image') { const img = new Image(); img.src = src; }
-        else { const v = document.createElement('video'); v.preload='metadata'; v.src=src; }
-      }
-    }
-    (meta.mediaObjects || []).forEach((item) => {
-      if ((item.type === 'image' || item.type === 'stereo-photo') && item.src) { const img = new Image(); img.src = item.src; }
-      if (item.type === 'gallery') (item.gallery || []).slice(0,2).forEach((entry)=>{ const img=new Image(); img.src=entry.src; });
-      if (item.type === 'audio' && item.src) { const a = new Audio(); a.preload='metadata'; a.src=item.src; }
-    });
-    [meta.audio?.music?.src,meta.audio?.narration?.src].filter(Boolean).forEach((src)=>{ const a=new Audio(); a.preload='metadata'; a.src=src; });
-  };
-
-  const preloadNeighbors = (id) => {
-    const targets = new Set();
-    (config.sceneMeta?.[id]?.screenHotspots || []).forEach((h)=>{ if(h.targetSceneId) targets.add(h.targetSceneId); });
-    const gi = config.guide?.steps?.findIndex((step)=>step.sceneId===id);
-    if (gi >= 0 && config.guide.steps[gi+1]) targets.add(config.guide.steps[gi+1].sceneId);
-    [...targets].slice(0,4).forEach(preloadScene);
-  };
+  // Heavy scene/media preloading was intentionally removed.
+  // Browser HTTP/PWA cache still keeps downloaded files available, while
+  // images/video are decoded only when their scene actually becomes active.
+  const preloadNeighbors = (_id) => {};
 
   const showScene = async (id, pushHistory = true, transition = null) => {
     const meta = config.sceneMeta?.[id];
