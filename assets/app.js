@@ -880,7 +880,7 @@
       } catch (_) {}
     }
     return await new Promise((resolve, reject) => {
-      const request = indexedDB.open(LEGACY_DB_NAME, DB_VERSION);
+      const request = indexedDB.open(LEGACY_DB_NAME);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
       request.onblocked = () => resolve(null);
@@ -5699,6 +5699,7 @@
       }
 
       project = imported;
+      await migrateHeavySceneAssets(project);
       currentSceneId = project.firstScene || project.scenes[0].id;
       resetHistory();
       await persistProject();
@@ -7280,6 +7281,14 @@
         console.warn('Сохранённый проект повреждён, создан новый', error);
         project = createEmptyProject();
       }
+    }
+
+    try {
+      const migrated = await migrateHeavySceneAssets(project);
+      if (migrated) await persistProject();
+    } catch (error) {
+      console.warn('Не удалось полностью перенести медиа в Blob-хранилище', error);
+      showToast('Часть старых медиа осталась во встроенном формате', 4200);
     }
 
     currentSceneId = project.firstScene || project.scenes[0]?.id || null;
