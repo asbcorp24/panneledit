@@ -89,7 +89,8 @@
 5. Снимите полный оборот объекта.
 6. Откройте «3D просмотр» и проверьте вращение.
 7. При необходимости нажмите «Обработать».
-8. Нажмите «Экспорт» или «Отправить на ПК»."
+8. Если объект прыгает между кадрами — откройте «Выровнять».
+9. Нажмите «Экспорт» или «Отправить на ПК»."
                     android:textColor="#F4F7FF"
                     android:textSize="15sp"
                     android:lineSpacingExtra="4dp" />
@@ -121,6 +122,7 @@
 «Продолжить» — вернуться к съёмке.
 «3D просмотр» — прокрутить готовые кадры.
 «Обработать» — автообрезка или удаление фона.
+«Выровнять» — вручную совместить размер и координаты объекта по эталонному кадру.
 «Экспорт» — сохранить .object360.zip.
 «Отправить на ПК» — открыть системное меню Android для передачи ZIP."
                     android:textColor="#F4F7FF"
@@ -287,6 +289,41 @@
 «Удалить фон → прозрачный PNG» создаёт кадры с прозрачностью. Лучше всего работает, когда фон ровный и заметно отличается от предмета.
 
 «Удалить фон → однотонный цвет» заменяет фон выбранным HEX-цветом. После обработки обязательно проверьте результат в 3D-просмотре."
+                    android:textColor="#F4F7FF"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="4dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/helpAlignment"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="РУЧНОЕ ВЫРАВНИВАНИЕ"
+                    android:textColor="#75E7D6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Откройте «Выровнять» на карточке проекта. Первый кадр становится эталоном, но эталоном можно назначить любой другой кадр.
+
+Эталон полупрозрачно накладывается на текущий кадр. Совмещайте объект по контуру и контрольным точкам:
+• 1 палец — сдвиг по X/Y;
+• pinch двумя пальцами — изменение размера;
+• поворот двумя пальцами или кнопками — угол;
+• точные кнопки X/Y, РАЗМЕР и УГОЛ дают маленький шаг.
+
+Кнопка «ЭТАЛОН = ЭТОТ» задаёт новый общий размер и нулевые координаты. После настройки кадров нажмите «ПРИМЕНИТЬ ВСЮ СЕРИЮ». Все кадры будут записаны в один размер эталона. Исходники сохраняются в manual_original и доступны через «ВОССТАНОВИТЬ ОРИГИНАЛЫ»."
                     android:textColor="#F4F7FF"
                     android:textSize="15sp"
                     android:lineSpacingExtra="4dp" />

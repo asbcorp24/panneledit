@@ -36,6 +36,7 @@ class HelpActivity : AppCompatActivity() {
             SECTION_TURNTABLE -> binding.helpTurntable
             SECTION_GHOST -> binding.helpGhost
             SECTION_PROCESSING -> binding.helpProcessing
+            SECTION_ALIGNMENT -> binding.helpAlignment
             SECTION_REVIEW -> binding.helpReview
             SECTION_EXPORT -> binding.helpExport
             else -> binding.helpQuick
@@ -53,6 +54,7 @@ class HelpActivity : AppCompatActivity() {
         const val SECTION_TURNTABLE = "turntable"
         const val SECTION_GHOST = "ghost"
         const val SECTION_PROCESSING = "processing"
+        const val SECTION_ALIGNMENT = "alignment"
         const val SECTION_REVIEW = "review"
         const val SECTION_EXPORT = "export"
     }

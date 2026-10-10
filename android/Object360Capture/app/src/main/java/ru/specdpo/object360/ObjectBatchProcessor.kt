@@ -108,7 +108,7 @@ object ObjectBatchProcessor {
                 val extension = if (transparent) "png" else "jpg"
                 val target = File(
                     shot.file.parentFile,
-                    "frame_${shot.sector.toString().padStart(3, '0')}.§extension"
+                    "frame_${shot.sector.toString().padStart(3, '0')}.$extension"
                 )
                 val temp = File(target.parentFile, target.name + ".processing")
 
