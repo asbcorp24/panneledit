@@ -148,7 +148,7 @@
         antialias: true,
         alpha: false
       });
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, 1);
 
@@ -209,6 +209,7 @@
         this.texture.colorSpace = THREE.SRGBColorSpace;
         this.texture.minFilter = THREE.LinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
+        this.texture.generateMipmaps = false;
         return;
       }
 
@@ -216,6 +217,7 @@
       this.texture.colorSpace = THREE.SRGBColorSpace;
       this.texture.minFilter = THREE.LinearFilter;
       this.texture.magFilter = THREE.LinearFilter;
+      this.texture.generateMipmaps = false;
     }
 
     makeMaterial(eye = 'left') {
