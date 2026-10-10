@@ -823,15 +823,28 @@
   async function migrateHeavySceneAssets(targetProject) {
     let changed = false;
     for (const scene of targetProject.scenes || []) {
-      if (scene.sceneType === 'panorama' && /^data:/i.test(scene.imageData || '')) {
-        if (!scene.thumbnailData) {
-          try { scene.thumbnailData = await makeImageThumbnail(scene.imageData); } catch (_) {}
+      const sceneType = (sceneType === 'xr' || scene.xr)
+        ? 'xr'
+        : ((sceneType === 'stl' || scene.stl)
+          ? 'stl'
+          : ((sceneType === 'object360' || scene.object360) ? 'object360' : 'panorama'));
+
+      if (sceneType === 'panorama') {
+        const legacyPanorama = String(scene.imageData || scene.panorama || '');
+        if (/^data:/i.test(legacyPanorama)) {
+          scene.imageData = legacyPanorama;
+          if (!scene.thumbnailData) {
+            try { scene.thumbnailData = await makeImageThumbnail(legacyPanorama); } catch (_) {}
+          }
+          const blob = await dataUrlToBlob(legacyPanorama);
+          scene.imageData = await putAssetBlob(blob, scene.filename || (scene.id + '.jpg'));
+          if ('panorama' in scene) scene.panorama = '';
+          changed = true;
         }
-        const blob = await dataUrlToBlob(scene.imageData);
-        scene.imageData = await putAssetBlob(blob, scene.filename || (scene.id + '.jpg'));
-        changed = true;
       }
-      if (scene.sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
+
+      if (sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
+      if (sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
         const sourceBlob = await getAssetBlob(scene.imageData);
         if (sourceBlob) {
           const proxy = await makeViewerImageProxy(sourceBlob);
@@ -842,7 +855,7 @@
         }
       }
 
-      if (scene.sceneType === 'object360' && scene.object360) {
+      if (sceneType === 'object360' && scene.object360) {
         const data = scene.object360;
         const firstInline = (data.frames || []).flat().find((frame) => /^data:/i.test(frame || '')) || '';
         if ((!data.coverData || data.coverData.length > 128 * 1024) && firstInline) {
@@ -864,13 +877,13 @@
         }
       }
 
-      if (scene.sceneType === 'stl' && /^data:/i.test(scene.stl?.data || '')) {
+      if (sceneType === 'stl' && /^data:/i.test(scene.stl?.data || '')) {
         const blob = await dataUrlToBlob(scene.stl.data);
         scene.stl.data = await putAssetBlob(blob, scene.stl.filename || scene.filename || 'model.stl');
         changed = true;
       }
 
-      if (scene.sceneType === 'xr' && /^data:/i.test(scene.xr?.data || '')) {
+      if (sceneType === 'xr' && /^data:/i.test(scene.xr?.data || '')) {
         if (scene.xr.kind === 'image' && !scene.thumbnailData) {
           try { scene.thumbnailData = await makeImageThumbnail(scene.xr.data); } catch (_) {}
         }
@@ -881,7 +894,7 @@
           : xrPlaceholderDataUrl(scene.xr.projection);
         changed = true;
       }
-      if (scene.sceneType === 'xr' && scene.xr?.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
+      if (sceneType === 'xr' && scene.xr?.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
         const sourceBlob = await getAssetBlob(scene.xr.data);
         if (sourceBlob) {
           const proxy = await makeViewerImageProxy(sourceBlob);
