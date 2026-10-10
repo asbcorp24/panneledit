@@ -554,6 +554,7 @@
       this.material?.dispose?.();
       this.plane?.geometry?.dispose?.();
       this.renderer?.dispose?.();
+      this.renderer?.forceContextLoss?.();
       this.container.classList.remove('object360-host');
       this.container.innerHTML='';
     }
