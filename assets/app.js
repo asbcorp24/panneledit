@@ -323,6 +323,9 @@
   let previewRenderToken = 0;
   const viewerAssetUrls = new Set();
   const previewAssetUrls = new Set();
+  const editorOverlayAssetUrls = new Set();
+  const previewOverlayAssetUrls = new Set();
+  const previewAudioAssetUrls = new Set();
   const HISTORY_LIMIT = 30;
   const HISTORY_INLINE_LIMIT = 32 * 1024;
 
