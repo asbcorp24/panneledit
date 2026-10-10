@@ -825,6 +825,16 @@
         scene.imageData = await putAssetBlob(blob, scene.filename || (scene.id + '.jpg'));
         changed = true;
       }
+      if (scene.sceneType === 'panorama' && !scene.viewerImageData && isAssetRef(scene.imageData)) {
+        const sourceBlob = await getAssetBlob(scene.imageData);
+        if (sourceBlob) {
+          const proxy = await makeViewerImageProxy(sourceBlob);
+          if (proxy) {
+            scene.viewerImageData = await putAssetBlob(proxy, (scene.filename || scene.id || 'panorama') + '.viewer.jpg');
+            changed = true;
+          }
+        }
+      }
 
       if (scene.sceneType === 'object360' && scene.object360) {
         const data = scene.object360;
@@ -864,6 +874,16 @@
           ? (scene.thumbnailData || xrPlaceholderDataUrl(scene.xr.projection))
           : xrPlaceholderDataUrl(scene.xr.projection);
         changed = true;
+      }
+      if (scene.sceneType === 'xr' && scene.xr?.kind === 'image' && !scene.xr.viewerData && isAssetRef(scene.xr.data)) {
+        const sourceBlob = await getAssetBlob(scene.xr.data);
+        if (sourceBlob) {
+          const proxy = await makeViewerImageProxy(sourceBlob);
+          if (proxy) {
+            scene.xr.viewerData = await putAssetBlob(proxy, (scene.xr.filename || scene.filename || 'xr-image') + '.viewer.jpg');
+            changed = true;
+          }
+        }
       }
 
       if (scene.object360 && /^data:/i.test(scene.object360.backgroundImageData || '')) {
@@ -2493,7 +2513,7 @@
       const data = normalizeXrData(scene.xr || {});
       scene.xr = data;
       try {
-        const source = await resolveAssetSource(data.data, viewerAssetUrls);
+        const source = await resolveAssetSource(data.kind === 'image' ? (data.viewerData || data.data) : data.data, viewerAssetUrls);
         if (token !== renderViewerToken) return;
         xrViewer = new XRMediaViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
@@ -2537,7 +2557,7 @@
     refreshCustomHotspotStyles();
 
     try {
-      const source = await resolveAssetSource(scene.imageData, viewerAssetUrls);
+      const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, viewerAssetUrls);
       if (token !== renderViewerToken) return;
       viewer = new XRMediaViewer(els.panorama, {
         domOverlayRoot: els.sceneOverlay,
@@ -5981,7 +6001,7 @@
     if (scene.sceneType === 'xr') {
       if (!window.XRMediaViewer) return;
       const data = normalizeXrData(scene.xr || {});
-      const source = await resolveAssetSource(data.data, previewAssetUrls);
+      const source = await resolveAssetSource(data.kind === 'image' ? (data.viewerData || data.data) : data.data, previewAssetUrls);
       if (token !== previewRenderToken) return;
       previewXrViewer = new XRMediaViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
@@ -6003,7 +6023,7 @@
     }
 
     if (!window.XRMediaViewer) return;
-    const source = await resolveAssetSource(scene.imageData, previewAssetUrls);
+    const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, previewAssetUrls);
     if (token !== previewRenderToken) return;
     previewViewer = new XRMediaViewer(els.previewPanorama, {
       domOverlayRoot: els.previewSceneOverlay,
