@@ -5687,11 +5687,13 @@
       try { previewXrViewer.destroy(); } catch (_) {}
       previewXrViewer = null;
     }
+    releaseAssetUrlPool(previewAssetUrls);
     els.previewPanorama.innerHTML = '';
     previewSceneId = null;
   }
 
-  function renderPreviewScene(sceneId) {
+  async function renderPreviewScene(sceneId) {
+    const token = ++previewRenderToken;
     const scene = getScene(sceneId);
     if (!scene) return;
     previewSceneId = scene.id;
@@ -5709,6 +5711,11 @@
         sectors: data.sectors,
         rows: data.rows,
         frames: data.frames,
+        frameProvider: async (row, sector) => {
+          const value = data.frames[row]?.[sector] || '';
+          return isAssetRef(value) ? await resolveTransientAssetSource(value) : value;
+        },
+        releaseFrameSource: releaseAssetUrl,
         startSector: data.startSector,
         startRow: data.startRow,
         autoplay: data.autoplay,
@@ -5724,9 +5731,12 @@
     if (scene.sceneType === 'stl') {
       if (!window.StlXRViewer) return;
       const data = normalizeStlData(scene.stl || {});
+      const source = await resolveAssetSource(data.data, previewAssetUrls);
+      const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewStlViewer = new StlXRViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
-        source: data.data,
+        source,
         yaw: data.yaw,
         pitch: data.pitch,
         zoom: data.zoom,
@@ -5734,7 +5744,7 @@
         autoRotate: data.autoplay,
         color: data.color,
         backgroundMode: data.backgroundMode,
-        backgroundImage: stlBackgroundImageForData(data),
+        backgroundImage,
         onChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false, projector:previewStlViewer })
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewStlViewer.getState(), { editor:false, projector:previewStlViewer });
@@ -5745,9 +5755,11 @@
     if (scene.sceneType === 'xr') {
       if (!window.XRMediaViewer) return;
       const data = normalizeXrData(scene.xr || {});
+      const source = await resolveAssetSource(data.data, previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewXrViewer = new XRMediaViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
-        source: data.data,
+        source,
         kind: data.kind,
         projection: data.projection,
         yaw: data.yaw,
@@ -5765,9 +5777,11 @@
     }
 
     if (!window.XRMediaViewer) return;
+    const source = await resolveAssetSource(scene.imageData, previewAssetUrls);
+    if (token !== previewRenderToken) return;
     previewViewer = new XRMediaViewer(els.previewPanorama, {
       domOverlayRoot: els.previewSceneOverlay,
-      source: scene.imageData,
+      source,
       kind: 'image',
       projection: '360',
       yawDirection: 'right-positive',
