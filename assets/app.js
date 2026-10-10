@@ -3,10 +3,12 @@
 
   const DB_NAME = 'xr-tour-editor';
   const LEGACY_DB_NAME = 'pannellum-tour-editor';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = 'projects';
+  const ASSET_STORE_NAME = 'assets';
+  const ASSET_PREFIX = 'asset:';
   const CURRENT_KEY = 'current';
-  const PROJECT_VERSION = 8;
+  const PROJECT_VERSION = 9;
 
   const $ = (id) => document.getElementById(id);
 
@@ -314,7 +316,15 @@
   let redoStack = [];
   let historySnapshot = '';
   let applyingHistory = false;
-  const HISTORY_LIMIT = 60;
+  let historyBinaryPool = new Map();
+  let historyBinaryReverse = new Map();
+  let historyBinaryCounter = 0;
+  let renderViewerToken = 0;
+  let previewRenderToken = 0;
+  const viewerAssetUrls = new Set();
+  const previewAssetUrls = new Set();
+  const HISTORY_LIMIT = 30;
+  const HISTORY_INLINE_LIMIT = 32 * 1024;
 
   function createEmptyProject() {
     return {
@@ -598,12 +608,214 @@
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME);
         }
+        if (!db.objectStoreNames.contains(ASSET_STORE_NAME)) {
+          db.createObjectStore(ASSET_STORE_NAME);
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
 
     return dbPromise;
+  }
+
+  function isAssetRef(value) {
+    return typeof value === 'string' && value.startsWith(ASSET_PREFIX) && value.length > ASSET_PREFIX.length;
+  }
+
+  function assetIdFromRef(value) {
+    return isAssetRef(value) ? value.slice(ASSET_PREFIX.length) : '';
+  }
+
+  function releaseAssetUrl(url) {
+    if (!url || !String(url).startsWith('blob:')) return;
+    try { URL.revokeObjectURL(url); } catch (_) {}
+    viewerAssetUrls.delete(url);
+    previewAssetUrls.delete(url);
+  }
+
+  function releaseAssetUrlPool(pool) {
+    pool.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    pool.clear();
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Не удалось прочитать Blob'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function dataUrlToBlob(value) {
+    const response = await fetch(value);
+    if (!response.ok) throw new Error('Не удалось преобразовать встроенный файл');
+    return await response.blob();
+  }
+
+  async function putAssetBlob(blob, filename = '') {
+    if (!(blob instanceof Blob)) throw new Error('Некорректный Blob');
+    const db = await openDB();
+    if (!db) return await blobToDataUrl(blob);
+
+    const id = uid('asset');
+    const record = {
+      blob,
+      filename: String(filename || ''),
+      type: String(blob.type || 'application/octet-stream'),
+      size: Number(blob.size) || 0,
+      createdAt: Date.now()
+    };
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readwrite');
+      tx.objectStore(ASSET_STORE_NAME).put(record, id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Asset transaction aborted'));
+    });
+
+    return ASSET_PREFIX + id;
+  }
+
+  async function putAssetFile(file) {
+    return await putAssetBlob(file, file?.name || '');
+  }
+
+  async function getAssetRecord(ref) {
+    const id = assetIdFromRef(ref);
+    if (!id) return null;
+    const db = await openDB();
+    if (!db || !db.objectStoreNames.contains(ASSET_STORE_NAME)) return null;
+
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readonly');
+      const request = tx.objectStore(ASSET_STORE_NAME).get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getAssetBlob(ref) {
+    const record = await getAssetRecord(ref);
+    return record?.blob instanceof Blob ? record.blob : null;
+  }
+
+  async function resolveAssetSource(value, pool = null) {
+    if (!isAssetRef(value)) return String(value || '');
+    const blob = await getAssetBlob(value);
+    if (!blob) throw new Error('Медиафайл проекта не найден в локальном хранилище');
+    const url = URL.createObjectURL(blob);
+    if (pool) pool.add(url);
+    return url;
+  }
+
+  async function resolveTransientAssetSource(value) {
+    return await resolveAssetSource(value, null);
+  }
+
+  async function assetValueToDataUrl(value) {
+    if (!isAssetRef(value)) return String(value || '');
+    const blob = await getAssetBlob(value);
+    if (!blob) throw new Error('Медиафайл проекта не найден в локальном хранилище');
+    return await blobToDataUrl(blob);
+  }
+
+  async function makeImageThumbnail(source, maxWidth = 360, maxHeight = 220, quality = 0.72) {
+    const sourceUrl = source instanceof Blob ? URL.createObjectURL(source) : String(source || '');
+    const shouldRevoke = source instanceof Blob;
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Не удалось создать миниатюру'));
+        img.src = sourceUrl;
+      });
+      const scale = Math.min(
+        1,
+        maxWidth / Math.max(1, image.naturalWidth || image.width),
+        maxHeight / Math.max(1, image.naturalHeight || image.height)
+      );
+      const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+      const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.drawImage(image, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', quality);
+    } finally {
+      if (shouldRevoke) URL.revokeObjectURL(sourceUrl);
+    }
+  }
+
+  async function migrateHeavySceneAssets(targetProject) {
+    let changed = false;
+    for (const scene of targetProject.scenes || []) {
+      if (scene.sceneType === 'panorama' && /^data:/i.test(scene.imageData || '')) {
+        if (!scene.thumbnailData) {
+          try { scene.thumbnailData = await makeImageThumbnail(scene.imageData); } catch (_) {}
+        }
+        const blob = await dataUrlToBlob(scene.imageData);
+        scene.imageData = await putAssetBlob(blob, scene.filename || (scene.id + '.jpg'));
+        changed = true;
+      }
+
+      if (scene.sceneType === 'object360' && scene.object360) {
+        const data = scene.object360;
+        const firstInline = (data.frames || []).flat().find((frame) => /^data:/i.test(frame || '')) || '';
+        if ((!data.coverData || data.coverData.length > 128 * 1024) && firstInline) {
+          try { data.coverData = await makeImageThumbnail(firstInline); } catch (_) { data.coverData = ''; }
+          scene.imageData = data.coverData || scene.imageData;
+          changed = true;
+        }
+        for (let row = 0; row < (data.frames || []).length; row++) {
+          for (let sector = 0; sector < (data.frames[row] || []).length; sector++) {
+            const frame = data.frames[row][sector];
+            if (!/^data:/i.test(frame || '')) continue;
+            const blob = await dataUrlToBlob(frame);
+            data.frames[row][sector] = await putAssetBlob(
+              blob,
+              'frame_' + String(sector).padStart(3, '0') + (blob.type === 'image/png' ? '.png' : blob.type === 'image/webp' ? '.webp' : '.jpg')
+            );
+            changed = true;
+          }
+        }
+      }
+
+      if (scene.sceneType === 'stl' && /^data:/i.test(scene.stl?.data || '')) {
+        const blob = await dataUrlToBlob(scene.stl.data);
+        scene.stl.data = await putAssetBlob(blob, scene.stl.filename || scene.filename || 'model.stl');
+        changed = true;
+      }
+
+      if (scene.sceneType === 'xr' && /^data:/i.test(scene.xr?.data || '')) {
+        if (scene.xr.kind === 'image' && !scene.thumbnailData) {
+          try { scene.thumbnailData = await makeImageThumbnail(scene.xr.data); } catch (_) {}
+        }
+        const blob = await dataUrlToBlob(scene.xr.data);
+        scene.xr.data = await putAssetBlob(blob, scene.xr.filename || scene.filename || 'xr-media');
+        scene.imageData = scene.xr.kind === 'image'
+          ? (scene.thumbnailData || xrPlaceholderDataUrl(scene.xr.projection))
+          : xrPlaceholderDataUrl(scene.xr.projection);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  async function clearAssetStore() {
+    const db = await openDB();
+    if (!db || !db.objectStoreNames.contains(ASSET_STORE_NAME)) return;
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE_NAME, 'readwrite');
+      tx.objectStore(ASSET_STORE_NAME).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
   async function persistProject() {
@@ -837,13 +1049,51 @@
     };
   }
 
+  function historyBinaryToken(value) {
+    let token = historyBinaryReverse.get(value);
+    if (token) return token;
+    token = '__history_asset_' + (++historyBinaryCounter) + '__';
+    historyBinaryReverse.set(value, token);
+    historyBinaryPool.set(token, value);
+    return token;
+  }
+
   function snapshotProject() {
-    try { return JSON.stringify(project); } catch (_) { return ''; }
+    try {
+      return JSON.stringify(project, (_key, value) => {
+        if (
+          typeof value === 'string' &&
+          value.length > HISTORY_INLINE_LIMIT &&
+          /^data:/i.test(value)
+        ) {
+          return historyBinaryToken(value);
+        }
+        return value;
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function parseHistorySnapshot(snapshot) {
+    return JSON.parse(snapshot, (_key, value) => {
+      if (
+        typeof value === 'string' &&
+        value.startsWith('__history_asset_') &&
+        historyBinaryPool.has(value)
+      ) {
+        return historyBinaryPool.get(value);
+      }
+      return value;
+    });
   }
 
   function resetHistory() {
     undoStack = [];
     redoStack = [];
+    historyBinaryPool = new Map();
+    historyBinaryReverse = new Map();
+    historyBinaryCounter = 0;
     historySnapshot = snapshotProject();
   }
 
@@ -871,7 +1121,7 @@
     applyingHistory = true;
     try {
       if (current) targetStack.push(current);
-      project = normalizeProject(JSON.parse(snapshot));
+      project = normalizeProject(parseHistorySnapshot(snapshot));
       currentSceneId = project.scenes.some((scene) => scene.id === currentSceneId)
         ? currentSceneId
         : (project.firstScene || project.scenes[0]?.id || null);
