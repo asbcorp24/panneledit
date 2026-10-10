@@ -735,6 +735,7 @@
       this.disposeMeshes();
       this.texture?.dispose?.();
       this.renderer?.dispose?.();
+      this.renderer?.forceContextLoss?.();
       this.container?.classList.remove('xr-media-host');
       if (this.container) this.container.innerHTML = '';
     }
