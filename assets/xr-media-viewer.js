@@ -733,7 +733,16 @@
       this.spatialOverlay?.destroy();
       this.spatialOverlay = null;
       this.disposeMeshes();
-      this.texture?.dispose?.();
+      if (this.texture) {
+        this.texture.dispose?.();
+        if (this.mediaKind !== 'video') {
+          try {
+            if (this.texture.image && 'src' in this.texture.image) this.texture.image.src = '';
+          } catch (_) {}
+        }
+        try { this.texture.image = null; } catch (_) {}
+        this.texture = null;
+      }
       this.renderer?.dispose?.();
       this.renderer?.forceContextLoss?.();
       this.container?.classList.remove('xr-media-host');
