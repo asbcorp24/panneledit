@@ -137,7 +137,7 @@
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(48, 1, .01, 100);
       this.renderer = new THREE.WebGLRenderer({canvas:this.canvas,antialias:true,alpha:true});
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       this.renderer.xr.enabled = true;
       this.renderer.setClearColor(0x03060d, this.options.backgroundMode === 'transparent' ? 0 : 1);
 
@@ -236,6 +236,7 @@
         texture.colorSpace=this.THREE.SRGBColorSpace;
         texture.minFilter=this.THREE.LinearFilter;
         texture.magFilter=this.THREE.LinearFilter;
+        texture.generateMipmaps=false;
 
         const img=texture.image;
         const w=img?.naturalWidth || img?.width || 4;
