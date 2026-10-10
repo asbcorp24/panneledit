@@ -39,6 +39,8 @@ class ManualAlignmentActivity : AppCompatActivity() {
     private var loadToken = 0
     private var referenceBitmap: Bitmap? = null
     private var currentBitmap: Bitmap? = null
+    private var referencePixelWidth: Int = 1
+    private var referencePixelHeight: Int = 1
 
     private val baseDir: File
         get() = getExternalFilesDir(null) ?: filesDir
@@ -209,10 +211,10 @@ class ManualAlignmentActivity : AppCompatActivity() {
 
         val move = row(topMargin = 7)
         controls.addView(move)
-        move.addView(button("← X") { alignmentView.nudge(-0.0025f, 0f) }, equalParams())
-        move.addView(button("X →") { alignmentView.nudge(0.0025f, 0f) }, equalParams(5))
-        move.addView(button("↑ Y") { alignmentView.nudge(0f, -0.0025f) }, equalParams(5))
-        move.addView(button("Y ↓") { alignmentView.nudge(0f, 0.0025f) }, equalParams(5))
+        move.addView(button("← 1px") { nudgePixels(-1, 0) }, equalParams())
+        move.addView(button("1px →") { nudgePixels(1, 0) }, equalParams(5))
+        move.addView(button("↑ 1px") { nudgePixels(0, -1) }, equalParams(5))
+        move.addView(button("1px ↓") { nudgePixels(0, 1) }, equalParams(5))
 
         val geometry = row(topMargin = 7)
         controls.addView(geometry)
@@ -315,14 +317,15 @@ class ManualAlignmentActivity : AppCompatActivity() {
             val referenceSource = ManualAlignmentProcessor.sourceForEditing(session, reference)
             val currentSource = ManualAlignmentProcessor.sourceForEditing(session, shot)
 
-            val refBitmap = GhostFrameDecoder.decode(referenceSource, 1500, 1500)
+            val referenceSize = GhostFrameDecoder.orientedDimensions(referenceSource)
+            val refBitmap = GhostFrameDecoder.decodeMaxDimension(referenceSource, 1500)
             val curBitmap = if (
                 reference.row == shot.row &&
                 reference.sector == shot.sector
             ) {
                 refBitmap
             } else {
-                GhostFrameDecoder.decode(currentSource, 1500, 1500)
+                GhostFrameDecoder.decodeMaxDimension(currentSource, 1500)
             }
 
             runOnUiThread {
@@ -332,6 +335,10 @@ class ManualAlignmentActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
 
+                if (referenceSize != null) {
+                    referencePixelWidth = referenceSize.first.coerceAtLeast(1)
+                    referencePixelHeight = referenceSize.second.coerceAtLeast(1)
+                }
                 replaceBitmaps(refBitmap, curBitmap)
                 val referenceFrame = isReference(shot)
                 alignmentView.editable = !referenceFrame
@@ -534,18 +541,29 @@ class ManualAlignmentActivity : AppCompatActivity() {
     private fun updateTransformLabel() {
         val shot = currentShot()
         if (isReference(shot)) {
-            transformLabel.text = "Эталон: X 0.00% · Y 0.00% · размер 100.0% · угол 0.0°"
+            transformLabel.text =
+                "Эталон ${referencePixelWidth}×${referencePixelHeight} · X 0 px · Y 0 px · размер 100.0% · угол 0.0°"
             return
         }
 
         val t = store.transformFor(shot.row, shot.sector)
         transformLabel.text = String.format(
             Locale.US,
-            "X %+.2f%% · Y %+.2f%% · размер %.1f%% · угол %+.1f°",
-            t.offsetX * 100f,
-            t.offsetY * 100f,
+            "Итог %dx%d · X %+d px · Y %+d px · размер %.1f%% · угол %+.1f°",
+            referencePixelWidth,
+            referencePixelHeight,
+            (t.offsetX * referencePixelWidth).toInt(),
+            (t.offsetY * referencePixelHeight).toInt(),
             t.scale * 100f,
             t.rotation
+        )
+    }
+
+    private fun nudgePixels(dx: Int, dy: Int) {
+        if (referencePixelWidth <= 0 || referencePixelHeight <= 0) return
+        alignmentView.nudge(
+            dx.toFloat() / referencePixelWidth,
+            dy.toFloat() / referencePixelHeight
         )
     }
 
@@ -630,7 +648,14 @@ class ManualAlignmentActivity : AppCompatActivity() {
     override fun onDestroy() {
         loadToken++
         if (::executor.isInitialized) executor.shutdownNow()
-        replaceBitmaps(null, null)
+        if (::alignmentView.isInitialized) {
+            replaceBitmaps(null, null)
+        } else {
+            referenceBitmap?.takeIf { !it.isRecycled }?.recycle()
+            currentBitmap?.takeIf { it !== referenceBitmap && !it.isRecycled }?.recycle()
+            referenceBitmap = null
+            currentBitmap = null
+        }
         super.onDestroy()
     }
 }
