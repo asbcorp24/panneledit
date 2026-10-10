@@ -1967,6 +1967,13 @@
     target.querySelectorAll('.scene-stereo-viewer-host').forEach((host) => {
       try { host._xrViewer?.destroy?.(); } catch (_) {}
     });
+    target.querySelectorAll('video,audio').forEach((media) => {
+      try { media.pause(); } catch (_) {}
+      try { media.removeAttribute('src'); media.load(); } catch (_) {}
+    });
+    target.querySelectorAll('img').forEach((image) => {
+      try { image.removeAttribute('src'); } catch (_) {}
+    });
     releaseAssetUrlPool(target === els.previewSceneOverlay ? previewOverlayAssetUrls : editorOverlayAssetUrls);
     target.innerHTML = '';
     if (!scene) {
@@ -4596,6 +4603,11 @@
     if (!overlay) return;
     mediaXrViewers.forEach((viewer)=>{ try { viewer.destroy(); } catch (_) {} });
     mediaXrViewers = [];
+    overlay.querySelectorAll('video,audio').forEach((media)=>{
+      try { media.pause(); } catch (_) {}
+      try { media.removeAttribute('src'); media.load(); } catch (_) {}
+    });
+    overlay.querySelectorAll('img').forEach((image)=>{ try { image.removeAttribute('src'); } catch (_) {} });
     overlay.innerHTML = '';
     const meta = config.sceneMeta?.[id] || {};
 
@@ -4813,6 +4825,7 @@
   const stopNarration = () => {
     if (narrationAudio) {
       try { narrationAudio.pause(); narrationAudio.currentTime = 0; } catch (_) {}
+      try { narrationAudio.removeAttribute('src'); narrationAudio.load(); } catch (_) {}
     }
     narrationAudio = null;
     narrationButton?.classList.remove('active');
@@ -4833,7 +4846,10 @@
     if (musicButton) musicButton.hidden = !music?.src;
     const nextKey = music?.src || '';
     if (nextKey !== musicKey) {
-      if (musicAudio) { try { musicAudio.pause(); } catch (_) {} }
+      if (musicAudio) {
+        try { musicAudio.pause(); } catch (_) {}
+        try { musicAudio.removeAttribute('src'); musicAudio.load(); } catch (_) {}
+      }
       musicAudio = null; musicKey = nextKey;
       if (music?.src) {
         musicAudio = new Audio(music.src);
