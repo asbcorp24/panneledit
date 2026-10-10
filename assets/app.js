@@ -774,6 +774,44 @@
       if (shouldRevoke) URL.revokeObjectURL(sourceUrl);
     }
   }
+  async function makeViewerImageProxy(source, maxWidth = 4096, maxHeight = 4096, quality = 0.88) {
+    const sourceUrl = source instanceof Blob ? URL.createObjectURL(source) : String(source || '');
+    const shouldRevoke = source instanceof Blob;
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Не удалось создать рабочую копию изображения'));
+        img.src = sourceUrl;
+      });
+
+      const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+      const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+      const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight);
+      if (scale >= 0.999) return null;
+
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { alpha:false });
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error('Не удалось сохранить рабочую копию')),
+          'image/jpeg',
+          quality
+        );
+      });
+    } finally {
+      if (shouldRevoke) URL.revokeObjectURL(sourceUrl);
+    }
+  }
+
 
   async function migrateHeavySceneAssets(targetProject) {
     let changed = false;
