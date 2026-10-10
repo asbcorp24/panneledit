@@ -1,15 +1,28 @@
 plugins { id 'com.android.application' }
 
 android {
+    ndkVersion '27.2.12479018'
     namespace 'ru.asbcorp.xrealstereo'
     compileSdk 35
 
     defaultConfig {
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
         applicationId 'ru.asbcorp.xrealstereo'
         minSdk 28
         targetSdk 35
         versionCode 1
         versionName '1.0.0'
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
     }
 
     buildTypes {
