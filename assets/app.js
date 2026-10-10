@@ -2058,9 +2058,12 @@
       document.body.appendChild(host);
 
       let tempStl = null;
+      const tempUrls = new Set();
       try {
+        const source = await resolveAssetSource(data.data, tempUrls);
+        const backgroundImage = await resolveAssetSource(stlBackgroundImageForData(data), tempUrls);
         tempStl = new StlXRViewer(host, {
-          source: data.data,
+          source,
           yaw: data.yaw,
           pitch: data.pitch,
           zoom: data.zoom,
@@ -2068,7 +2071,7 @@
           autoRotate: false,
           color: data.color,
           backgroundMode: data.backgroundMode,
-          backgroundImage: stlBackgroundImageForData(data)
+          backgroundImage
         });
         await tempStl.ready;
         tempStl.render();
@@ -2077,6 +2080,7 @@
         return imageData;
       } finally {
         try { tempStl?.destroy(); } catch (_) {}
+        releaseAssetUrlPool(tempUrls);
         host.remove();
       }
     }
@@ -2091,9 +2095,11 @@
     document.body.appendChild(host);
 
     let tempViewer = null;
+    const tempUrls = new Set();
     try {
+      const source = await resolveAssetSource(scene.imageData, tempUrls);
       tempViewer = new XRMediaViewer(host, {
-        source: scene.imageData,
+        source,
         kind: 'image',
         projection: '360',
         yawDirection: 'right-positive',
@@ -2110,6 +2116,7 @@
       return imageData;
     } finally {
       try { tempViewer?.destroy(); } catch (_) {}
+      releaseAssetUrlPool(tempUrls);
       host.remove();
     }
   }
