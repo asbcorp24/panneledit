@@ -1180,6 +1180,7 @@
         ((scene.sceneType === 'xr' || scene.xr) ? xrPlaceholderDataUrl(scene.xr?.projection) :
           ((scene.sceneType === 'stl' || scene.stl) ? stlPlaceholderDataUrl() : ''))
       ),
+      thumbnailData: String(scene.thumbnailData || ''),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
       stl: scene.sceneType === 'stl' || scene.stl ? normalizeStlData(scene.stl || {}) : null,
       xr: scene.sceneType === 'xr' || scene.xr ? normalizeXrData(scene.xr || {}) : null,
@@ -1264,7 +1265,11 @@
       const isObject = scene.sceneType === 'object360';
       const isStl = scene.sceneType === 'stl';
       const isXr = scene.sceneType === 'xr';
-      const thumb = scene.imageData || scene.object360?.coverData || (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''));
+      const rawThumb = scene.thumbnailData || scene.object360?.coverData || scene.imageData ||
+        (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''));
+      const thumb = isAssetRef(rawThumb)
+        ? (isXr ? xrPlaceholderDataUrl(scene.xr?.projection) : (isStl ? stlPlaceholderDataUrl() : ''))
+        : rawThumb;
       const kind = isObject
         ? '<span class="scene-kind">ОБЪЕКТ 360</span>'
         : (isStl
@@ -2409,8 +2414,11 @@
       return null;
     }
 
-    const imageData = await fileToDataURL(file);
-    const dimensions = await getImageDimensions(imageData);
+    const tempUrl = URL.createObjectURL(file);
+    const dimensions = await getImageDimensions(tempUrl);
+    URL.revokeObjectURL(tempUrl);
+    const thumbnailData = await makeImageThumbnail(file);
+    const imageData = await putAssetFile(file);
     if (dimensions) {
       const ratio = dimensions.width / dimensions.height;
       if (ratio < 1.8 || ratio > 2.2) {
@@ -2429,6 +2437,7 @@
       sceneType: 'panorama',
       filename: file.name || (id + '.jpg'),
       imageData,
+      thumbnailData,
       object360: null,
       pitch: 0,
       yaw: 0,
@@ -2455,7 +2464,7 @@
 
     const buffer = await file.arrayBuffer();
     const parsed = StlTools.parseStl(buffer);
-    const stlDataUrl = await fileToDataURL(file);
+    const stlDataUrl = await putAssetFile(file);
 
     const baseId = slugify(title || file.name.replace(/\.stl$/i, ''));
     let id = baseId;
@@ -2485,6 +2494,7 @@
       sceneType: 'stl',
       filename: file.name || (id + '.stl'),
       imageData: stlPlaceholderDataUrl(),
+      thumbnailData: '',
       object360: null,
       stl,
       pitch: 0,
@@ -2510,7 +2520,8 @@
     const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
     if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
 
-    const data = await fileToDataURL(file);
+    const data = await putAssetFile(file);
+    const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
     const xr = normalizeXrData({
       data,
       filename: file.name,
@@ -2535,7 +2546,8 @@
       title: String(title || file.name.replace(/\.[^.]+$/, '') || 'XR Media'),
       sceneType: 'xr',
       filename: file.name || (id + (isImage ? '.jpg' : '.mp4')),
-      imageData: isImage ? data : xrPlaceholderDataUrl(xr.projection),
+      imageData: isImage ? thumbnailData : xrPlaceholderDataUrl(xr.projection),
+      thumbnailData,
       object360: null,
       stl: null,
       xr,
@@ -2629,14 +2641,15 @@
     const sectors = Math.max(inferredSectors, Number(config.sectors) || 1);
     const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
 
+    let coverData = '';
     for (let i = 0; i < frameEntries.length; i++) {
       const entry = frameEntries[i];
-      const base64 = await zip.file(entry.name).async('base64');
-      const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+      const blob = await zip.file(entry.name).async('blob');
+      frames[entry.row][entry.sector] = await putAssetBlob(blob, entry.name.split('/').pop() || ('frame_' + entry.sector));
+      if (!coverData) {
+        try { coverData = await makeImageThumbnail(blob); } catch (_) {}
+      }
     }
-
-    const coverData = frames.flat().find(Boolean) || '';
     const baseId = slugify(title || file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
     let id = baseId;
     let n = 2;
@@ -2663,6 +2676,7 @@
       sceneType: 'object360',
       filename: file.name || (id + '.object360.zip'),
       imageData: coverData,
+      thumbnailData: coverData,
       object360,
       pitch: 0,
       yaw: 0,
