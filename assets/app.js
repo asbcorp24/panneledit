@@ -4066,28 +4066,38 @@
         const settings = normalizeExportSettings(project.exportSettings || {});
 
         if (item.data && ['image','stereo-photo','video','audio','pdf'].includes(item.type)) {
-          let fileData = item.data;
-          if ((item.type === 'image' || item.type === 'stereo-photo') && settings.optimizeEnabled) {
-            fileData = await optimizeImageDataUrl(
-              item.data,
-              Math.min(settings.maxImageWidth, 2560),
-              settings.jpegQuality,
-              /^data:image\/(png|webp)/i.test(item.data)
-            );
+          if (isAssetRef(item.data) && ['video','audio','pdf'].includes(item.type)) {
+            const blob = await getAssetBlob(item.data);
+            if (!blob) throw new Error('Медиафайл не найден: ' + (item.filename || item.title || item.id));
+            const fallback = item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : '.mp3';
+            const filenameExt = String(item.filename || '').toLowerCase().match(/(\.[a-z0-9]{2,5})$/)?.[1] || fallback;
+            const path = dir + '/' + base + filenameExt;
+            root.file(path, blob);
+            exported.src = path;
+          } else {
+            let fileData = await assetValueToDataUrl(item.data);
+            if ((item.type === 'image' || item.type === 'stereo-photo') && settings.optimizeEnabled) {
+              fileData = await optimizeImageDataUrl(
+                fileData,
+                Math.min(settings.maxImageWidth, 2560),
+                settings.jpegQuality,
+                /^data:image\/(png|webp)/i.test(fileData)
+              );
+            }
+            const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : item.type === 'audio' ? '.mp3' : '.jpg');
+            exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
           }
-          const ext = extensionForDataUrl(fileData, item.type === 'pdf' ? '.pdf' : item.type === 'video' ? '.mp4' : item.type === 'audio' ? '.mp3' : '.jpg');
-          exported.src = bundleDataUrlFile(root, fileData, dir + '/' + base + ext);
         }
         if (item.type === 'gallery') {
           for (let galleryIndex = 0; galleryIndex < (item.gallery || []).length; galleryIndex++) {
             const entry = item.gallery[galleryIndex];
-            let fileData = entry.data;
+            let fileData = await assetValueToDataUrl(entry.data);
             if (settings.optimizeEnabled) {
               fileData = await optimizeImageDataUrl(
-                entry.data,
+                fileData,
                 Math.min(settings.maxImageWidth, 2560),
                 settings.jpegQuality,
-                /^data:image\/(png|webp)/i.test(entry.data)
+                /^data:image\/(png|webp)/i.test(fileData)
               );
             }
             const ext = extensionForDataUrl(fileData, '.jpg');
@@ -4102,16 +4112,23 @@
     return output;
   }
 
-  function bundleAudioSlot(root, slot, baseName) {
+  async function bundleAudioSlot(root, slot, baseName) {
     const data = normalizeAudioSlot(slot || {}, { volume: 50, loop: false });
     if (!data.data) return null;
 
     const ext = audioExtension(data);
     const filename = safeFilename(baseName, 'audio') + '.' + ext;
     const path = 'audio/' + filename;
-    const payload = dataUrlPayload(data.data);
-    if (payload.base64) root.file(path, payload.data, { base64: true });
-    else root.file(path, decodeURIComponent(payload.data));
+
+    if (isAssetRef(data.data)) {
+      const blob = await getAssetBlob(data.data);
+      if (!blob) throw new Error('Аудиофайл не найден: ' + (data.filename || filename));
+      root.file(path, blob);
+    } else {
+      const payload = dataUrlPayload(data.data);
+      if (payload.base64) root.file(path, payload.data, { base64: true });
+      else root.file(path, decodeURIComponent(payload.data));
+    }
 
     return {
       src: path,
@@ -5690,7 +5707,7 @@
       }
 
       const audioConfig = {
-        projectMusic: bundleAudioSlot(
+        projectMusic: await bundleAudioSlot(
           root,
           project.audio?.music,
           'project-music'
@@ -5698,13 +5715,14 @@
         scenes: {}
       };
 
-      project.scenes.forEach((scene, index) => {
+      for (let index = 0; index < project.scenes.length; index++) {
+        const scene = project.scenes[index];
         const audio = normalizeSceneAudio(scene.audio || {});
         audioConfig.scenes[scene.id] = {
-          music: bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
-          narration: bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
+          music: await bundleAudioSlot(root, audio.music, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-music'),
+          narration: await bundleAudioSlot(root, audio.narration, 'scene-' + safeFilename(scene.id || String(index + 1), 'scene') + '-narration')
         };
-      });
+      }
 
       const mediaConfig = await bundleMediaObjects(root);
 
