@@ -89,12 +89,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         root.addView(captureButton,lp(-1,dp(60)));
 
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
-        Button reset=button("Сброс"), settings=button("Настройки"), diag=button("Camera2"), v4l2=button("V4L2");
+        Button reset=button("Сброс"), settings=button("Настройки"), diag=button("Camera2"), v4l2=button("V4L2"), xreal=button("XREAL API");
         reset.setOnClickListener(v->resetSession());
         settings.setOnClickListener(v->chooseSettings());
         diag.setOnClickListener(v->showDiagnostics());
         v4l2.setOnClickListener(v->showV4L2Diagnostics());
-        for(Button b:new Button[]{reset,settings,diag,v4l2})row.addView(b,new LinearLayout.LayoutParams(0,dp(52),1f));
+        xreal.setOnClickListener(v->showXrealNativeApi());
+        for(Button b:new Button[]{reset,settings,diag,v4l2,xreal})row.addView(b,new LinearLayout.LayoutParams(0,dp(52),1f));
         root.addView(row);
 
         TextView hint=tv("Важно: при первом запуске штатной камеры выберите режим Spatial/3D. Beam Pro обычно запоминает последний выбранный режим.",12,false);
@@ -259,6 +260,87 @@ public class MainActivity extends Activity implements SensorEventListener {
         new AlertDialog.Builder(this).setTitle("Beam Pro diagnostics").setView(s).setPositiveButton("OK",null).show();
     }
 
+
+
+    private void showXrealNativeApi(){
+        status.setText("Проверяю libnr_api.so и XREAL camera API…");
+        new Thread(() -> {
+            String basic;
+            try{
+                basic=NativeV4L2.probeNrApi(false);
+            }catch(Throwable e){
+                basic="{\"loaded\":false,\"javaError\":\""+esc(String.valueOf(e))+"\"}";
+            }
+            final String result=basic;
+            runOnUiThread(() -> {
+                StringBuilder x=new StringBuilder();
+                try{
+                    JSONObject root=new JSONObject(result);
+                    x.append("libnr_api loaded: ").append(root.optBoolean("loaded")).append("\n");
+                    x.append("loadedFrom: ").append(root.optString("loadedFrom")).append("\n\n");
+                    JSONObject syms=root.optJSONObject("symbols");
+                    if(syms!=null){
+                        Iterator<String> it=syms.keys();
+                        while(it.hasNext()){
+                            String k=it.next();
+                            x.append(k).append(" = ").append(syms.optBoolean(k)?"FOUND":"MISSING").append("\n");
+                        }
+                    }
+                    JSONArray errors=root.optJSONArray("errors");
+                    if(errors!=null){
+                        x.append("\nLoad errors:\n");
+                        for(int i=0;i<errors.length();i++)x.append(errors.optString(i)).append("\n");
+                    }
+                }catch(Exception e){
+                    x.append("Parse error: ").append(e).append("\n").append(result);
+                }
+
+                TextView t=tv(x.toString(),12,false);
+                t.setTextColor(0xff111111);
+                t.setPadding(dp(12),dp(12),dp(12),dp(12));
+                t.setTextIsSelectable(true);
+                ScrollView s=new ScrollView(this); s.addView(t);
+                new AlertDialog.Builder(this)
+                        .setTitle("XREAL native API")
+                        .setView(s)
+                        .setNegativeButton("Закрыть",null)
+                        .setPositiveButton("ТЕСТ NRRGBCameraCreate",(d,w)->runXrealCreateTest())
+                        .show();
+                status.setText("Проверка XREAL API завершена.");
+            });
+        }).start();
+    }
+
+    private void runXrealCreateTest(){
+        status.setText("Вызываю NRRGBCameraCreate()…");
+        new Thread(() -> {
+            String r;
+            try{
+                r=NativeV4L2.probeNrApi(true);
+            }catch(Throwable e){
+                r="{\"loaded\":false,\"javaError\":\""+esc(String.valueOf(e))+"\"}";
+            }
+            final String result=r;
+            runOnUiThread(() -> {
+                String msg=result;
+                try{
+                    JSONObject o=new JSONObject(result);
+                    msg="libnr_api: "+o.optBoolean("loaded")+
+                        "\nNRRGBCameraCreate symbol: "+(o.optJSONObject("symbols")!=null && o.optJSONObject("symbols").optBoolean("NRRGBCameraCreate"))+
+                        "\ncreateAttempted: "+o.optBoolean("createAttempted")+
+                        "\ncreateResult: "+o.optInt("createResult",-9999)+
+                        "\ncameraHandle: "+o.optLong("cameraHandle",0)+
+                        "\ndestroyResult: "+o.optInt("destroyResult",-9999);
+                }catch(Exception ignored){}
+                new AlertDialog.Builder(this)
+                        .setTitle("NRRGBCameraCreate test")
+                        .setMessage(msg)
+                        .setPositiveButton("OK",null)
+                        .show();
+                status.setText(msg);
+            });
+        }).start();
+    }
 
     private void showV4L2Diagnostics(){
         status.setText("Сканирую /dev/video* через NDK/V4L2…");
