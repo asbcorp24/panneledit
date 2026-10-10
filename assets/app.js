@@ -508,6 +508,7 @@
     const kind = input.kind === 'image' ? 'image' : 'video';
     return {
       data: String(input.data || ''),
+      viewerData: String(input.viewerData || ''),
       filename: String(input.filename || ''),
       kind,
       projection,
@@ -1300,6 +1301,7 @@
           ((scene.sceneType === 'stl' || scene.stl) ? stlPlaceholderDataUrl() : ''))
       ),
       thumbnailData: String(scene.thumbnailData || ''),
+      viewerImageData: String(scene.viewerImageData || ''),
       object360: scene.sceneType === 'object360' || scene.object360 ? normalizeObject360Data(scene.object360 || {}) : null,
       stl: scene.sceneType === 'stl' || scene.stl ? normalizeStlData(scene.stl || {}) : null,
       xr: scene.sceneType === 'xr' || scene.xr ? normalizeXrData(scene.xr || {}) : null,
@@ -2627,6 +2629,10 @@
     URL.revokeObjectURL(tempUrl);
     const thumbnailData = await makeImageThumbnail(file);
     const imageData = await putAssetFile(file);
+    const viewerProxyBlob = await makeViewerImageProxy(file);
+    const viewerImageData = viewerProxyBlob
+      ? await putAssetBlob(viewerProxyBlob, (file.name || 'panorama') + '.viewer.jpg')
+      : '';
     if (dimensions) {
       const ratio = dimensions.width / dimensions.height;
       if (ratio < 1.8 || ratio > 2.2) {
@@ -2646,6 +2652,7 @@
       filename: file.name || (id + '.jpg'),
       imageData,
       thumbnailData,
+      viewerImageData,
       object360: null,
       pitch: 0,
       yaw: 0,
@@ -2730,8 +2737,13 @@
 
     const data = await putAssetFile(file);
     const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
+    const viewerProxyBlob = isImage ? await makeViewerImageProxy(file) : null;
+    const viewerData = viewerProxyBlob
+      ? await putAssetBlob(viewerProxyBlob, (file.name || 'xr-image') + '.viewer.jpg')
+      : '';
     const xr = normalizeXrData({
       data,
+      viewerData,
       filename: file.name,
       kind: isImage ? 'image' : 'video',
       projection,
