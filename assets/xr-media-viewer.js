@@ -570,6 +570,13 @@
       this.camera.rotation.set(this.pitch * DEG, cameraYaw * DEG, 0, 'YXZ');
     }
 
+    releaseStaticTextureCpuCopy() {
+      if (this.mediaKind === 'video' || !this.texture?.image) return;
+      const image = this.texture.image;
+      try { if ('src' in image) image.src = ''; } catch (_) {}
+      try { this.texture.image = null; } catch (_) {}
+    }
+
     render() {
       if (this.destroyed || !this.renderer || !this.scene || !this.camera) return;
 
@@ -591,6 +598,7 @@
         // WebXR owns the eye viewport. Do not override it with drawing-buffer
         // dimensions because WebGLRenderer applies devicePixelRatio internally.
         this.renderer.render(this.scene, this.camera);
+        this.releaseStaticTextureCpuCopy();
         return;
       }
 
@@ -600,6 +608,7 @@
         // renderer.setSize() already restored the full viewport in CSS pixels.
         // Passing canvas.width/canvas.height here would apply DPR twice.
         this.renderer.render(this.scene, this.camera);
+        this.releaseStaticTextureCpuCopy();
         return;
       }
 
@@ -623,6 +632,7 @@
       this.renderer.render(this.scene, this.camera);
 
       this.renderer.setScissorTest(false);
+      this.releaseStaticTextureCpuCopy();
     }
 
     resize() {
