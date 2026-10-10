@@ -411,7 +411,13 @@
       }
       if (value && typeof value === 'object') {
         const out = {};
-        for (const [key, item] of Object.entries(value)) out[key] = await cloneValue(item);
+        for (const [key, item] of Object.entries(value)) {
+          if (key === 'viewerImageData' || key === 'viewerData') {
+            out[key] = '';
+            continue;
+          }
+          out[key] = await cloneValue(item);
+        }
         return out;
       }
       return value;
