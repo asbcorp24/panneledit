@@ -44,6 +44,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".ManualAlignmentActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+            android:exported="false" />
+
+        <activity
             android:name=".HelpActivity"
             android:exported="false" />
 
