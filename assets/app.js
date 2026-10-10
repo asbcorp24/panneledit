@@ -6887,7 +6887,8 @@
       const file = els.sceneImageReplace.files?.[0];
       if (!scene || scene.sceneType !== 'panorama' || !file) return;
       try {
-        scene.imageData = await fileToDataURL(file);
+        scene.thumbnailData = await makeImageThumbnail(file);
+        scene.imageData = await putAssetFile(file);
         scene.filename = file.name;
         let updated = 0;
         try {
@@ -6938,22 +6939,29 @@
         const sectors = Math.max(Number(config.sectors) || 1, Math.max(...entries.map((item) => item.sector)) + 1);
         const frames = Array.from({ length: rows }, () => Array(sectors).fill(''));
 
+        let coverData = '';
         for (const entry of entries) {
-          const base64 = await zip.file(entry.name).async('base64');
-          const mime = entry.ext === 'png' ? 'image/png' : entry.ext === 'webp' ? 'image/webp' : 'image/jpeg';
-          frames[entry.row][entry.sector] = dataUrlForBase64(mime, base64);
+          const blob = await zip.file(entry.name).async('blob');
+          frames[entry.row][entry.sector] = await putAssetBlob(
+            blob,
+            entry.name.split('/').pop() || ('frame_' + entry.sector)
+          );
+          if (!coverData) {
+            try { coverData = await makeImageThumbnail(blob); } catch (_) {}
+          }
         }
 
         scene.id = oldId;
         scene.title = oldTitle;
         scene.filename = file.name;
-        scene.imageData = frames.flat().find(Boolean) || '';
+        scene.imageData = coverData;
+        scene.thumbnailData = coverData;
         scene.object360 = normalizeObject360Data({
           ...config,
           sectors,
           rows,
           frames,
-          coverData: scene.imageData,
+          coverData,
           frameCount: entries.length,
           startSector: 0,
           startRow: rows === 3 ? 1 : 0,
@@ -6982,7 +6990,7 @@
 
         const buffer = await file.arrayBuffer();
         const parsed = StlTools.parseStl(buffer);
-        const data = await fileToDataURL(file);
+        const data = await putAssetFile(file);
         scene.filename = file.name;
         scene.stl = normalizeStlData({
           ...scene.stl,
@@ -7012,7 +7020,8 @@
         const isImage = /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
         const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|webm)$/i.test(file.name || '');
         if (!isImage && !isVideo) throw new Error('XR поддерживает MP4, WEBM, JPG, PNG и WEBP');
-        const data = await fileToDataURL(file);
+        const data = await putAssetFile(file);
+        const thumbnailData = isImage ? await makeImageThumbnail(file) : '';
         scene.filename = file.name;
         scene.xr = normalizeXrData({
           ...scene.xr,
@@ -7022,7 +7031,8 @@
           autoplay: isVideo ? scene.xr?.autoplay : false,
           loop: isVideo ? scene.xr?.loop : false
         });
-        scene.imageData = isImage ? data : xrPlaceholderDataUrl(scene.xr.projection);
+        scene.thumbnailData = thumbnailData;
+        scene.imageData = isImage ? thumbnailData : xrPlaceholderDataUrl(scene.xr.projection);
         markDirty();
         renderViewer();
         showToast('XR медиа заменено');
