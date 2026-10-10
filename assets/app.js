@@ -2289,7 +2289,7 @@
     let tempViewer = null;
     const tempUrls = new Set();
     try {
-      const source = await resolveAssetSource(scene.imageData, tempUrls);
+      const source = await resolveAssetSource(scene.viewerImageData || scene.imageData, tempUrls);
       tempViewer = new XRMediaViewer(host, {
         source,
         kind: 'image',
