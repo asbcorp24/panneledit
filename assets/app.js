@@ -5380,7 +5380,8 @@
       for (let index = 0; index < panoramaScenes.length; index++) {
         const scene = panoramaScenes[index];
         const settings = normalizeExportSettings(project.exportSettings || {});
-        const optimized = await optimizeImageDataUrl(scene.imageData, settings.maxImageWidth, settings.jpegQuality);
+        const panoramaData = await assetValueToDataUrl(scene.imageData);
+        const optimized = await optimizeImageDataUrl(panoramaData, settings.maxImageWidth, settings.jpegQuality);
         const ext = settings.optimizeEnabled ? 'jpg' : extensionForScene(scene);
         const baseName = safeFilename(scene.title || scene.id, 'panorama-' + (index + 1));
         let filename = baseName + '.' + ext;
@@ -5405,7 +5406,8 @@
             const frame = data.frames[row]?.[sector] || '';
             if (!frame) continue;
             const settings = normalizeExportSettings(project.exportSettings || {});
-            const optimizedFrame = await optimizeImageDataUrl(frame, settings.objectFrameWidth, settings.jpegQuality);
+            const frameData = await assetValueToDataUrl(frame);
+            const optimizedFrame = await optimizeImageDataUrl(frameData, settings.objectFrameWidth, settings.jpegQuality);
             const payload = dataUrlPayload(optimizedFrame);
             const mime = String(payload.mime || '').toLowerCase();
             const ext = settings.optimizeEnabled ? 'jpg' : (mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg');
@@ -5433,7 +5435,6 @@
         const data = normalizeStlData(scene.stl || {});
         if (!data.data) throw new Error('STL данные отсутствуют: ' + scene.title);
 
-        const payload = dataUrlPayload(data.data);
         const baseName = safeFilename(scene.title || scene.id, 'model-' + (sceneIndex + 1));
         let filename = baseName + '.stl';
         let suffix = 2;
@@ -5443,8 +5444,15 @@
         usedNames.add(filename.toLowerCase());
 
         const modelPath = 'models/' + filename;
-        if (payload.base64) root.file(modelPath, payload.data, { base64: true });
-        else root.file(modelPath, decodeURIComponent(payload.data));
+        if (isAssetRef(data.data)) {
+          const modelBlob = await getAssetBlob(data.data);
+          if (!modelBlob) throw new Error('STL данные отсутствуют: ' + scene.title);
+          root.file(modelPath, modelBlob);
+        } else {
+          const payload = dataUrlPayload(data.data);
+          if (payload.base64) root.file(modelPath, payload.data, { base64: true });
+          else root.file(modelPath, decodeURIComponent(payload.data));
+        }
 
         let backgroundImage = '';
         let backgroundMode = data.backgroundMode || 'hitech';
@@ -5470,9 +5478,10 @@
           const bgScene = getScene(data.backgroundSceneId);
           if (bgScene?.sceneType === 'panorama' && bgScene.imageData) {
             const settings = normalizeExportSettings(project.exportSettings || {});
+            const bgSourceData = await assetValueToDataUrl(bgScene.imageData);
             const bgData = settings.optimizeEnabled
-              ? await optimizeImageDataUrl(bgScene.imageData, settings.maxImageWidth, settings.jpegQuality, false)
-              : bgScene.imageData;
+              ? await optimizeImageDataUrl(bgSourceData, settings.maxImageWidth, settings.jpegQuality, false)
+              : bgSourceData;
             const bgPayload = dataUrlPayload(bgData);
             const bgMime = String(bgPayload.mime || '').toLowerCase();
             const bgExt = bgMime.includes('png') ? 'png' : bgMime.includes('webp') ? 'webp' : 'jpg';
@@ -5506,18 +5515,22 @@
 
         let mediaData = data.data;
         if (data.kind === 'image') {
+          mediaData = await assetValueToDataUrl(data.data);
           const settings = normalizeExportSettings(project.exportSettings || {});
           if (settings.optimizeEnabled) {
             mediaData = await optimizeImageDataUrl(
-              data.data,
+              mediaData,
               Math.min(settings.maxImageWidth, 8192),
               settings.jpegQuality,
-              /^data:image\/(png|webp)/i.test(data.data)
+              /^data:image\/(png|webp)/i.test(mediaData)
             );
           }
         }
 
-        const ext = extensionForDataUrl(mediaData, data.kind === 'image' ? '.jpg' : '.mp4');
+        const filenameExt = String(data.filename || scene.filename || '').toLowerCase().match(/(\.[a-z0-9]{2,5})$/)?.[1] || '';
+        const ext = data.kind === 'image'
+          ? extensionForDataUrl(mediaData, '.jpg')
+          : (filenameExt || '.mp4');
         const baseName = safeFilename(scene.title || scene.id, 'xr-' + (sceneIndex + 1));
         let filename = baseName + ext;
         let suffix = 2;
@@ -5527,7 +5540,13 @@
         usedNames.add(filename.toLowerCase());
 
         const sourcePath = 'xr/' + filename;
-        bundleDataUrlFile(root, mediaData, sourcePath);
+        if (data.kind === 'video' && isAssetRef(data.data)) {
+          const mediaBlob = await getAssetBlob(data.data);
+          if (!mediaBlob) throw new Error('XR данные отсутствуют: ' + scene.title);
+          root.file(sourcePath, mediaBlob);
+        } else {
+          bundleDataUrlFile(root, mediaData, sourcePath);
+        }
 
         xrSceneFiles.set(scene.id, {
           source: sourcePath,
