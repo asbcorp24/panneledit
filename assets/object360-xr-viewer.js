@@ -419,7 +419,7 @@
     }
 
     preloadNeighbours() {
-      [-2,-1,1,2].forEach(async delta=>{
+      [-1,1].forEach(async delta=>{
         let src='';
         try{
           src=await this.resolveFrame(this.row,this.sector+delta);
