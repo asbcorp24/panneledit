@@ -2360,6 +2360,8 @@
       const data = normalizeObject360Data(scene.object360 || {});
       scene.object360 = data;
       try {
+        const backgroundImage = await resolveAssetSource(data.backgroundImageData, viewerAssetUrls);
+        if (token !== renderViewerToken) return;
         objectViewer = new Object360XRViewer(els.panorama, {
           domOverlayRoot: els.sceneOverlay,
           sectors: data.sectors,
@@ -2375,7 +2377,7 @@
           autoplay: data.autoplay,
           backgroundMode: data.backgroundMode,
           backgroundColor: data.backgroundColor,
-          backgroundImage: data.backgroundImageData,
+          backgroundImage,
           threeModuleUrl: 'assets/three.module.min.js',
           onFrameChange: (state) => {
             els.coords.textContent =
@@ -3123,7 +3125,7 @@
       showToast('Добавьте изображения галереи');
       return;
     }
-    if (type === 'stereo-photo' && pendingMediaData && !/^data:image\/(jpeg|png|webp);/i.test(pendingMediaData)) {
+    if (type === 'stereo-photo' && pendingMediaData && !isAssetRef(pendingMediaData) && !/^data:image\/(jpeg|png|webp);/i.test(pendingMediaData)) {
       showToast('Для стерео фото выберите JPG, PNG или WEBP');
       return;
     }
@@ -5885,6 +5887,8 @@
     if (scene.sceneType === 'object360') {
       if (!window.Object360XRViewer) return;
       const data = normalizeObject360Data(scene.object360 || {});
+      const backgroundImage = await resolveAssetSource(data.backgroundImageData, previewAssetUrls);
+      if (token !== previewRenderToken) return;
       previewObjectViewer = new Object360XRViewer(els.previewPanorama, {
         domOverlayRoot: els.previewSceneOverlay,
         sectors: data.sectors,
@@ -5900,7 +5904,7 @@
         autoplay: data.autoplay,
         backgroundMode: data.backgroundMode,
         backgroundColor: data.backgroundColor,
-        backgroundImage: data.backgroundImageData,
+        backgroundImage,
         onFrameChange: (state) => renderDynamicScreenHotspots(scene, els.previewSceneOverlay, state, { editor:false })
       });
       renderDynamicScreenHotspots(scene, els.previewSceneOverlay, previewObjectViewer.getState(), { editor:false });
