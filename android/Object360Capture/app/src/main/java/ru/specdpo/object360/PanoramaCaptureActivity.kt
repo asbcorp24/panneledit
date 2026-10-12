@@ -354,9 +354,17 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         val step = 360f / sectors
         val sector = currentSector()
         val target = sector * step
-        val error = angularDistance(rel, target)
+        val signedError = signedAngularError(rel, target)
+        val error = kotlin.math.abs(signedError)
+        val targetPitch = when (row) {
+            0 -> 28f
+            1 -> 0f
+            else -> -28f
+        }
+        val pitchError = targetPitch - pitch
+        val pitchGood = kotlin.math.abs(pitchError) < 8f
         val captured = frames.any { it.row == row && it.index == sector }
-        val good = stable && error < 5f
+        val good = stable && error < 5f && pitchGood
 
         guide.setTextColor(
             when {
@@ -368,9 +376,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
         guide.text = when {
             captured -> "✓ СЕКТОР СНЯТ\nПОВЕРНИТЕСЬ ДАЛЬШЕ →"
+            kotlin.math.abs(pitchError) >= 8f ->
+                if (pitchError > 0f)
+                    "↑ ПОДНИМИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
+                else
+                    "↓ ОПУСТИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
             good -> "● ГОТОВО\nДЕРЖИТЕ НЕПОДВИЖНО"
-            error > 0f && error <= step / 2f -> "← " + error.toInt() + "°"
-            else -> "→ " + kotlin.math.abs(error).toInt() + "°"
+            signedError > 0f -> "← ПОВЕРНИТЕ " + error.toInt() + "°"
+            else -> "ПОВЕРНИТЕ " + error.toInt() + "° →"
         }
 
         if (autoCapture && good && !captured && !busy) {
@@ -387,10 +400,10 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         }
     }
 
-    private fun angularDistance(a: Float, b: Float): Float {
+    private fun signedAngularError(a: Float, b: Float): Float {
         var d = (a - b + 540f) % 360f - 180f
         if (d < -180f) d += 360f
-        return kotlin.math.abs(d)
+        return d
     }
 
     private fun loadGhost(file: File) {
