@@ -614,13 +614,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                                     .putExtra(PanoramaViewerActivity.EXTRA_FILE, output.absolutePath)
                             )
                         }
-                        dialog.setNeutralButton("Открыть JPG") { _, _ ->
-                            if (uri != null) {
-                                startActivity(Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, "image/jpeg")
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                })
-                            }
+                        dialog.setNeutralButton("Редактор") { _, _ ->
+                            startActivity(
+                                Intent(this, PanoramaEditorActivity::class.java)
+                                    .putExtra(PanoramaEditorActivity.EXTRA_FILE, output.absolutePath)
+                            )
                         }
                     } else {
                         dialog.setPositiveButton("Открыть JPG") { _, _ ->
@@ -630,6 +628,12 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 })
                             }
+                        }
+                        dialog.setNeutralButton("Редактор") { _, _ ->
+                            startActivity(
+                                Intent(this, PanoramaEditorActivity::class.java)
+                                    .putExtra(PanoramaEditorActivity.EXTRA_FILE, output.absolutePath)
+                            )
                         }
                     }
 
