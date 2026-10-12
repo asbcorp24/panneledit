@@ -42,7 +42,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var btnDown: Button
 
     private var kind = PanoramaKind.FULL_360
-    private val sectors = 18
+    private val sectors = 12
     private var row = 1
     private var baseYaw = 0f
     private var yaw = 0f
