@@ -587,14 +587,22 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 runOnUiThread {
                     busy = false
                     btnBuild.isEnabled = true
-                    AlertDialog.Builder(this)
+                    val dialog = AlertDialog.Builder(this)
                         .setTitle("Панорама готова")
                         .setMessage(
                             "Итоговый JPG сохранён в Pictures/Panorama.\n\n" +
                             "Файл: " + output.name + "\n" +
                             "Кадров: " + frames.size
                         )
-                        .setPositiveButton("Открыть") { _, _ ->
+
+                    if (kind == PanoramaKind.FULL_360) {
+                        dialog.setPositiveButton("Смотреть 360°") { _, _ ->
+                            startActivity(
+                                Intent(this, PanoramaViewerActivity::class.java)
+                                    .putExtra(PanoramaViewerActivity.EXTRA_FILE, output.absolutePath)
+                            )
+                        }
+                        dialog.setNeutralButton("Открыть JPG") { _, _ ->
                             if (uri != null) {
                                 startActivity(Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, "image/jpeg")
@@ -602,6 +610,18 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                                 })
                             }
                         }
+                    } else {
+                        dialog.setPositiveButton("Открыть JPG") { _, _ ->
+                            if (uri != null) {
+                                startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "image/jpeg")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                })
+                            }
+                        }
+                    }
+
+                    dialog
                         .setNegativeButton("Закрыть", null)
                         .show()
                     updateModeUi()
