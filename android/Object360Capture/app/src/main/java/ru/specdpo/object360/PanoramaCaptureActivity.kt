@@ -44,6 +44,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var guide: TextView
     private lateinit var ghost: ImageView
     private lateinit var btnOrientation: Button
+    private lateinit var cameraGuideOverlay: PanoramaGuideOverlay
     private var rectangularDirection = 1
 
     private var kind = PanoramaKind.FULL_360
@@ -75,13 +76,21 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildUi()
-        tracker = OrientationTracker(this) { newYaw, pitch, stable ->
-            runOnUiThread {
-                yaw = newYaw
-                updateStatus(pitch)
-                updateGuide(pitch, stable)
+        tracker = OrientationTracker(
+            this,
+            { newYaw, pitch, stable ->
+                runOnUiThread {
+                    yaw = newYaw
+                    updateStatus(pitch)
+                    updateGuide(pitch, stable)
+                }
+            },
+            { _, _, roll, _ ->
+                runOnUiThread {
+                    cameraGuideOverlay.updateRoll(roll)
+                }
             }
-        }
+        )
         CaptureOrientationSettings.apply(this)
         chooseMode()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -132,6 +141,9 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             visibility = android.view.View.GONE
         }
         root.addView(ghost, FrameLayout.LayoutParams(-1, -1))
+
+        cameraGuideOverlay = PanoramaGuideOverlay(this)
+        root.addView(cameraGuideOverlay, FrameLayout.LayoutParams(-1, -1))
 
         guide = TextView(this).apply {
             gravity = Gravity.CENTER
