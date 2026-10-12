@@ -11,7 +11,8 @@ import kotlin.math.abs
 
 class OrientationTracker(
     context: Context,
-    private val onUpdate: (yawDeg: Float, pitchDeg: Float, stable: Boolean) -> Unit
+    private val onUpdate: (yawDeg: Float, pitchDeg: Float, stable: Boolean) -> Unit,
+    private val onDetailedUpdate: ((yawDeg: Float, pitchDeg: Float, rollDeg: Float, stable: Boolean) -> Unit)? = null
 ) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -67,7 +68,11 @@ class OrientationTracker(
                 SensorManager.getOrientation(remapped, orientation)
                 val yaw = Math.toDegrees(orientation[0].toDouble()).toFloat()
                 val pitch = Math.toDegrees(orientation[1].toDouble()).toFloat()
-                onUpdate(normalize360(yaw), pitch, gyroMagnitude < 0.12f)
+                val roll = Math.toDegrees(orientation[2].toDouble()).toFloat()
+                val stable = gyroMagnitude < 0.12f
+                val normalizedYaw = normalize360(yaw)
+                onUpdate(normalizedYaw, pitch, stable)
+                onDetailedUpdate?.invoke(normalizedYaw, pitch, roll, stable)
             }
         }
     }
