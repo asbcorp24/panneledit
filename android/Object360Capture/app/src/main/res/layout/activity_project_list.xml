@@ -47,6 +47,16 @@
             android:textStyle="bold" />
 
         <Button
+            android:id="@+id/btnPanorama"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_button"
+            android:text="ПАНОРАМА"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <Button
             android:id="@+id/btnNewProject"
             android:layout_width="wrap_content"
             android:layout_height="48dp"
