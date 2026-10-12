@@ -14,11 +14,16 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import ru.specdpo.object360.databinding.ActivityProjectListBinding
 import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -26,6 +31,33 @@ class ProjectListActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityProjectListBinding
     private lateinit var executor: ExecutorService
+    private var currentTab = "objects"
+
+    private val importPanorama = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        executor.execute {
+            try {
+                val dir = PanoramaLibrary.importDir(baseDir)
+                val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val out = File(dir, "import_" + stamp + ".jpg")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(out).use { output -> input.copyTo(output) }
+                } ?: throw IllegalStateException("Не удалось прочитать файл")
+
+                runOnUiThread {
+                    currentTab = "panoramas"
+                    renderProjects()
+                    Toast.makeText(this, "Панорама импортирована", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Ошибка импорта: " + e.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     private val baseDir: File
         get() = getExternalFilesDir(null) ?: filesDir
@@ -36,6 +68,20 @@ class ProjectListActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         executor = Executors.newSingleThreadExecutor()
+
+        binding.btnTabObjects.setOnClickListener {
+            currentTab = "objects"
+            renderProjects()
+        }
+
+        binding.btnTabPanoramas.setOnClickListener {
+            currentTab = "panoramas"
+            renderProjects()
+        }
+
+        binding.btnTabImport.setOnClickListener {
+            importPanorama.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+        }
 
         binding.btnHelp.setOnClickListener {
             startActivity(
@@ -59,9 +105,26 @@ class ProjectListActivity : AppCompatActivity() {
     }
 
     private fun renderProjects() {
-        val projects = CaptureSession.list(baseDir)
-
         binding.projectContainer.removeAllViews()
+
+        binding.btnNewProject.visibility = if (currentTab == "objects") View.VISIBLE else View.GONE
+        binding.btnPanorama.visibility = if (currentTab == "panoramas") View.VISIBLE else View.GONE
+
+        if (currentTab == "panoramas") {
+            val panoramas = PanoramaLibrary.list(baseDir)
+            binding.emptyProjects.text = if (panoramas.isEmpty())
+                "Пока нет панорам.\nНажмите ПАНОРАМА или ИМПОРТ."
+            else ""
+            binding.emptyProjects.visibility = if (panoramas.isEmpty()) View.VISIBLE else View.GONE
+            binding.projectScroll.visibility = if (panoramas.isEmpty()) View.GONE else View.VISIBLE
+            panoramas.forEach { item ->
+                binding.projectContainer.addView(panoramaCard(item))
+            }
+            return
+        }
+
+        val projects = CaptureSession.list(baseDir)
+        binding.emptyProjects.text = "Пока нет проектов.\nСоздайте первый объект."
         binding.emptyProjects.visibility = if (projects.isEmpty()) View.VISIBLE else View.GONE
         binding.projectScroll.visibility = if (projects.isEmpty()) View.GONE else View.VISIBLE
 
@@ -246,6 +309,103 @@ class ProjectListActivity : AppCompatActivity() {
                         cover.setImageBitmap(bitmap)
                     }
                 }
+            }
+        }
+
+        return card
+    }
+
+    private fun panoramaCard(item: PanoramaLibraryItem): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = roundedBackground(
+                fill = Color.rgb(13, 19, 34),
+                stroke = Color.argb(35, 255, 255, 255),
+                radiusDp = 16
+            )
+        }
+        card.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        card.addView(row)
+
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(Color.rgb(4, 8, 18))
+        }
+        row.addView(image, LinearLayout.LayoutParams(dp(132), dp(84)).apply {
+            marginEnd = dp(12)
+        })
+
+        val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        row.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        info.addView(TextView(this).apply {
+            text = item.file.name
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+
+        info.addView(TextView(this).apply {
+            text = (if (item.is360) "360° ПАНОРАМА" else "ПРЯМОУГОЛЬНАЯ") +
+                " • " + item.width + "×" + item.height
+            setTextColor(Color.rgb(117, 231, 214))
+            textSize = 11f
+            setPadding(0, dp(4), 0, 0)
+        })
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        card.addView(actions)
+
+        actions.addView(actionButton(if (item.is360) "Смотреть 360°" else "Открыть") {
+            if (item.is360) {
+                startActivity(
+                    Intent(this, PanoramaViewerActivity::class.java)
+                        .putExtra(PanoramaViewerActivity.EXTRA_FILE, item.file.absolutePath)
+                )
+            } else {
+                val uri = FileProvider.getUriForFile(this, packageName + ".files", item.file)
+                startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "image/jpeg")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            }
+        }, actionParams())
+
+        actions.addView(actionButton("Редактор") {
+            startActivity(
+                Intent(this, PanoramaEditorActivity::class.java)
+                    .putExtra(PanoramaEditorActivity.EXTRA_FILE, item.file.absolutePath)
+            )
+        }, actionParams(startMargin = 6))
+
+        actions.addView(actionButton("Удалить") {
+            AlertDialog.Builder(this)
+                .setTitle("Удалить панораму?")
+                .setMessage(item.file.name)
+                .setPositiveButton("Удалить") { _, _ ->
+                    item.file.delete()
+                    renderProjects()
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
+        }, actionParams(startMargin = 6))
+
+        executor.execute {
+            val bitmap = GhostFrameDecoder.decode(item.file, 700, 450)
+            runOnUiThread {
+                if (!isFinishing && bitmap != null) image.setImageBitmap(bitmap)
             }
         }
 
