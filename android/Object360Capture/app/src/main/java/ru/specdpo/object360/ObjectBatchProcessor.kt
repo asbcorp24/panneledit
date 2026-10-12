@@ -10,6 +10,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 enum class ObjectProcessMode {
+    TRIM_GRAY_BORDERS,
     AUTO_CROP,
     TRANSPARENT_BACKGROUND,
     SOLID_BACKGROUND
@@ -34,6 +35,13 @@ object ObjectBatchProcessor {
             top = min(top, other.top)
             right = max(right, other.right)
             bottom = max(bottom, other.bottom)
+        }
+
+        fun intersect(other: NormRect) {
+            left = max(left, other.left)
+            top = max(top, other.top)
+            right = min(right, other.right)
+            bottom = min(bottom, other.bottom)
         }
 
         fun isValid(): Boolean =
@@ -63,8 +71,17 @@ object ObjectBatchProcessor {
 
         if (shots.isEmpty()) return ProcessResult(0, 0, false)
 
-        onProgress(0, shots.size, "Анализирую положение объекта…")
-        val commonCrop = findCommonCrop(shots)
+        onProgress(
+            0,
+            shots.size,
+            if (mode == ObjectProcessMode.TRIM_GRAY_BORDERS)
+                "Ищу общую область без серых полей…"
+            else
+                "Анализирую положение объекта…"
+        )
+        val commonCrop =
+            if (mode == ObjectProcessMode.TRIM_GRAY_BORDERS) findCommonSafeCrop(shots)
+            else findCommonCrop(shots)
 
         var processed = 0
         var failed = 0
@@ -82,6 +99,7 @@ object ObjectBatchProcessor {
 
                 val crop = pixelCrop(commonCrop, oriented.width, oriented.height)
                 val output = when (mode) {
+                    ObjectProcessMode.TRIM_GRAY_BORDERS,
                     ObjectProcessMode.AUTO_CROP ->
                         Bitmap.createBitmap(
                             oriented,
@@ -149,6 +167,52 @@ object ObjectBatchProcessor {
             failed = failed,
             transparent = mode == ObjectProcessMode.TRANSPARENT_BACKGROUND
         )
+    }
+
+    /**
+     * Массовая обрезка полей после ручного выравнивания.
+     *
+     * Для каждого кадра определяется область, не связанная с однотонным/серым
+     * фоном по краям. Затем берётся ПЕРЕСЕЧЕНИЕ этих областей. Поэтому после
+     * обработки все кадры имеют одинаковую геометрию и ни на одном из них
+     * не остаётся серого клина/полосы от смещения, масштаба или поворота.
+     */
+    private fun findCommonSafeCrop(shots: List<ShotInfo>): NormRect {
+        val safe = NormRect(0f, 0f, 1f, 1f)
+        var detected = 0
+
+        shots.forEach { shot ->
+            val bitmap = GhostFrameDecoder.decode(shot.file, 640, 640) ?: return@forEach
+            try {
+                val mask = buildBackgroundMask(bitmap)
+                val bounds = foregroundBounds(mask, bitmap.width, bitmap.height) ?: return@forEach
+
+                val rect = NormRect(
+                    bounds.left.toFloat() / bitmap.width,
+                    bounds.top.toFloat() / bitmap.height,
+                    bounds.right.toFloat() / bitmap.width,
+                    bounds.bottom.toFloat() / bitmap.height
+                )
+                safe.intersect(rect)
+                detected++
+            } finally {
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+        }
+
+        if (detected == 0 || !safe.isValid()) {
+            return NormRect(0f, 0f, 1f, 1f)
+        }
+
+        // Небольшой запас внутрь гарантирует, что после округления пикселей
+        // по краю не останется тонкой серой линии.
+        val inset = 0.0035f
+        safe.left = (safe.left + inset).coerceAtMost(0.49f)
+        safe.top = (safe.top + inset).coerceAtMost(0.49f)
+        safe.right = (safe.right - inset).coerceAtLeast(0.51f)
+        safe.bottom = (safe.bottom - inset).coerceAtLeast(0.51f)
+
+        return if (safe.isValid()) safe else NormRect(0f, 0f, 1f, 1f)
     }
 
     private fun findCommonCrop(shots: List<ShotInfo>): NormRect {
