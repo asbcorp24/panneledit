@@ -4135,12 +4135,20 @@
     project.scenes
       .filter((scene) => scene.sceneType === 'panorama')
       .forEach((scene) => {
+        const multires = multiresScenes.get(scene.id) || null;
         config.scenes[scene.id] = {
           type: 'panorama',
           source: 'images/' + sceneFiles.get(scene.id),
           yaw: Number(scene.yaw) || 0,
           pitch: Number(scene.pitch) || 0,
-          fov: Number(scene.hfov) || 100
+          fov: Number(scene.hfov) || 100,
+          multires: multires ? {
+            basePath: 'multires/' + multires.sceneDir,
+            tileResolution: multires.tileResolution,
+            maxLevel: multires.maxLevel,
+            cubeResolution: multires.cubeResolution,
+            thumbnail: multires.thumbnail
+          } : null
         };
       });
 
@@ -4329,6 +4337,7 @@
       '  <script src="assets/object360-xr-viewer.js"></script>\n' +
       '  <script src="assets/stl-xr-viewer.js"></script>\n' +
       '  <script src="assets/xr-media-viewer.js"></script>\n' +
+      '  <script src="assets/multires-panorama-viewer.js"></script>\n' +
       '  <script src="assets/tour.js"></script>\n' +
       (pwa ? '  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>\n' : '') +
       '</body>\n</html>\n';
@@ -4959,7 +4968,30 @@
         return;
       }
       const data = config.scenes?.[id];
-      if (!data || !window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">Three.js panorama недоступна</div>'; return; }
+      if (!data) { host.innerHTML='<div class="viewer-error">Панорама недоступна</div>'; return; }
+
+      if (data.multires && window.MultiresPanoramaViewer) {
+        panoViewer = new MultiresPanoramaViewer(host,{
+          basePath:data.multires.basePath,
+          tileResolution:data.multires.tileResolution,
+          maxLevel:data.multires.maxLevel,
+          cubeResolution:data.multires.cubeResolution,
+          yaw:Number(data.yaw)||0,
+          pitch:Number(data.pitch)||0,
+          fov:Number(data.fov)||100,
+          autoRotate:Number(config.autoRotate)||0,
+          threeModuleUrl:'assets/three.module.min.js',
+          onChange:(state)=>renderDynamicHotspots(id,state,panoViewer)
+        });
+        panoViewer.ready.then(()=>{
+          renderDynamicHotspots(id,panoViewer.getState(),panoViewer);
+        }).catch(()=>{
+          host.innerHTML='<div class="viewer-error">Ошибка загрузки Multires панорамы</div>';
+        });
+        return;
+      }
+
+      if (!window.XRMediaViewer) { host.innerHTML='<div class="viewer-error">Three.js panorama недоступна</div>'; return; }
       panoViewer = new XRMediaViewer(host,{
         domOverlayRoot:overlay,
         source:data.source,
@@ -5564,7 +5596,7 @@
     const assets = new Set([
       './','index.html','assets/tour.css','assets/tour.js','assets/stl-viewer.js',
       'assets/xr-spatial-overlay.js','assets/object360-xr-viewer.js','assets/stl-xr-viewer.js','assets/xr-media-viewer.js',
-      'assets/three.module.min.js','assets/three.core.min.js',
+      'assets/multires-panorama-viewer.js','assets/three.module.min.js','assets/three.core.min.js',
       'manifest.webmanifest','icons/app-icon.svg'
     ]);
 
@@ -5664,6 +5696,18 @@
         const payload = dataUrlPayload(optimized);
         if (payload.base64) root.file('images/' + filename, payload.data, { base64: true });
         else root.file('images/' + filename, decodeURIComponent(payload.data));
+
+        if (project.settings.multiresEnabled) {
+          button.textContent = 'Multires ' + (index + 1) + '/' + panoramaScenes.length + '…';
+          const multires = await generateSceneMultires(
+            root,
+            scene,
+            index,
+            panoramaScenes.length,
+            button
+          );
+          multiresScenes.set(scene.id, multires);
+        }
       }
 
       for (let sceneIndex = 0; sceneIndex < objectScenes.length; sceneIndex++) {
@@ -5895,6 +5939,8 @@
       root.file('assets/stl-xr-viewer.js', await stlXrViewerAsset.text());
       const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
+      const multiresViewerAsset = await fetchRequiredAsset('assets/multires-panorama-viewer.js');
+      root.file('assets/multires-panorama-viewer.js', await multiresViewerAsset.text());
       const threeAsset = await fetchRequiredAsset('assets/three.module.min.js');
       root.file('assets/three.module.min.js', await threeAsset.text());
       const threeCoreAsset = await fetchRequiredAsset('assets/three.core.min.js');
@@ -6452,7 +6498,7 @@
       ? els.defaultTransition.value : 'fade';
     project.settings.autoRotateEnabled = els.autoRotateEnabled.checked;
     project.settings.autoRotate = Number(els.autoRotate.value) || -2;
-    project.settings.multiresEnabled = false;
+    project.settings.multiresEnabled = Boolean(els.multiresEnabled.checked);
     project.settings.multiresTileSize = [512, 1024].includes(Number(els.multiresTileSize.value))
       ? Number(els.multiresTileSize.value) : 512;
     project.settings.multiresQuality = clampNumber(els.multiresQuality.value, 50, 100, 85);
