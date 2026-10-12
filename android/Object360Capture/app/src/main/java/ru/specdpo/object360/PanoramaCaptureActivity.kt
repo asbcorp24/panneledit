@@ -43,6 +43,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var btnDown: Button
     private lateinit var guide: TextView
     private lateinit var ghost: ImageView
+    private lateinit var btnOrientation: Button
+    private var rectangularDirection = 1
 
     private var kind = PanoramaKind.FULL_360
     private val sectors = 12
@@ -80,6 +82,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 updateGuide(pitch, stable)
             }
         }
+        CaptureOrientationSettings.apply(this)
         chooseMode()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
@@ -110,6 +113,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 calibrated = false
                 frames.clear()
                 rectangularIndex = 0
+                rectangularDirection = 1
                 updateModeUi()
             }
             .setCancelable(false)
@@ -182,6 +186,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             updateGuide(0f, false)
         }, weightParams())
 
+        btnOrientation = button("ОРИЕНТАЦИЯ") {
+            showOrientationDialog()
+        }
+        topButtons.addView(btnOrientation, weightParams())
+
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -244,6 +253,27 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
         setContentView(root)
         updateModeUi()
+    }
+
+    private fun showOrientationDialog() {
+        val modes = CaptureOrientationMode.values()
+        val current = CaptureOrientationSettings.get(this)
+        val checked = modes.indexOf(current).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle("Ориентация съёмки")
+            .setSingleChoiceItems(
+                modes.map { it.title }.toTypedArray(),
+                checked
+            ) { dialog, which ->
+                val mode = modes[which]
+                CaptureOrientationSettings.set(this, mode)
+                CaptureOrientationSettings.apply(this, mode)
+                btnOrientation.text = "ОРИЕНТАЦИЯ: " + mode.buttonLabel
+                dialog.dismiss()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
 
     private fun button(text: String, action: () -> Unit): Button =
@@ -408,13 +438,56 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
     private fun loadGhost(file: File) {
         executor.execute {
-            val bmp = GhostFrameDecoder.decode(file, 720, 720)
+            val source = GhostFrameDecoder.decode(file, 960, 960)
+
+            val prepared = if (source != null && kind == PanoramaKind.RECTANGULAR) {
+                val stripWidth = (source.width * 0.34f).toInt().coerceAtLeast(1)
+                val startX =
+                    if (rectangularDirection >= 0)
+                        (source.width - stripWidth).coerceAtLeast(0)
+                    else
+                        0
+
+                val strip = android.graphics.Bitmap.createBitmap(
+                    source,
+                    startX,
+                    0,
+                    stripWidth,
+                    source.height
+                )
+
+                if (strip !== source && !source.isRecycled) source.recycle()
+                strip
+            } else {
+                source
+            }
+
             runOnUiThread {
                 val old = ghostBitmap
-                ghostBitmap = bmp
-                ghost.setImageBitmap(bmp)
-                ghost.visibility = if (bmp != null) android.view.View.VISIBLE else android.view.View.GONE
-                if (old != null && old !== bmp && !old.isRecycled) old.recycle()
+                ghostBitmap = prepared
+                ghost.setImageBitmap(prepared)
+
+                if (kind == PanoramaKind.RECTANGULAR && prepared != null) {
+                    ghost.scaleType = ImageView.ScaleType.FIT_XY
+                    val width = (resources.displayMetrics.widthPixels * 0.34f).toInt()
+                    val params = FrameLayout.LayoutParams(
+                        width,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        if (rectangularDirection >= 0) Gravity.START else Gravity.END
+                    )
+                    ghost.layoutParams = params
+                } else {
+                    ghost.scaleType = ImageView.ScaleType.CENTER_CROP
+                    ghost.layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                }
+
+                ghost.visibility =
+                    if (prepared != null) android.view.View.VISIBLE else android.view.View.GONE
+
+                if (old != null && old !== prepared && !old.isRecycled) old.recycle()
             }
         }
     }
@@ -429,7 +502,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 "Наведите камеру вперёд и нажмите СТАРТ / 0°. Для 360° снимите 3 ряда."
         } else {
             status.text = "ПРЯМОУГОЛЬНАЯ • кадров: " + frames.size
-            hint.text = "Снимайте последовательно с перекрытием примерно 30–50%. Затем нажмите СОБРАТЬ JPG."
+            hint.text =
+                if (rectangularDirection >= 0)
+                    "Двигайтесь слева направо. Совмещайте левую часть нового кадра с ghost правого края предыдущего."
+                else
+                    "Двигайтесь справа налево. Совмещайте правую часть нового кадра с ghost левого края предыдущего."
         }
     }
 
@@ -447,7 +524,9 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         btnDown.isEnabled = row > 0
         btnUp.isEnabled = row < 2
         btnBuild.isEnabled = frames.size >= 2
-        ghost.alpha = if (kind == PanoramaKind.RECTANGULAR) 0.32f else 0.20f
+        btnOrientation.text =
+            "ОРИЕНТАЦИЯ: " + CaptureOrientationSettings.get(this).buttonLabel
+        ghost.alpha = if (kind == PanoramaKind.RECTANGULAR) 0.38f else 0.20f
         if (frames.isEmpty()) {
             ghost.visibility = android.view.View.GONE
         }
