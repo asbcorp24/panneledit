@@ -22,6 +22,16 @@ object PanoramaStitcher {
         onProgress: (String) -> Unit = {}
     ): File {
         require(frames.isNotEmpty()) { "Нет кадров" }
+
+        if (kind == PanoramaKind.RECTANGULAR) {
+            onProgress("OpenCV: поиск ключевых точек")
+            val files = frames.sortedBy { it.index }.map { it.file }
+            if (OpenCvRectangularStitcher.stitch(files, output, onProgress)) {
+                return output
+            }
+            onProgress("OpenCV не смог сопоставить кадры — использую резервную склейку")
+        }
+
         val rows = frames.groupBy { it.row }.toSortedMap().mapNotNull { (row, list) ->
             onProgress("Склейка ряда " + (row + 1))
             stitchRow(list.sortedBy { it.index }.map { it.file })
