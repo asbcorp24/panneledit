@@ -39,6 +39,12 @@
             android:exported="false" />
 
         <activity
+            android:name=".PanoramaViewerActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
+            android:screenOrientation="fullSensor"
+            android:exported="false" />
+
+        <activity
             android:name=".PanoramaCaptureActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden"
             android:exported="false" />
