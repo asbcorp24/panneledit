@@ -191,6 +191,16 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         }
         topButtons.addView(btnOrientation, weightParams())
 
+        topButtons.addView(button("НАПРАВЛЕНИЕ") {
+            if (kind == PanoramaKind.RECTANGULAR) {
+                rectangularDirection *= -1
+                frames.lastOrNull()?.file?.let { loadGhost(it) }
+                updateModeUi()
+            } else {
+                Toast.makeText(this, "Направление используется для прямоугольной панорамы", Toast.LENGTH_SHORT).show()
+            }
+        }, weightParams())
+
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -501,7 +511,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             else
                 "Наведите камеру вперёд и нажмите СТАРТ / 0°. Для 360° снимите 3 ряда."
         } else {
-            status.text = "ПРЯМОУГОЛЬНАЯ • кадров: " + frames.size
+            status.text = "ПРЯМОУГОЛЬНАЯ • кадров: " + frames.size +
+                if (rectangularDirection >= 0) " • →" else " • ←"
             hint.text =
                 if (rectangularDirection >= 0)
                     "Двигайтесь слева направо. Совмещайте левую часть нового кадра с ghost правого края предыдущего."
