@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.Surface
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -40,6 +41,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var btnBuild: Button
     private lateinit var btnUp: Button
     private lateinit var btnDown: Button
+    private lateinit var guide: TextView
+    private lateinit var ghost: ImageView
 
     private var kind = PanoramaKind.FULL_360
     private val sectors = 12
@@ -49,6 +52,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private var calibrated = false
     private var busy = false
     private var rectangularIndex = 0
+    private var stableSince = 0L
+    private var lastAutoRow = -1
+    private var lastAutoSector = -1
+    private var autoCapture = true
+    private var ghostBitmap: android.graphics.Bitmap? = null
     private val frames = mutableListOf<PanoramaFrame>()
 
     private val sessionId = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -65,10 +73,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildUi()
-        tracker = OrientationTracker(this) { newYaw, pitch, _ ->
+        tracker = OrientationTracker(this) { newYaw, pitch, stable ->
             runOnUiThread {
                 yaw = newYaw
                 updateStatus(pitch)
+                updateGuide(pitch, stable)
             }
         }
         chooseMode()
@@ -113,6 +122,25 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         preview = PreviewView(this).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
         root.addView(preview, FrameLayout.LayoutParams(-1, -1))
 
+        ghost = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            alpha = 0.25f
+            visibility = android.view.View.GONE
+        }
+        root.addView(ghost, FrameLayout.LayoutParams(-1, -1))
+
+        guide = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(0x66000000)
+        }
+        root.addView(
+            guide,
+            FrameLayout.LayoutParams(-2, -2, Gravity.CENTER)
+        )
+
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -148,6 +176,11 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             updateStatus(0f)
         }
         topButtons.addView(btnStart, weightParams(8))
+
+        topButtons.addView(button("AUTO") {
+            autoCapture = !autoCapture
+            updateGuide(0f, false)
+        }, weightParams())
 
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -273,6 +306,10 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                     if (kind == PanoramaKind.RECTANGULAR) rectangularIndex++
                     runOnUiThread {
                         busy = false
+                        lastAutoRow = row
+                        lastAutoSector = index
+                        stableSince = 0L
+                        loadGhost(file)
                         updateModeUi()
                     }
                 }
@@ -291,6 +328,82 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         val rel = normalize(yaw - baseYaw)
         val step = 360f / sectors
         return floor((rel + step / 2f) / step).toInt() % sectors
+    }
+
+    private fun updateGuide(pitch: Float, stable: Boolean) {
+        if (kind == PanoramaKind.RECTANGULAR) {
+            guide.setTextColor(if (stable) 0xFF7CFF9B.toInt() else Color.WHITE)
+            guide.text = if (frames.isEmpty()) {
+                "СНИМИТЕ ПЕРВЫЙ КАДР"
+            } else if (stable) {
+                "✓ ДЕРЖИТЕ ПЕРЕКРЫТИЕ 30–50%"
+            } else {
+                "→ СМЕЩАЙТЕ КАМЕРУ\nСОВМЕСТИТЕ С GHOST"
+            }
+            return
+        }
+
+        if (!calibrated) {
+            guide.setTextColor(Color.WHITE)
+            guide.text = "СТАРТ / 0°"
+            stableSince = 0L
+            return
+        }
+
+        val rel = normalize(yaw - baseYaw)
+        val step = 360f / sectors
+        val sector = currentSector()
+        val target = sector * step
+        val error = angularDistance(rel, target)
+        val captured = frames.any { it.row == row && it.index == sector }
+        val good = stable && error < 5f
+
+        guide.setTextColor(
+            when {
+                captured -> 0xFF9AA7B8.toInt()
+                good -> 0xFF7CFF9B.toInt()
+                else -> Color.WHITE
+            }
+        )
+
+        guide.text = when {
+            captured -> "✓ СЕКТОР СНЯТ\nПОВЕРНИТЕСЬ ДАЛЬШЕ →"
+            good -> "● ГОТОВО\nДЕРЖИТЕ НЕПОДВИЖНО"
+            error > 0f && error <= step / 2f -> "← " + error.toInt() + "°"
+            else -> "→ " + kotlin.math.abs(error).toInt() + "°"
+        }
+
+        if (autoCapture && good && !captured && !busy) {
+            if (stableSince == 0L) stableSince = System.currentTimeMillis()
+            if (
+                System.currentTimeMillis() - stableSince > 650L &&
+                !(lastAutoRow == row && lastAutoSector == sector)
+            ) {
+                takeShot()
+                stableSince = 0L
+            }
+        } else {
+            stableSince = 0L
+        }
+    }
+
+    private fun angularDistance(a: Float, b: Float): Float {
+        var d = (a - b + 540f) % 360f - 180f
+        if (d < -180f) d += 360f
+        return kotlin.math.abs(d)
+    }
+
+    private fun loadGhost(file: File) {
+        executor.execute {
+            val bmp = GhostFrameDecoder.decode(file, 720, 720)
+            runOnUiThread {
+                val old = ghostBitmap
+                ghostBitmap = bmp
+                ghost.setImageBitmap(bmp)
+                ghost.visibility = if (bmp != null) android.view.View.VISIBLE else android.view.View.GONE
+                if (old != null && old !== bmp && !old.isRecycled) old.recycle()
+            }
+        }
     }
 
     private fun updateStatus(pitch: Float) {
@@ -321,7 +434,12 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         btnDown.isEnabled = row > 0
         btnUp.isEnabled = row < 2
         btnBuild.isEnabled = frames.size >= 2
+        ghost.alpha = if (kind == PanoramaKind.RECTANGULAR) 0.32f else 0.20f
+        if (frames.isEmpty()) {
+            ghost.visibility = android.view.View.GONE
+        }
         updateStatus(0f)
+        updateGuide(0f, false)
     }
 
     private fun buildPanorama() {
