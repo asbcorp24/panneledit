@@ -137,17 +137,9 @@ object PanoramaStitcher {
     }
 
     private fun twoToOne(source: Bitmap): Bitmap {
-        val targetH = max(1, source.width / 2)
-        if (source.height == targetH) return source
-        val out = Bitmap.createBitmap(source.width, targetH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawColor(android.graphics.Color.BLACK)
-        val scale = min(source.width.toFloat() / source.width, targetH.toFloat() / source.height)
-        val h = max(1, (source.height * scale).toInt())
-        val w = max(1, (source.width * scale).toInt())
-        val left = (source.width - w) / 2
-        val top = (targetH - h) / 2
-        canvas.drawBitmap(source, null, Rect(left, top, left + w, top + h), Paint(Paint.FILTER_BITMAP_FLAG))
-        return out
+        val targetWidth = min(4096, source.width)
+        val targetHeight = max(1, targetWidth / 2)
+        if (source.width == targetWidth && source.height == targetHeight) return source
+        return Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
     }
 }
