@@ -26,7 +26,8 @@ object ObjectProcessingDialog {
         }
 
         val items = arrayOf(
-            "Автообрезка — одинаковый crop всей серии",
+            "Обрезать серые поля — массово, без прыжков",
+            "Автообрезка объекта — одинаковый crop всей серии",
             "Удалить фон → прозрачный PNG",
             "Удалить фон → однотонный цвет"
         )
@@ -35,7 +36,8 @@ object ObjectProcessingDialog {
             .setTitle("Обработка Object360")
             .setMessage(
                 "Обработка применяется ко всей серии. " +
-                    "Автообрезка использует общую рамку для всех кадров, чтобы объект не прыгал."
+                    "Обрезка серых полей берёт общую безопасную область всех кадров, " +
+                    "поэтому размер и координаты остаются одинаковыми."
             )
             .setItems(items) { _, which ->
                 when (which) {
@@ -43,7 +45,7 @@ object ObjectProcessingDialog {
                         activity,
                         session,
                         executor,
-                        ObjectProcessMode.AUTO_CROP,
+                        ObjectProcessMode.TRIM_GRAY_BORDERS,
                         Color.WHITE,
                         onDone
                     )
@@ -52,12 +54,21 @@ object ObjectProcessingDialog {
                         activity,
                         session,
                         executor,
+                        ObjectProcessMode.AUTO_CROP,
+                        Color.WHITE,
+                        onDone
+                    )
+
+                    2 -> run(
+                        activity,
+                        session,
+                        executor,
                         ObjectProcessMode.TRANSPARENT_BACKGROUND,
                         Color.TRANSPARENT,
                         onDone
                     )
 
-                    2 -> askSolidColor(activity) { color ->
+                    3 -> askSolidColor(activity) { color ->
                         run(
                             activity,
                             session,
@@ -196,7 +207,9 @@ object ObjectProcessingDialog {
                     append("Ошибок: ${result.failed}\n")
                     append("Формат: $format\n\n")
                     append(
-                        if (mode == ObjectProcessMode.AUTO_CROP) {
+                        if (mode == ObjectProcessMode.TRIM_GRAY_BORDERS) {
+                            "Серые поля удалены общей безопасной рамкой для всей серии."
+                        } else if (mode == ObjectProcessMode.AUTO_CROP) {
                             "Для всей серии применена одна общая рамка."
                         } else {
                             "Фон определён автоматически от краёв кадра. " +
