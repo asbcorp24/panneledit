@@ -49,6 +49,34 @@ object PublicStorage {
         }
     }
 
+    fun publishPanorama(
+        context: Context,
+        source: File,
+        displayName: String
+    ): Uri? {
+        val relativePath = "Pictures/Panorama/"
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            publishMediaStoreFile(
+                context = context,
+                source = source,
+                collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                displayName = displayName,
+                mimeType = "image/jpeg",
+                relativePath = relativePath
+            )
+        } else {
+            publishLegacyFile(
+                context = context,
+                source = source,
+                root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                subDir = "Panorama",
+                displayName = displayName,
+                mimeType = "image/jpeg"
+            )
+        }
+    }
+
     fun publishZip(
         context: Context,
         source: File,
