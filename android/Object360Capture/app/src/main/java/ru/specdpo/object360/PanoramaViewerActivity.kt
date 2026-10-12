@@ -1,13 +1,18 @@
 package ru.specdpo.object360
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import android.opengl.Matrix
 import android.os.Bundle
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
@@ -34,9 +39,44 @@ class PanoramaViewerActivity : AppCompatActivity() {
             return
         }
 
-        title = "Просмотр 360°"
-        setContentView(PanoramaSurfaceView(this, file))
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+        }
+
+        val surface = PanoramaSurfaceView(this, file)
+        root.addView(surface, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        val cardboard = Button(this).apply {
+            text = "CARDBOARD"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xAA162238.toInt())
+            setOnClickListener {
+                val enabled = surface.toggleCardboard()
+                text = if (enabled) "ВЫХОД" else "CARDBOARD"
+            }
+        }
+
+        root.addView(
+            cardboard,
+            FrameLayout.LayoutParams(
+                dp(132),
+                dp(48),
+                Gravity.TOP or Gravity.END
+            ).apply {
+                topMargin = dp(14)
+                marginEnd = dp(14)
+            }
+        )
+
+        setContentView(root)
     }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     companion object {
         const val EXTRA_FILE = "panorama_file"
@@ -62,12 +102,20 @@ private class PanoramaSurfaceView(
 
     private var lastX = 0f
     private var lastY = 0f
+    private var cardboard = false
 
     init {
         setEGLContextClientVersion(2)
         setRenderer(renderer360)
         renderMode = RENDERMODE_WHEN_DIRTY
         preserveEGLContextOnPause = true
+    }
+
+    fun toggleCardboard(): Boolean {
+        cardboard = !cardboard
+        renderer360.setCardboard(cardboard)
+        requestRender()
+        return cardboard
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -113,14 +161,10 @@ private class PanoramaRenderer(
     private var width = 1
     private var height = 1
 
-    @Volatile
-    private var yaw = 0f
-
-    @Volatile
-    private var pitch = 0f
-
-    @Volatile
-    private var fov = 75f
+    @Volatile private var yaw = 0f
+    @Volatile private var pitch = 0f
+    @Volatile private var fov = 75f
+    @Volatile private var cardboard = false
 
     private var program = 0
     private var textureId = 0
@@ -150,12 +194,33 @@ private class PanoramaRenderer(
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         this.width = width.coerceAtLeast(1)
         this.height = height.coerceAtLeast(1)
-        GLES20.glViewport(0, 0, this.width, this.height)
-        updateProjection()
     }
 
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+
+        if (cardboard) {
+            val half = (width / 2).coerceAtLeast(1)
+            drawEye(0, 0, half, height)
+            drawEye(half, 0, width - half, height)
+        } else {
+            drawEye(0, 0, width, height)
+        }
+    }
+
+    private fun drawEye(x: Int, y: Int, w: Int, h: Int) {
+        val safeW = w.coerceAtLeast(1)
+        val safeH = h.coerceAtLeast(1)
+
+        GLES20.glViewport(x, y, safeW, safeH)
+        Matrix.perspectiveM(
+            projection,
+            0,
+            fov,
+            safeW.toFloat() / safeH.toFloat(),
+            0.1f,
+            200f
+        )
 
         Matrix.setIdentityM(model, 0)
         Matrix.rotateM(model, 0, -pitch, 1f, 0f, 0f)
@@ -174,25 +239,11 @@ private class PanoramaRenderer(
 
         vertexBuffer.position(0)
         GLES20.glEnableVertexAttribArray(pos)
-        GLES20.glVertexAttribPointer(
-            pos,
-            3,
-            GLES20.GL_FLOAT,
-            false,
-            3 * 4,
-            vertexBuffer
-        )
+        GLES20.glVertexAttribPointer(pos, 3, GLES20.GL_FLOAT, false, 3 * 4, vertexBuffer)
 
         texBuffer.position(0)
         GLES20.glEnableVertexAttribArray(uv)
-        GLES20.glVertexAttribPointer(
-            uv,
-            2,
-            GLES20.GL_FLOAT,
-            false,
-            2 * 4,
-            texBuffer
-        )
+        GLES20.glVertexAttribPointer(uv, 2, GLES20.GL_FLOAT, false, 2 * 4, texBuffer)
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
@@ -210,6 +261,10 @@ private class PanoramaRenderer(
         GLES20.glDisableVertexAttribArray(uv)
     }
 
+    fun setCardboard(enabled: Boolean) {
+        cardboard = enabled
+    }
+
     fun rotate(dx: Float, dy: Float) {
         yaw = (yaw + dx) % 360f
         pitch = (pitch + dy).coerceIn(-85f, 85f)
@@ -218,19 +273,6 @@ private class PanoramaRenderer(
     fun zoom(scaleFactor: Float) {
         if (scaleFactor <= 0f) return
         fov = (fov / scaleFactor).coerceIn(30f, 105f)
-        updateProjection()
-    }
-
-    private fun updateProjection() {
-        val aspect = width.toFloat() / height.coerceAtLeast(1).toFloat()
-        Matrix.perspectiveM(
-            projection,
-            0,
-            fov,
-            aspect,
-            0.1f,
-            200f
-        )
     }
 
     private fun buildSphere() {
@@ -278,22 +320,19 @@ private class PanoramaRenderer(
             }
         }
 
-        vertexBuffer = ByteBuffer
-            .allocateDirect(vertices.size * 4)
+        vertexBuffer = ByteBuffer.allocateDirect(vertices.size * 4)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
         vertices.forEach { vertexBuffer.put(it) }
         vertexBuffer.position(0)
 
-        texBuffer = ByteBuffer
-            .allocateDirect(uvs.size * 4)
+        texBuffer = ByteBuffer.allocateDirect(uvs.size * 4)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
         uvs.forEach { texBuffer.put(it) }
         texBuffer.position(0)
 
-        indexBuffer = ByteBuffer
-            .allocateDirect(indices.size * 2)
+        indexBuffer = ByteBuffer.allocateDirect(indices.size * 2)
             .order(ByteOrder.nativeOrder())
             .asShortBuffer()
         indices.forEach { indexBuffer.put(it) }
@@ -309,33 +348,12 @@ private class PanoramaRenderer(
         GLES20.glGenTextures(1, ids, 0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
 
-        GLES20.glTexParameteri(
-            GLES20.GL_TEXTURE_2D,
-            GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR
-        )
-        GLES20.glTexParameteri(
-            GLES20.GL_TEXTURE_2D,
-            GLES20.GL_TEXTURE_MAG_FILTER,
-            GLES20.GL_LINEAR
-        )
-        GLES20.glTexParameteri(
-            GLES20.GL_TEXTURE_2D,
-            GLES20.GL_TEXTURE_WRAP_S,
-            GLES20.GL_REPEAT
-        )
-        GLES20.glTexParameteri(
-            GLES20.GL_TEXTURE_2D,
-            GLES20.GL_TEXTURE_WRAP_T,
-            GLES20.GL_CLAMP_TO_EDGE
-        )
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_REPEAT)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
-        GLUtils.texImage2D(
-            GLES20.GL_TEXTURE_2D,
-            0,
-            bitmap,
-            0
-        )
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
         bitmap.recycle()
         return ids[0]
     }
@@ -361,8 +379,8 @@ private class PanoramaRenderer(
         }
     }
 
-    private fun compileShader(type: Int, source: String): Int {
-        return GLES20.glCreateShader(type).also { shader ->
+    private fun compileShader(type: Int, source: String): Int =
+        GLES20.glCreateShader(type).also { shader ->
             GLES20.glShaderSource(shader, source)
             GLES20.glCompileShader(shader)
 
@@ -374,7 +392,6 @@ private class PanoramaRenderer(
                 throw IllegalStateException("OpenGL shader error: " + message)
             }
         }
-    }
 
     companion object {
         private const val VERTEX_SHADER = """
