@@ -36,4 +36,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
     implementation("com.google.ar:core:1.56.0")
+
+    // Official OpenCV Android AAR. Used for robust rectangular panorama stitching:
+    // ORB features -> RANSAC homography -> perspective warp -> overlap blending.
+    implementation("org.opencv:opencv:4.14.0")
 }
