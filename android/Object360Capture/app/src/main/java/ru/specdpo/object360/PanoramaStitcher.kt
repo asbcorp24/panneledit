@@ -38,13 +38,13 @@ object PanoramaStitcher {
     }
 
     private fun stitchRow(files: List<File>): Bitmap? {
-        var out = files.firstOrNull()?.let { GhostFrameDecoder.decodeMaxDimension(it, 1600) } ?: return null
+        var out = files.firstOrNull()?.let { GhostFrameDecoder.decodeMaxDimension(it, 1000) } ?: return null
         files.drop(1).forEach { file ->
-            val right = GhostFrameDecoder.decodeMaxDimension(file, 1600) ?: return@forEach
+            val right = GhostFrameDecoder.decodeMaxDimension(file, 1000) ?: return@forEach
             val merged = merge(out, right)
             out.recycle()
             right.recycle()
-            out = merged
+            out = limitWidth(merged, 4096)
         }
         return out
     }
@@ -126,6 +126,14 @@ object PanoramaStitcher {
         }
         scaled.forEachIndexed { i, bmp -> if (bmp !== rows[i]) bmp.recycle() }
         return out
+    }
+
+    private fun limitWidth(source: Bitmap, maxWidth: Int): Bitmap {
+        if (source.width <= maxWidth) return source
+        val targetHeight = max(1, source.height * maxWidth / source.width)
+        val scaled = Bitmap.createScaledBitmap(source, maxWidth, targetHeight, true)
+        source.recycle()
+        return scaled
     }
 
     private fun twoToOne(source: Bitmap): Bitmap {
