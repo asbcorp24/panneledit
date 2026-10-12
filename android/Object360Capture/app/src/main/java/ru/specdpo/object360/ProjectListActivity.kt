@@ -44,6 +44,10 @@ class ProjectListActivity : AppCompatActivity() {
             )
         }
 
+        binding.btnPanorama.setOnClickListener {
+            startActivity(Intent(this, PanoramaCaptureActivity::class.java))
+        }
+
         binding.btnNewProject.setOnClickListener {
             showNewProjectDialog()
         }
