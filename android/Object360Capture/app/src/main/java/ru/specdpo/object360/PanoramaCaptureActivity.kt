@@ -52,6 +52,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private var row = 1
     private var baseYaw = 0f
     private var yaw = 0f
+    private var pitchNow = 0f
+    private var rollNow = 0f
     private var calibrated = false
     private var busy = false
     private var rectangularIndex = 0
@@ -81,12 +83,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             { newYaw, pitch, stable ->
                 runOnUiThread {
                     yaw = newYaw
+                    pitchNow = pitch
                     updateStatus(pitch)
                     updateGuide(pitch, stable)
                 }
             },
             { _, _, roll, _ ->
                 runOnUiThread {
+                    rollNow = roll
                     cameraGuideOverlay.updateRoll(roll)
                 }
             }
@@ -354,7 +358,17 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             executor,
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                    frames.add(PanoramaFrame(file, row, index))
+                    val frameYaw = if (kind == PanoramaKind.FULL_360) normalize(yaw - baseYaw) else yaw
+                    frames.add(
+                        PanoramaFrame(
+                            file = file,
+                            row = row,
+                            index = index,
+                            yawDeg = frameYaw,
+                            pitchDeg = pitchNow,
+                            rollDeg = rollNow
+                        )
+                    )
                     if (kind == PanoramaKind.RECTANGULAR) rectangularIndex++
                     runOnUiThread {
                         busy = false
