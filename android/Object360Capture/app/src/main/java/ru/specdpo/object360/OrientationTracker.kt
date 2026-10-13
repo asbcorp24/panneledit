@@ -12,8 +12,13 @@ import kotlin.math.abs
 class OrientationTracker(
     context: Context,
     private val onUpdate: (yawDeg: Float, pitchDeg: Float, stable: Boolean) -> Unit,
-    private val onDetailedUpdate: ((yawDeg: Float, pitchDeg: Float, rollDeg: Float, stable: Boolean) -> Unit)? = null
+    private val onDetailedUpdate: ((yawDeg: Float, pitchDeg: Float, rollDeg: Float, stable: Boolean) -> Unit)?
 ) : SensorEventListener {
+
+    constructor(
+        context: Context,
+        onUpdate: (yawDeg: Float, pitchDeg: Float, stable: Boolean) -> Unit
+    ) : this(context, onUpdate, null)
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
