@@ -5652,6 +5652,15 @@
 
   async function exportTourPackage(options = {}) {
     const playerMode = options?.playerMode === true;
+    if (!project.scenes.length) {
+      showToast('Сначала добавьте хотя бы одну сцену');
+      return;
+    }
+    if (!window.JSZip) {
+      showToast('JSZip не загрузился. Проверьте подключение к интернету.');
+      return;
+    }
+
     const originalExportSettings = { ...(project.exportSettings || {}) };
     const originalMultiresSettings = {
       multiresEnabled: project.settings.multiresEnabled,
@@ -5675,14 +5684,6 @@
       project.settings.multiresTileSize = 512;
       project.settings.multiresQuality = 80;
       project.settings.multiresMaxCubeSize = 4096;
-    }
-    if (!project.scenes.length) {
-      showToast('Сначала добавьте хотя бы одну сцену');
-      return;
-    }
-    if (!window.JSZip) {
-      showToast('JSZip не загрузился. Проверьте подключение к интернету.');
-      return;
     }
 
     const button = playerMode ? els.btnExportPlayer : els.btnExportTour;
