@@ -12,7 +12,14 @@ import kotlin.math.min
 
 enum class PanoramaKind { FULL_360, RECTANGULAR }
 
-data class PanoramaFrame(val file: File, val row: Int, val index: Int)
+data class PanoramaFrame(
+    val file: File,
+    val row: Int,
+    val index: Int,
+    val yawDeg: Float = Float.NaN,
+    val pitchDeg: Float = Float.NaN,
+    val rollDeg: Float = 0f
+)
 
 object PanoramaStitcher {
     fun stitch(
@@ -22,6 +29,14 @@ object PanoramaStitcher {
         onProgress: (String) -> Unit = {}
     ): File {
         require(frames.isNotEmpty()) { "Нет кадров" }
+
+        if (kind == PanoramaKind.FULL_360 && frames.size >= 6) {
+            onProgress("360°: цилиндрическая проекция")
+            if (Spherical360Stitcher.stitch(frames, output, onProgress)) {
+                return output
+            }
+            onProgress("360° алгоритм не завершён — использую резервную склейку")
+        }
 
         if (kind == PanoramaKind.RECTANGULAR) {
             onProgress("OpenCV: глобальное совмещение")
