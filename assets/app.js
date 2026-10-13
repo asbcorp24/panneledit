@@ -51,6 +51,7 @@
     btnPreview: $('btnPreview'),
     btnExportProject: $('btnExportProject'),
     btnExportTour: $('btnExportTour'),
+    btnExportPlayer: $('btnExportPlayer'),
     projectImport: $('projectImport'),
     sceneDialog: $('sceneDialog'),
     sceneForm: $('sceneForm'),
@@ -5649,7 +5650,32 @@
     }
   }
 
-  async function exportTourPackage() {
+  async function exportTourPackage(options = {}) {
+    const playerMode = options?.playerMode === true;
+    const originalExportSettings = { ...(project.exportSettings || {}) };
+    const originalMultiresSettings = {
+      multiresEnabled: project.settings.multiresEnabled,
+      multiresTileSize: project.settings.multiresTileSize,
+      multiresQuality: project.settings.multiresQuality,
+      multiresMaxCubeSize: project.settings.multiresMaxCubeSize
+    };
+
+    if (playerMode) {
+      project.exportSettings = {
+        ...normalizeExportSettings(project.exportSettings || {}),
+        optimizeEnabled: true,
+        jpegQuality: 80,
+        maxImageWidth: 4096,
+        objectFrameWidth: 960,
+        pwaEnabled: false,
+        kioskMode: false,
+        publicUrl: ''
+      };
+      project.settings.multiresEnabled = true;
+      project.settings.multiresTileSize = 512;
+      project.settings.multiresQuality = 80;
+      project.settings.multiresMaxCubeSize = 4096;
+    }
     if (!project.scenes.length) {
       showToast('Сначала добавьте хотя бы одну сцену');
       return;
@@ -5659,7 +5685,7 @@
       return;
     }
 
-    const button = els.btnExportTour;
+    const button = playerMode ? els.btnExportPlayer : els.btnExportTour;
     const oldText = button.textContent;
     button.disabled = true;
     button.textContent = 'Упаковка…';
@@ -5667,7 +5693,7 @@
     try {
       const zip = new JSZip();
       const rootName = safeFilename(project.title, 'tour');
-      const root = zip.folder(rootName);
+      const root = playerMode ? zip : zip.folder(rootName);
       const sceneFiles = new Map();
       const usedNames = new Set();
 
@@ -5948,59 +5974,95 @@
       const threeLicense = await fetchRequiredAsset('assets/THREE-LICENSE.txt');
       root.file('assets/THREE-LICENSE.txt', await threeLicense.text());
       root.file('tour.json', JSON.stringify(config, null, 2));
-      if (config.exportSettings?.pwaEnabled) {
+      if (!playerMode && config.exportSettings?.pwaEnabled) {
         root.file('manifest.webmanifest', exportedManifest());
         root.file('sw.js', exportedServiceWorker(config));
         root.file('icons/app-icon.svg', exportedAppIconSvg());
       }
-      if (config.exportSettings?.publicUrl) {
+      if (!playerMode && config.exportSettings?.publicUrl) {
         const qrData = qrDataUrlForUrl(config.exportSettings.publicUrl);
         if (qrData) {
           const qrPayload = dataUrlPayload(qrData);
           root.file('qr-tour.png', qrPayload.data, { base64:true });
         }
       }
-      root.file('README.txt',
-        'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
-        'Содержимое:\n' +
-        '- index.html — страница просмотра\n' +
-        '- assets/tour.js — конфигурация и запуск тура\n' +
-        '- assets/tour.css — оформление страницы\n' +
-        '- images/ — исходные панорамы при обычном экспорте\n' +
-        '- object360/ — кадры сцен «Объект 360°»\n' +
-        '- models/ — STL-модели 3D-сцен\n' +
-        '- xr/ — XR 180/360 видео и изображения\n' +
-        '- assets/three.module.min.js + assets/three.core.min.js — локальная Three.js для XR / Cardboard\n' +
-        '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
-        '- audio/ — музыка тура, музыка сцен и озвучка\n' +
-        '- media/ — фото, видео, PDF и галереи\n' +
-        '- manifest.webmanifest / sw.js — PWA (если включено)\n' +
-        '- qr-tour.png — QR публичной ссылки (если указан URL)\n' +
-        '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
-        '- images/icons/ — иконки и авто-превью переходов\n' +
+      if (!playerMode) {
+        root.file('README.txt',
+          'Готовый виртуальный тур: ' + (project.title || 'Виртуальная экскурсия') + '\n\n' +
+          'Содержимое:\n' +
+          '- index.html — страница просмотра\n' +
+          '- assets/tour.js — конфигурация и запуск тура\n' +
+          '- assets/tour.css — оформление страницы\n' +
+          '- images/ — исходные панорамы при обычном экспорте\n' +
+          '- object360/ — кадры сцен «Объект 360°»\n' +
+          '- models/ — STL-модели 3D-сцен\n' +
+          '- xr/ — XR 180/360 видео и изображения\n' +
+          '- assets/three.module.min.js + assets/three.core.min.js — локальная Three.js для XR / Cardboard\n' +
+          '- backgrounds/ — картинки и панорамы фона STL-сцен\n' +
+          '- audio/ — музыка тура, музыка сцен и озвучка\n' +
+          '- media/ — фото, видео, PDF и галереи\n' +
+          '- manifest.webmanifest / sw.js — PWA (если включено)\n' +
+          '- qr-tour.png — QR публичной ссылки (если указан URL)\n' +
+          '- multires/ — тайлы панорам при включённом Multiresolution ZIP\n' +
+          '- images/icons/ — иконки и авто-превью переходов\n' +
 
-        '- start-server.bat — запуск тура в Windows двойным кликом\n' +
-        '- server.ps1 — встроенный локальный HTTP-сервер\n' +
-        '- tour.json — конфигурация тура\n\n' +
-        'Windows:\n1. Распакуйте папку целиком.\n2. Дважды щёлкните start-server.bat.\n3. Тур автоматически откроется в браузере.\n\n' +
-        'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
-        'Интернет для просмотра экспортированного тура не требуется. WebXR на опубликованном сайте требует HTTPS.\n'
-      );
+          '- start-server.bat — запуск тура в Windows двойным кликом\n' +
+          '- server.ps1 — встроенный локальный HTTP-сервер\n' +
+          '- tour.json — конфигурация тура\n\n' +
+          'Windows:\n1. Распакуйте папку целиком.\n2. Дважды щёлкните start-server.bat.\n3. Тур автоматически откроется в браузере.\n\n' +
+          'Для сайта:\n1. Распакуйте папку целиком.\n2. Загрузите её на HTTP/HTTPS-сервер.\n3. Откройте index.html.\n\n' +
+          'Интернет для просмотра экспортированного тура не требуется. WebXR на опубликованном сайте требует HTTPS.\n'
+        );
 
-      button.textContent = 'Windows-сервер…';
-      await bundleWindowsLauncher(root);
+
+      }
+
+      if (!playerMode) {
+        button.textContent = 'Windows-сервер…';
+        await bundleWindowsLauncher(root);
+      } else {
+        root.file('player-manifest.json', JSON.stringify({
+          format: 'xr-tour-player',
+          version: 1,
+          title: project.title || 'Виртуальная экскурсия',
+          entry: 'index.html',
+          optimized: {
+            panoramaMaxWidth: 4096,
+            objectFrameWidth: 960,
+            multiresTile: 512,
+            multiresMaxCube: 4096,
+            jpegQuality: 80
+          }
+        }, null, 2));
+      }
 
       button.textContent = 'Создание ZIP…';
       const blob = await zip.generateAsync(
-        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        {
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: playerMode ? 1 : 6 }
+        },
         (meta) => { button.textContent = 'ZIP ' + Math.round(meta.percent) + '%'; }
       );
-      showZipDownloadDialog(blob, rootName + '.zip');
-      showToast('ZIP готов — нажмите «Скачать ZIP»', 3600);
+      showZipDownloadDialog(
+        blob,
+        playerMode ? (rootName + '.player.zip') : (rootName + '.zip')
+      );
+      showToast(
+        playerMode
+          ? 'Пакет для Android Player готов'
+          : 'ZIP готов — нажмите «Скачать ZIP»',
+        3600
+      );
     } catch (error) {
       console.error(error);
       showToast('Не удалось собрать ZIP: ' + error.message, 5200);
     } finally {
+      if (playerMode) {
+        project.exportSettings = originalExportSettings;
+        Object.assign(project.settings, originalMultiresSettings);
+      }
       button.disabled = false;
       button.textContent = oldText;
     }
@@ -7496,6 +7558,7 @@
 
     els.btnExportProject.addEventListener('click', exportProject);
     els.btnExportTour.addEventListener('click', exportTourPackage);
+    els.btnExportPlayer.addEventListener('click', () => exportTourPackage({ playerMode:true }));
     els.projectImport.addEventListener('change', () => importProjectFile(els.projectImport.files?.[0]));
 
     els.closeDownloadDialog.addEventListener('click', closeZipDownloadDialog);
