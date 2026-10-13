@@ -24,17 +24,32 @@ object PanoramaStitcher {
         require(frames.isNotEmpty()) { "Нет кадров" }
 
         if (kind == PanoramaKind.RECTANGULAR) {
-            onProgress("OpenCV: поиск ключевых точек")
+            onProgress("OpenCV: глобальное совмещение")
             val files = frames.sortedBy { it.index }.map { it.file }
-            if (OpenCvRectangularStitcher.stitch(files, output, onProgress)) {
+            if (GlobalPanoramaStitcher.stitch(files, output, onProgress)) {
                 return output
             }
-            onProgress("OpenCV не смог сопоставить кадры — использую резервную склейку")
+            onProgress("Глобальная склейка не удалась — пробую резервный алгоритм")
         }
 
         val rows = frames.groupBy { it.row }.toSortedMap().mapNotNull { (row, list) ->
-            onProgress("Склейка ряда " + (row + 1))
-            stitchRow(list.sortedBy { it.index }.map { it.file })
+            onProgress("OpenCV: ряд " + (row + 1))
+            val ordered = list.sortedBy { it.index }.map { it.file }
+
+            if (kind == PanoramaKind.FULL_360 && ordered.size >= 2) {
+                val temp = File(output.parentFile ?: ordered.first().parentFile, ".row_" + row + "_global.jpg")
+                val ok = GlobalPanoramaStitcher.stitch(ordered, temp, onProgress)
+                if (ok && temp.isFile) {
+                    val bitmap = GhostFrameDecoder.decodeMaxDimension(temp, 5000)
+                    temp.delete()
+                    if (bitmap != null) return@mapNotNull bitmap
+                } else {
+                    temp.delete()
+                }
+                onProgress("Ряд " + (row + 1) + ": резервная склейка")
+            }
+
+            stitchRow(ordered)
         }
         require(rows.isNotEmpty()) { "Не удалось собрать панораму" }
         val mosaic = if (rows.size == 1) rows[0] else stack(rows)
