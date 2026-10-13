@@ -162,9 +162,34 @@ object PanoramaStitcher {
     }
 
     private fun twoToOne(source: Bitmap): Bitmap {
-        val targetWidth = min(4096, source.width)
+        // Не растягиваем панораму в 2:1: это ломает геометрию.
+        // Сначала делаем центральный crop с сохранением масштаба,
+        // затем только уменьшаем итог до безопасного размера.
+        val sourceAspect = source.width.toFloat() / source.height.toFloat()
+
+        val cropped = if (sourceAspect > 2f) {
+            val cropWidth = (source.height * 2).coerceAtMost(source.width)
+            val x = ((source.width - cropWidth) / 2).coerceAtLeast(0)
+            Bitmap.createBitmap(source, x, 0, cropWidth, source.height)
+        } else if (sourceAspect < 2f) {
+            val cropHeight = (source.width / 2).coerceAtMost(source.height)
+            val y = ((source.height - cropHeight) / 2).coerceAtLeast(0)
+            Bitmap.createBitmap(source, 0, y, source.width, cropHeight)
+        } else {
+            source
+        }
+
+        val targetWidth = min(4096, cropped.width)
         val targetHeight = max(1, targetWidth / 2)
-        if (source.width == targetWidth && source.height == targetHeight) return source
-        return Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
+
+        if (cropped.width == targetWidth && cropped.height == targetHeight) {
+            if (cropped !== source && !source.isRecycled) source.recycle()
+            return cropped
+        }
+
+        val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
+        if (cropped !== source && !cropped.isRecycled) cropped.recycle()
+        if (!source.isRecycled) source.recycle()
+        return scaled
     }
 }
