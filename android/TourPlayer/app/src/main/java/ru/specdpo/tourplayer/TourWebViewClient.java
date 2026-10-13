@@ -9,6 +9,7 @@ import android.webkit.WebViewClient;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -83,7 +84,7 @@ public final class TourWebViewClient extends WebViewClient {
                 if (start < 0 || start >= length) {
                     Map<String,String> h = new HashMap<>();
                     h.put("Content-Range", "bytes */" + length);
-                    return new WebResourceResponse("text/plain", "utf-8", 416, "Range Not Satisfiable", h, InputStream.nullInputStream());
+                    return new WebResourceResponse("text/plain", "utf-8", 416, "Range Not Satisfiable", h, new ByteArrayInputStream(new byte[0]));
                 }
                 end = Math.min(end, length - 1);
                 if (end < start) end = length - 1;
@@ -150,11 +151,11 @@ public final class TourWebViewClient extends WebViewClient {
     }
 
     private static WebResourceResponse notFound() {
-        return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", new HashMap<>(), InputStream.nullInputStream());
+        return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", new HashMap<>(), new ByteArrayInputStream(new byte[0]));
     }
 
     private static WebResourceResponse forbidden() {
-        return new WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", new HashMap<>(), InputStream.nullInputStream());
+        return new WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", new HashMap<>(), new ByteArrayInputStream(new byte[0]));
     }
 
     private static final class LimitedInputStream extends FilterInputStream {
