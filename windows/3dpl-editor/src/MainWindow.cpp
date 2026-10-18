@@ -1501,6 +1501,237 @@ void MainWindow::addObjectHotspot(
     ));
 }
 
+void MainWindow::chooseProjectMusic() {
+    if (m_projectDir.isEmpty()) return;
+    const QString file = QFileDialog::getOpenFileName(
+        this,
+        "Музыка тура",
+        {},
+        "Аудио (*.mp3 *.ogg *.wav *.m4a *.aac *.flac)"
+    );
+    if (file.isEmpty()) return;
+
+    QString error;
+    const QString asset = ProjectStorage::importAsset(m_projectDir, file, "audio", &error);
+    if (asset.isEmpty()) {
+        QMessageBox::critical(this, "Аудио", error);
+        return;
+    }
+    m_project.musicSource = asset;
+    markDirty();
+    refreshProjectControls();
+}
+
+void MainWindow::removeProjectMusic() {
+    if (m_project.musicSource.isEmpty()) return;
+    m_project.musicSource.clear();
+    markDirty();
+    refreshProjectControls();
+}
+
+void MainWindow::chooseSceneMusic() {
+    Scene* scene = currentScene();
+    if (!scene || m_projectDir.isEmpty()) return;
+
+    const QString file = QFileDialog::getOpenFileName(
+        this,
+        "Музыка сцены",
+        {},
+        "Аудио (*.mp3 *.ogg *.wav *.m4a *.aac *.flac)"
+    );
+    if (file.isEmpty()) return;
+
+    QString error;
+    const QString asset = ProjectStorage::importAsset(m_projectDir, file, "audio", &error);
+    if (asset.isEmpty()) {
+        QMessageBox::critical(this, "Аудио", error);
+        return;
+    }
+    scene->musicSource = asset;
+    markDirty();
+    refreshSceneControls();
+}
+
+void MainWindow::removeSceneMusic() {
+    if (auto* scene = currentScene()) {
+        if (scene->musicSource.isEmpty()) return;
+        scene->musicSource.clear();
+        markDirty();
+        refreshSceneControls();
+    }
+}
+
+void MainWindow::chooseSceneNarration() {
+    Scene* scene = currentScene();
+    if (!scene || m_projectDir.isEmpty()) return;
+
+    const QString file = QFileDialog::getOpenFileName(
+        this,
+        "Озвучка сцены",
+        {},
+        "Аудио (*.mp3 *.ogg *.wav *.m4a *.aac *.flac)"
+    );
+    if (file.isEmpty()) return;
+
+    QString error;
+    const QString asset = ProjectStorage::importAsset(m_projectDir, file, "audio", &error);
+    if (asset.isEmpty()) {
+        QMessageBox::critical(this, "Озвучка", error);
+        return;
+    }
+    scene->narrationSource = asset;
+    markDirty();
+    refreshSceneControls();
+}
+
+void MainWindow::removeSceneNarration() {
+    if (auto* scene = currentScene()) {
+        if (scene->narrationSource.isEmpty()) return;
+        scene->narrationSource.clear();
+        markDirty();
+        refreshSceneControls();
+    }
+}
+
+void MainWindow::editSelectedHotspot() {
+    Scene* scene = currentScene();
+    const int row = m_hotspotTable->currentRow();
+    if (!scene || row < 0 || row >= scene->hotspots.size()) return;
+
+    Hotspot before = scene->hotspots.at(row);
+    Hotspot edited = before;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle("Hotspot");
+    dialog.resize(480, 520);
+
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* form = new QFormLayout;
+
+    auto* type = new QComboBox;
+    type->addItems({"scene", "info", "url"});
+    type->setCurrentText(edited.type);
+
+    auto* text = new QLineEdit(edited.text);
+    auto* target = new QComboBox;
+    target->addItem("—", "");
+    for (const auto& candidate : m_project.scenes) {
+        target->addItem(candidate.title, candidate.id);
+    }
+    int targetIndex = target->findData(edited.targetSceneId);
+    if (targetIndex >= 0) target->setCurrentIndex(targetIndex);
+
+    auto* url = new QLineEdit(edited.url);
+    auto* info = new QTextEdit;
+    info->setPlainText(edited.info);
+    info->setMinimumHeight(100);
+
+    auto* yaw = new QDoubleSpinBox;
+    yaw->setRange(-360, 360);
+    yaw->setDecimals(2);
+    yaw->setValue(edited.yaw);
+
+    auto* pitch = new QDoubleSpinBox;
+    pitch->setRange(-89, 89);
+    pitch->setDecimals(2);
+    pitch->setValue(edited.pitch);
+
+    auto* anchorX = new QDoubleSpinBox;
+    anchorX->setRange(0, 100);
+    anchorX->setDecimals(2);
+    anchorX->setValue(edited.anchorX);
+
+    auto* anchorY = new QDoubleSpinBox;
+    anchorY->setRange(0, 100);
+    anchorY->setDecimals(2);
+    anchorY->setValue(edited.anchorY);
+
+    auto* sector = new QSpinBox;
+    sector->setRange(0, 100000);
+    sector->setValue(edited.anchorSector);
+
+    auto* anchorRow = new QSpinBox;
+    anchorRow->setRange(0, 10000);
+    anchorRow->setValue(edited.anchorRow);
+
+    form->addRow("Тип", type);
+    form->addRow("Подпись", text);
+    form->addRow("Целевая сцена", target);
+    form->addRow("URL", url);
+    form->addRow("Информация", info);
+    form->addRow("Yaw", yaw);
+    form->addRow("Pitch", pitch);
+
+    if (scene->type == SceneType::Object360) {
+        form->addRow("Anchor X, %", anchorX);
+        form->addRow("Anchor Y, %", anchorY);
+        form->addRow("Сектор", sector);
+        form->addRow("Ряд", anchorRow);
+    }
+
+    layout->addLayout(form);
+
+    auto updateVisibility = [=](const QString& value) {
+        target->setEnabled(value == "scene");
+        url->setEnabled(value == "url");
+        info->setEnabled(value == "info");
+    };
+    updateVisibility(type->currentText());
+    connect(type, &QComboBox::currentTextChanged, &dialog, updateVisibility);
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel
+    );
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    edited.type = type->currentText();
+    edited.text = text->text().trimmed();
+    edited.targetSceneId = target->currentData().toString();
+    edited.url = url->text().trimmed();
+    edited.info = info->toPlainText().trimmed();
+    edited.yaw = yaw->value();
+    edited.pitch = pitch->value();
+    edited.anchorX = anchorX->value();
+    edited.anchorY = anchorY->value();
+    edited.anchorSector = sector->value();
+    edited.anchorRow = anchorRow->value();
+
+    const QString sceneId = scene->id;
+    const QString hotspotId = edited.id;
+
+    m_undoStack.push(new LambdaCommand(
+        "Изменить hotspot",
+        [this, sceneId, hotspotId, edited] {
+            if (auto* s = m_project.findScene(sceneId)) {
+                for (auto& h : s->hotspots) {
+                    if (h.id == hotspotId) {
+                        h = edited;
+                        break;
+                    }
+                }
+            }
+            markDirty();
+            refreshHotspots();
+        },
+        [this, sceneId, hotspotId, before] {
+            if (auto* s = m_project.findScene(sceneId)) {
+                for (auto& h : s->hotspots) {
+                    if (h.id == hotspotId) {
+                        h = before;
+                        break;
+                    }
+                }
+            }
+            markDirty();
+            refreshHotspots();
+        }
+    ));
+}
+
 void MainWindow::deleteSelectedHotspot() {
     Scene* scene = currentScene();
     const int row = m_hotspotTable->currentRow();
