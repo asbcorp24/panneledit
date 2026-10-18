@@ -48,6 +48,7 @@ private:
     void exportOpenXrPackage();
     void editProjectOptions();
     void editSceneObjects();
+    void editObjectAlignment();
     void manageAssets();
     void generateCurrentMultires();
 
