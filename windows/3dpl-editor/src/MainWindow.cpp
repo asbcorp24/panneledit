@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
