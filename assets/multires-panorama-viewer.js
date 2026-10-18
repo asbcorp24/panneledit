@@ -29,6 +29,7 @@
         pitch: clamp(options.pitch, -89, 89),
         fov: clamp(options.fov || 100, 30, 110),
         autoRotate: Number(options.autoRotate) || 0,
+        motionControls: options.motionControls !== false,
         threeModuleUrl: options.threeModuleUrl || DEFAULT_THREE_URL,
         onChange: typeof options.onChange === 'function' ? options.onChange : null
       };
@@ -39,6 +40,8 @@
       this.destroyed = false;
       this.dragging = false;
       this.pointerId = null;
+      this.cardboard = false;
+      this.deviceQuaternion = null;
       this.currentLevel = 1;
       this.baseMeshes = [];
       this.detailMeshes = [];
@@ -308,8 +311,26 @@
     }
 
     bind() {
+      this.onOrientation = (event) => {
+        if (!this.THREE || event.alpha == null || event.beta == null || event.gamma == null) return;
+        const THREE = this.THREE;
+        const zee = new THREE.Vector3(0,0,1);
+        const euler = new THREE.Euler();
+        const q0 = new THREE.Quaternion();
+        const q1 = new THREE.Quaternion(-Math.sqrt(0.5),0,0,Math.sqrt(0.5));
+        const alpha = event.alpha * DEG;
+        const beta = event.beta * DEG;
+        const gamma = event.gamma * DEG;
+        const orient = (screen.orientation?.angle || window.orientation || 0) * DEG;
+        euler.set(beta, alpha, -gamma, 'YXZ');
+        const q = new THREE.Quaternion().setFromEuler(euler);
+        q.multiply(q1);
+        q.multiply(q0.setFromAxisAngle(zee, -orient));
+        this.deviceQuaternion = q;
+      };
+
       this.onPointerDown = (event) => {
-        if (this.pointerId != null) return;
+        if (this.pointerId != null || this.cardboard) return;
         this.pointerId = event.pointerId;
         this.dragging = true;
         this.lastX = event.clientX;
@@ -318,7 +339,7 @@
       };
 
       this.onPointerMove = (event) => {
-        if (!this.dragging || event.pointerId !== this.pointerId) return;
+        if (!this.dragging || event.pointerId !== this.pointerId || this.cardboard) return;
         const dx = event.clientX - this.lastX;
         const dy = event.clientY - this.lastY;
         this.lastX = event.clientX;
@@ -339,6 +360,7 @@
       };
 
       this.onWheel = (event) => {
+        if (this.cardboard) return;
         event.preventDefault();
         this.fov = clamp(this.fov + Math.sign(event.deltaY) * 4, 30, 110);
         if (this.camera) {
@@ -358,15 +380,58 @@
 
     updateCameraOrientation() {
       if (!this.camera) return;
-      this.camera.rotation.set(this.pitch * DEG, -this.yaw * DEG, 0, 'YXZ');
+      if (this.cardboard && this.deviceQuaternion) {
+        const offset = new this.THREE.Quaternion().setFromEuler(
+          new this.THREE.Euler(this.pitch * DEG, -this.yaw * DEG, 0, 'YXZ')
+        );
+        this.camera.quaternion.copy(this.deviceQuaternion).premultiply(offset);
+      } else {
+        this.camera.rotation.set(this.pitch * DEG, -this.yaw * DEG, 0, 'YXZ');
+      }
       this.camera.updateMatrixWorld(true);
+    }
+
+    async requestMotionPermission() {
+      if (!this.options.motionControls) return false;
+      const DOE = window.DeviceOrientationEvent;
+      if (!DOE) return false;
+      if (typeof DOE.requestPermission === 'function') {
+        try {
+          const result = await DOE.requestPermission();
+          if (result !== 'granted') return false;
+        } catch (_) {
+          return false;
+        }
+      }
+      window.addEventListener('deviceorientation', this.onOrientation, true);
+      return true;
+    }
+
+    async setCardboard(enabled) {
+      const next = Boolean(enabled);
+      if (this.cardboard === next) return this.cardboard;
+      this.cardboard = next;
+      this.root?.classList.toggle('cardboard-active', next);
+      if (next) {
+        await this.requestMotionPermission();
+      } else {
+        this.deviceQuaternion = null;
+        window.removeEventListener('deviceorientation', this.onOrientation, true);
+      }
+      this.resize();
+      this.emitChange();
+      return this.cardboard;
+    }
+
+    async toggleCardboard() {
+      return this.setCardboard(!this.cardboard);
     }
 
     resize() {
       if (!this.camera || !this.renderer) return;
       const w = Math.max(1, this.container.clientWidth);
       const h = Math.max(1, this.container.clientHeight);
-      this.camera.aspect = w / h;
+      this.camera.aspect = this.cardboard ? (Math.floor(w / 2) / h) : (w / h);
       this.camera.fov = this.fov;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(w, h, false);
@@ -386,7 +451,29 @@
         this.lastVisibilityUpdate = now;
         this.updateDetailLevel();
       }
+      if (!this.cardboard) {
+        this.renderer.setScissorTest(false);
+        this.renderer.render(this.scene, this.camera);
+        return;
+      }
+
+      const width = Math.max(1, this.container.clientWidth);
+      const height = Math.max(1, this.container.clientHeight);
+      const half = Math.floor(width / 2);
+
+      this.renderer.setScissorTest(true);
+      this.camera.aspect = half / Math.max(1, height);
+      this.camera.updateProjectionMatrix();
+
+      this.renderer.setViewport(0, 0, half, height);
+      this.renderer.setScissor(0, 0, half, height);
       this.renderer.render(this.scene, this.camera);
+
+      this.renderer.setViewport(half, 0, width - half, height);
+      this.renderer.setScissor(half, 0, width - half, height);
+      this.renderer.render(this.scene, this.camera);
+
+      this.renderer.setScissorTest(false);
     }
 
     getState() {
@@ -397,7 +484,8 @@
         aspect: Math.max(0.001, this.container.clientWidth / Math.max(1, this.container.clientHeight)),
         projection: '360',
         multiresLevel: this.currentLevel,
-        multiresMaxLevel: this.options.maxLevel
+        multiresMaxLevel: this.options.maxLevel,
+        cardboard: this.cardboard
       };
     }
 
@@ -426,6 +514,7 @@
       this.destroyed = true;
       this.renderer?.setAnimationLoop(null);
       this.resizeObserver?.disconnect();
+      window.removeEventListener('deviceorientation', this.onOrientation, true);
 
       this.root?.removeEventListener('pointerdown', this.onPointerDown);
       this.root?.removeEventListener('pointermove', this.onPointerMove);
