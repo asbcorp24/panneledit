@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "io/ProjectStorage.h"
+#include "io/LegacyProjectImporter.h"
 #include "export/PackageExporter.h"
 #include "render/PanoramaViewport.h"
 #include "render/MultiresGenerator.h"
@@ -282,6 +283,7 @@ void MainWindow::buildMenus() {
     auto* fileMenu = menuBar()->addMenu("Файл");
     fileMenu->addAction("Новый проект", this, &MainWindow::newProject, QKeySequence::New);
     fileMenu->addAction("Открыть проект", this, &MainWindow::openProject, QKeySequence::Open);
+    fileMenu->addAction("Импорт старого Web JSON…", this, &MainWindow::importLegacyProject);
     fileMenu->addAction("Сохранить", this, &MainWindow::saveProject, QKeySequence::Save);
     fileMenu->addAction("Сохранить как…", this, &MainWindow::saveProjectAs, QKeySequence::SaveAs);
     fileMenu->addSeparator();
@@ -763,6 +765,85 @@ void MainWindow::openProject() {
     m_dirty = false;
     QSettings().setValue("lastProject", m_projectDir);
     refreshAll();
+}
+
+void MainWindow::importLegacyProject() {
+    const QString jsonFile = QFileDialog::getOpenFileName(
+        this,
+        "Импорт старого веб-проекта",
+        {},
+        "XR Tour Project (*.xr-tour-project.json *.json)"
+    );
+    if (jsonFile.isEmpty()) return;
+
+    const QString parent = QFileDialog::getExistingDirectory(
+        this,
+        "Куда создать .3dpl проект"
+    );
+    if (parent.isEmpty()) return;
+
+    QString baseName = QFileInfo(jsonFile).completeBaseName();
+    baseName.remove(".xr-tour-project", Qt::CaseInsensitive);
+    baseName.replace(QRegularExpression("[^A-Za-z0-9А-Яа-я_-]+"), "_");
+    if (baseName.isEmpty()) baseName = "ImportedTour";
+
+    QString target = QDir(parent).filePath(baseName + ".3dpl");
+    int suffix = 2;
+    while (QFileInfo::exists(target)) {
+        target = QDir(parent).filePath(
+            baseName + "_" + QString::number(suffix++) + ".3dpl"
+        );
+    }
+
+    QProgressDialog progress(
+        "Перенос изображений, Object360, STL, XR и аудио…",
+        QString(),
+        0,
+        0,
+        this
+    );
+    progress.setWindowTitle("Импорт Web → C++");
+    progress.setCancelButton(nullptr);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.show();
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    Project imported;
+    QString error;
+    const bool ok = LegacyProjectImporter::importJson(
+        jsonFile,
+        target,
+        imported,
+        &error
+    );
+
+    QApplication::restoreOverrideCursor();
+    progress.close();
+
+    if (!ok) {
+        QMessageBox::critical(this, "Импорт", error);
+        return;
+    }
+
+    m_project = std::move(imported);
+    m_projectDir = target;
+    m_currentSceneId = m_project.firstSceneId;
+    if (m_currentSceneId.isEmpty() && !m_project.scenes.isEmpty())
+        m_currentSceneId = m_project.scenes.first().id;
+
+    m_undoStack.clear();
+    m_undoStack.setClean();
+    m_dirty = false;
+    QSettings().setValue("lastProject", m_projectDir);
+    refreshAll();
+
+    QMessageBox::information(
+        this,
+        "Импорт завершён",
+        "Старый веб-проект перенесён в:\n" +
+            QDir::toNativeSeparators(m_projectDir)
+    );
 }
 
 void MainWindow::saveProject() {
