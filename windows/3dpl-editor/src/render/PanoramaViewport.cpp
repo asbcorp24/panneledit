@@ -777,6 +777,35 @@ void PanoramaViewport::loadObjectFrame(int sector, int row) {
 
 void PanoramaViewport::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
+        for (int i = m_hotspots.size() - 1; i >= 0; --i) {
+            const Hotspot& hotspot = m_hotspots.at(i);
+            QPointF point;
+            bool visible = true;
+
+            if (m_mode == Mode::Object360 || hotspot.anchorMode == "object360") {
+                if (hotspot.anchorSector != m_objectSector || hotspot.anchorRow != m_objectRow) continue;
+                const QRectF rect = objectImageRect();
+                if (rect.isEmpty()) continue;
+                point = {
+                    rect.left() + hotspot.anchorX / 100.0 * rect.width(),
+                    rect.top() + hotspot.anchorY / 100.0 * rect.height()
+                };
+            } else {
+                point = panoramaPointToScreen(
+                    hotspot.anchorMode.isEmpty() ? hotspot.yaw : hotspot.anchorYaw,
+                    hotspot.anchorMode.isEmpty() ? hotspot.pitch : hotspot.anchorPitch,
+                    &visible
+                );
+                if (!visible) continue;
+            }
+
+            if (QLineF(point, event->position()).length() <= 18.0) {
+                emit hotspotSelected(i);
+                event->accept();
+                return;
+            }
+        }
+
         m_dragging = true;
         m_lastMouse = event->position().toPoint();
         setCursor(Qt::ClosedHandCursor);
