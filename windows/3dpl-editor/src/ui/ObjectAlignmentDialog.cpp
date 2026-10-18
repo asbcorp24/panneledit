@@ -32,6 +32,12 @@ QImage readPreview(const QString& path) {
     return reader.read().convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
+QImage readFull(const QString& path) {
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    return reader.read().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+
 }
 
 ObjectAlignmentDialog::ObjectAlignmentDialog(
@@ -221,16 +227,23 @@ void ObjectAlignmentDialog::refreshPreview() {
     m_currentItem->setOpacity(m_opacity->value() / 100.0);
 
     if (!m_currentImage.isNull()) {
-        const QPointF center(
+        const QPointF sourceCenter(
             m_currentImage.width() / 2.0,
             m_currentImage.height() / 2.0
         );
+        const QSize referenceSize = !m_referenceImage.isNull()
+            ? m_referenceImage.size()
+            : m_currentImage.size();
+        const QPointF canvasCenter(
+            referenceSize.width() / 2.0,
+            referenceSize.height() / 2.0
+        );
         QTransform t;
-        t.translate(center.x() + m_dx->value(), center.y() + m_dy->value());
+        t.translate(canvasCenter.x() + m_dx->value(), canvasCenter.y() + m_dy->value());
         t.rotate(m_rotation->value());
         const double scale = m_scale->value() / 100.0;
         t.scale(scale, scale);
-        t.translate(-center.x(), -center.y());
+        t.translate(-sourceCenter.x(), -sourceCenter.y());
         m_currentItem->setTransform(t);
     }
 
@@ -314,7 +327,7 @@ void ObjectAlignmentDialog::applyCurrentFrame() {
     if (!writeAlignedFrame(
             row,
             sector,
-            QImage(absoluteFramePath(row, sector)),
+            readFull(absoluteFramePath(row, sector)),
             canvas,
             m_dx->value(),
             m_dy->value(),
@@ -365,7 +378,7 @@ void ObjectAlignmentDialog::normalizeAllFrames() {
     int saved = 0;
     for (int row = 0; row < m_scene.frames.size(); ++row) {
         for (int sector = 0; sector < m_scene.frames[row].size(); ++sector) {
-            const QImage source(absoluteFramePath(row, sector));
+            const QImage source = readFull(absoluteFramePath(row, sector));
             if (source.isNull()) continue;
             QString error;
             if (writeAlignedFrame(
