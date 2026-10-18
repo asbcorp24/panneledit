@@ -1286,6 +1286,49 @@ private:
         }
     }
 
+    bool loadObjectFrame(int row,int sector) {
+        if(objectFrames_.empty()) return false;
+        sector=((sector%objectSectors_)+objectSectors_)%objectSectors_;
+        row=std::clamp(row,0,std::max(0,objectRows_-1));
+        for(const auto& frame:objectFrames_){
+            if(frame.row!=row || frame.sector!=sector) continue;
+            int w=0,h=0;
+            GLuint tex=jni_.loadTexture(frame.path,&w,&h);
+            if(!tex) return false;
+            renderer_.setMode("object360");
+            renderer_.setObjectAspect(h>0 ? static_cast<float>(w)/static_cast<float>(h) : 1.5f);
+            renderer_.setSceneTexture(tex,"flat",0,0);
+            objectCurrentRow_=row;
+            objectCurrentSector_=sector;
+            return true;
+        }
+        return false;
+    }
+
+    void updateObjectFrame(const std::vector<XrView>& views) {
+        if(sceneType_!="object360" || views.empty() || objectFrames_.empty()) return;
+        float yaw=0,pitch=0;
+        poseForwardYawPitch(views[0].pose,yaw,pitch);
+        yaw=wrapAngle(yaw-recenterYaw_);
+
+        const float step=360.0f/std::max(1,objectSectors_);
+        int sector=objectStartSector_ + static_cast<int>(std::lround(yaw/step));
+        sector=((sector%objectSectors_)+objectSectors_)%objectSectors_;
+
+        int row=objectStartRow_;
+        if(objectRows_>=3){
+            if(pitch>13.0f) row=0;
+            else if(pitch<-13.0f) row=objectRows_-1;
+            else row=objectRows_/2;
+        } else if(objectRows_==2){
+            row=pitch>=0.0f ? 0 : 1;
+        }
+
+        if(row!=objectCurrentRow_ || sector!=objectCurrentSector_){
+            loadObjectFrame(row,sector);
+        }
+    }
+
     void refreshScene(bool force) {
         const int revision = jni_.callInt("nativeGetSceneRevision");
         if (!force && revision == sceneRevision_) return;
@@ -1301,15 +1344,56 @@ private:
         hotspots_ = parseHotspots(jni_.callString("nativeGetHotspotsPacked"));
 
         gazeId_.clear();
+        objectFrames_.clear();
+        objectCurrentRow_=-1;
+        objectCurrentSector_=-1;
+
+        if(sceneType_=="object360"){
+            objectSectors_=std::max(1,jni_.callInt("nativeGetObjectSectors"));
+            objectRows_=std::max(1,jni_.callInt("nativeGetObjectRows"));
+            objectStartSector_=jni_.callInt("nativeGetObjectStartSector");
+            objectStartRow_=jni_.callInt("nativeGetObjectStartRow");
+            objectFrames_=parseObjectFrames(jni_.callString("nativeGetObjectFramesPacked"));
+            renderer_.setMode("object360");
+            if(!loadObjectFrame(objectStartRow_,objectStartSector_)){
+                renderer_.setSceneTexture(0,"flat",0,0);
+                jni_.toast("Object360: кадры не найдены");
+            }
+            return;
+        }
+
+        if(sceneType_=="stl"){
+            std::vector<StlVertex> vertices;
+            if(!loadStlMesh(sceneSource_,vertices)){
+                renderer_.setMode("stl");
+                renderer_.setSceneTexture(0,"360",0,0);
+                jni_.toast("STL: не удалось прочитать модель");
+                return;
+            }
+            normalizeStlMesh(vertices);
+            renderer_.setMode("stl");
+            renderer_.setSceneTexture(0,"360",sceneYaw_,scenePitch_);
+            if(!renderer_.setStlMesh(
+                vertices,
+                jni_.callFloat("nativeGetStlZoom"),
+                jni_.callBool("nativeGetStlWireframe"),
+                jni_.callInt("nativeGetStlColorRgb")
+            )){
+                jni_.toast("STL: ошибка GPU");
+            }
+            return;
+        }
+
+        renderer_.setMode("panorama");
 
         if (sceneType_ != "panorama" && sceneType_ != "xr") {
             renderer_.setSceneTexture(0, "360", 0, 0);
-            jni_.toast("Сцена " + sceneType_ + ": нативный рендер будет добавлен следующим этапом");
+            jni_.toast("Тип сцены пока не поддерживается");
             return;
         }
         if (sceneKind_ == "video") {
             renderer_.setSceneTexture(0, sceneProjection_, sceneYaw_, scenePitch_);
-            jni_.toast("OpenXR video decoder ещё не подключён. Фото/панорамы работают нативно.");
+            jni_.toast("OpenXR video: подготовка декодера");
             return;
         }
 
@@ -1405,6 +1489,7 @@ private:
                 (viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) &&
                 (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
 
+                updateObjectFrame(views_);
                 syncActions();
                 const bool gazeTarget = updateGaze(views_);
                 layerViews.assign(viewCount, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW});
