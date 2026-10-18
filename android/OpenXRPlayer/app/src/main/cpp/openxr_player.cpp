@@ -342,8 +342,18 @@ struct Hotspot {
     std::string id;
     std::string type;
     std::string target;
+    std::string anchorMode;
     float yaw = 0;
     float pitch = 0;
+    int anchorSector = 0;
+    int anchorRow = 0;
+    float px = NAN;
+    float py = NAN;
+    float pz = NAN;
+    float anchorYaw = 0;
+    float anchorPitch = 0;
+    float anchorX = 50;
+    float anchorY = 50;
 };
 
 struct ObjectFrameRef {
@@ -392,6 +402,27 @@ std::vector<Hotspot> parseHotspots(const std::string& packed) {
         try {
             h.yaw = std::stof(fields[3]);
             h.pitch = std::stof(fields[4]);
+            if(fields.size() >= 7){
+                h.anchorSector = std::stoi(fields[5]);
+                h.anchorRow = std::stoi(fields[6]);
+            }
+            if(fields.size() >= 10){
+                h.px = std::stof(fields[7]);
+                h.py = std::stof(fields[8]);
+                h.pz = std::stof(fields[9]);
+            }
+            if(fields.size() >= 12){
+                h.anchorYaw = std::stof(fields[10]);
+                h.anchorPitch = std::stof(fields[11]);
+            } else {
+                h.anchorYaw = h.yaw;
+                h.anchorPitch = h.pitch;
+            }
+            if(fields.size() >= 14){
+                h.anchorX = std::stof(fields[12]);
+                h.anchorY = std::stof(fields[13]);
+            }
+            if(fields.size() >= 15) h.anchorMode = fields[14];
         } catch (...) {
             continue;
         }
@@ -419,6 +450,18 @@ void poseForwardYawPitch(const XrPosef& pose, float& yawDeg, float& pitchDeg) {
 
     yawDeg = std::atan2(fx, -fz) / kDeg;
     pitchDeg = std::asin(std::clamp(fy, -1.0f, 1.0f)) / kDeg;
+}
+
+std::array<float,3> poseForwardVector(const XrPosef& pose) {
+    const float x = pose.orientation.x;
+    const float y = pose.orientation.y;
+    const float z = pose.orientation.z;
+    const float w = pose.orientation.w;
+    return {
+        -2.0f * (x * z + w * y),
+        -2.0f * (y * z - w * x),
+        -(1.0f - 2.0f * (x * x + y * y))
+    };
 }
 
 GLuint compileShader(GLenum type, const char* src) {
