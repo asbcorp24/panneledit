@@ -854,6 +854,7 @@ public:
             return false;
         }
         if (!createSession()) return false;
+        if (!createActions()) return false;
         if (!renderer_.init()) return false;
         if (!createSpaces()) return false;
         if (!createSwapchains()) return false;
@@ -898,6 +899,15 @@ private:
     XrSessionState sessionState_ = XR_SESSION_STATE_UNKNOWN;
     bool sessionRunning_ = false;
 
+    XrActionSet actionSet_ = XR_NULL_HANDLE;
+    XrAction selectAction_ = XR_NULL_HANDLE;
+    XrAction triggerAction_ = XR_NULL_HANDLE;
+    XrAction recenterAction_ = XR_NULL_HANDLE;
+    std::array<XrPath,2> handPaths_{XR_NULL_PATH,XR_NULL_PATH};
+    bool previousSelect_ = false;
+    bool previousRecenter_ = false;
+    float recenterYaw_ = 0.0f;
+
     XrEnvironmentBlendMode blendMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     std::vector<XrViewConfigurationView> viewConfigs_;
     std::vector<XrView> views_;
@@ -912,6 +922,14 @@ private:
     float sceneYaw_ = 0.0f;
     float scenePitch_ = 0.0f;
     std::vector<Hotspot> hotspots_;
+
+    std::vector<ObjectFrameRef> objectFrames_;
+    int objectSectors_ = 1;
+    int objectRows_ = 1;
+    int objectStartSector_ = 0;
+    int objectStartRow_ = 0;
+    int objectCurrentSector_ = -1;
+    int objectCurrentRow_ = -1;
 
     std::string gazeId_;
     std::chrono::steady_clock::time_point gazeSince_{};
@@ -1011,6 +1029,118 @@ private:
         createInfo.next = &binding;
         createInfo.systemId = systemId_;
         return xrOk(xrCreateSession(instance_, &createInfo, &session_), "xrCreateSession");
+    }
+
+    bool createActions() {
+        XrActionSetCreateInfo setInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
+        std::strncpy(setInfo.actionSetName,"tour",XR_MAX_ACTION_SET_NAME_SIZE-1);
+        std::strncpy(setInfo.localizedActionSetName,"Tour controls",XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE-1);
+        setInfo.priority=0;
+        if(!xrOk(xrCreateActionSet(instance_,&setInfo,&actionSet_),"xrCreateActionSet")) return false;
+
+        xrStringToPath(instance_,"/user/hand/left",&handPaths_[0]);
+        xrStringToPath(instance_,"/user/hand/right",&handPaths_[1]);
+
+        auto makeAction=[&](XrActionType type,const char* name,const char* localized,XrAction& out)->bool{
+            XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+            info.actionType=type;
+            std::strncpy(info.actionName,name,XR_MAX_ACTION_NAME_SIZE-1);
+            std::strncpy(info.localizedActionName,localized,XR_MAX_LOCALIZED_ACTION_NAME_SIZE-1);
+            info.countSubactionPaths=static_cast<uint32_t>(handPaths_.size());
+            info.subactionPaths=handPaths_.data();
+            return xrOk(xrCreateAction(actionSet_,&info,&out),"xrCreateAction");
+        };
+
+        if(!makeAction(XR_ACTION_TYPE_BOOLEAN_INPUT,"select","Select",selectAction_)) return false;
+        if(!makeAction(XR_ACTION_TYPE_FLOAT_INPUT,"trigger","Trigger",triggerAction_)) return false;
+        if(!makeAction(XR_ACTION_TYPE_BOOLEAN_INPUT,"recenter","Recenter",recenterAction_)) return false;
+
+        XrPath simpleProfile=XR_NULL_PATH;
+        xrStringToPath(instance_,"/interaction_profiles/khr/simple_controller",&simpleProfile);
+        std::vector<XrActionSuggestedBinding> simpleBindings;
+        for(auto hand:handPaths_){
+            char path[128]{};
+            const bool left=hand==handPaths_[0];
+            std::snprintf(path,sizeof(path),"/user/hand/%s/input/select/click",left?"left":"right");
+            XrPath p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
+            simpleBindings.push_back({selectAction_,p});
+
+            std::snprintf(path,sizeof(path),"/user/hand/%s/input/menu/click",left?"left":"right");
+            p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
+            simpleBindings.push_back({recenterAction_,p});
+        }
+        XrInteractionProfileSuggestedBinding simpleSuggest{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        simpleSuggest.interactionProfile=simpleProfile;
+        simpleSuggest.countSuggestedBindings=static_cast<uint32_t>(simpleBindings.size());
+        simpleSuggest.suggestedBindings=simpleBindings.data();
+        xrSuggestInteractionProfileBindings(instance_,&simpleSuggest);
+
+        XrPath touchProfile=XR_NULL_PATH;
+        xrStringToPath(instance_,"/interaction_profiles/oculus/touch_controller",&touchProfile);
+        std::vector<XrActionSuggestedBinding> touchBindings;
+        for(int i=0;i<2;i++){
+            const char* side=i==0?"left":"right";
+            char path[128]{};
+            std::snprintf(path,sizeof(path),"/user/hand/%s/input/trigger/value",side);
+            XrPath p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
+            touchBindings.push_back({triggerAction_,p});
+            std::snprintf(path,sizeof(path),"/user/hand/%s/input/%s/click",side,i==0?"x":"a");
+            p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
+            touchBindings.push_back({recenterAction_,p});
+        }
+        XrInteractionProfileSuggestedBinding touchSuggest{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        touchSuggest.interactionProfile=touchProfile;
+        touchSuggest.countSuggestedBindings=static_cast<uint32_t>(touchBindings.size());
+        touchSuggest.suggestedBindings=touchBindings.data();
+        xrSuggestInteractionProfileBindings(instance_,&touchSuggest);
+
+        XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+        attach.countActionSets=1;
+        attach.actionSets=&actionSet_;
+        return xrOk(xrAttachSessionActionSets(session_,&attach),"xrAttachSessionActionSets");
+    }
+
+    void syncActions() {
+        if(actionSet_==XR_NULL_HANDLE || session_==XR_NULL_HANDLE) return;
+        XrActiveActionSet active{};
+        active.actionSet=actionSet_;
+        XrActionsSyncInfo sync{XR_TYPE_ACTIONS_SYNC_INFO};
+        sync.countActiveActionSets=1;
+        sync.activeActionSets=&active;
+        if(XR_FAILED(xrSyncActions(session_,&sync))) return;
+
+        bool select=false;
+        bool recenter=false;
+
+        for(auto hand:handPaths_){
+            XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+            get.subactionPath=hand;
+
+            get.action=selectAction_;
+            XrActionStateBoolean b{XR_TYPE_ACTION_STATE_BOOLEAN};
+            if(XR_SUCCEEDED(xrGetActionStateBoolean(session_,&get,&b)) && b.isActive && b.currentState) select=true;
+
+            get.action=triggerAction_;
+            XrActionStateFloat fl{XR_TYPE_ACTION_STATE_FLOAT};
+            if(XR_SUCCEEDED(xrGetActionStateFloat(session_,&get,&fl)) && fl.isActive && fl.currentState>0.7f) select=true;
+
+            get.action=recenterAction_;
+            XrActionStateBoolean rc{XR_TYPE_ACTION_STATE_BOOLEAN};
+            if(XR_SUCCEEDED(xrGetActionStateBoolean(session_,&get,&rc)) && rc.isActive && rc.currentState) recenter=true;
+        }
+
+        if(select && !previousSelect_ && !gazeId_.empty()){
+            if(jni_.activateHotspot(gazeId_)) refreshScene(true);
+            gazeCooldownUntil_=std::chrono::steady_clock::now()+std::chrono::milliseconds(900);
+        }
+        if(recenter && !previousRecenter_ && !views_.empty()){
+            float yaw=0,pitch=0;
+            poseForwardYawPitch(views_[0].pose,yaw,pitch);
+            recenterYaw_=yaw;
+            jni_.toast("OpenXR: центр обновлён");
+        }
+        previousSelect_=select;
+        previousRecenter_=recenter;
     }
 
     bool createSpaces() {
@@ -1200,7 +1330,7 @@ private:
 
         float headYaw = 0.0f, headPitch = 0.0f;
         poseForwardYawPitch(views[0].pose, headYaw, headPitch);
-        const float logicalYaw = wrapAngle(headYaw + sceneYaw_);
+        const float logicalYaw = wrapAngle(headYaw - recenterYaw_ + sceneYaw_);
         const float logicalPitch = headPitch + scenePitch_;
 
         const Hotspot* best = nullptr;
@@ -1275,6 +1405,7 @@ private:
                 (viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) &&
                 (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
 
+                syncActions();
                 const bool gazeTarget = updateGaze(views_);
                 layerViews.assign(viewCount, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW});
 
@@ -1334,6 +1465,11 @@ private:
             sc.handle = XR_NULL_HANDLE;
         }
         swapchains_.clear();
+
+        if (selectAction_ != XR_NULL_HANDLE) { xrDestroyAction(selectAction_); selectAction_=XR_NULL_HANDLE; }
+        if (triggerAction_ != XR_NULL_HANDLE) { xrDestroyAction(triggerAction_); triggerAction_=XR_NULL_HANDLE; }
+        if (recenterAction_ != XR_NULL_HANDLE) { xrDestroyAction(recenterAction_); recenterAction_=XR_NULL_HANDLE; }
+        if (actionSet_ != XR_NULL_HANDLE) { xrDestroyActionSet(actionSet_); actionSet_=XR_NULL_HANDLE; }
 
         if (appSpace_ != XR_NULL_HANDLE) {
             xrDestroySpace(appSpace_);
