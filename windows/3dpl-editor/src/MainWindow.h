@@ -45,6 +45,7 @@ private:
     void saveProjectAs();
     bool saveCurrent(bool showErrors = true);
     void exportOpenXrPackage();
+    void generateCurrentMultires();
 
     void addPanorama();
     void addXr();
@@ -110,6 +111,12 @@ private:
 
     QTableWidget* m_hotspotTable = nullptr;
     QPushButton* m_deleteHotspot = nullptr;
+
+    QGroupBox* m_panoramaOptions = nullptr;
+    QComboBox* m_multiresTileSize = nullptr;
+    QSpinBox* m_multiresQuality = nullptr;
+    QComboBox* m_multiresMaxCube = nullptr;
+    QPushButton* m_generateMultires = nullptr;
 
     QGroupBox* m_objectOptions = nullptr;
     QSpinBox* m_objectStartSector = nullptr;
