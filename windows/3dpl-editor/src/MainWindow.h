@@ -16,6 +16,8 @@ class QLabel;
 class QTimer;
 class QStackedWidget;
 class QPushButton;
+class QCheckBox;
+class QGroupBox;
 class QMediaPlayer;
 class QAudioOutput;
 class QVideoSink;
@@ -108,6 +110,20 @@ private:
 
     QTableWidget* m_hotspotTable = nullptr;
     QPushButton* m_deleteHotspot = nullptr;
+
+    QGroupBox* m_objectOptions = nullptr;
+    QSpinBox* m_objectStartSector = nullptr;
+    QSpinBox* m_objectStartRow = nullptr;
+
+    QGroupBox* m_stlOptions = nullptr;
+    QDoubleSpinBox* m_stlZoom = nullptr;
+    QCheckBox* m_stlWireframe = nullptr;
+    QPushButton* m_stlColorButton = nullptr;
+
+    QGroupBox* m_xrOptions = nullptr;
+    QCheckBox* m_sceneAutoplay = nullptr;
+    QCheckBox* m_sceneLoop = nullptr;
+    QSpinBox* m_xrVolume = nullptr;
 
     QMediaPlayer* m_mediaPlayer = nullptr;
     QAudioOutput* m_audioOutput = nullptr;
