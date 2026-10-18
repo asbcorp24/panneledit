@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QImage>
+#include <QMatrix4x4>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLShaderProgram>
