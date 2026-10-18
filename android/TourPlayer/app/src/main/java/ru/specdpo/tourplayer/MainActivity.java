@@ -34,6 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView empty;
     private TextView status;
     private Button importButton;
+    private Button qualityButton;
 
     private final ActivityResultLauncher<String[]> openZip =
         registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
@@ -101,6 +102,14 @@ public class MainActivity extends AppCompatActivity {
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(50)
         ));
+
+        qualityButton = button("");
+        qualityButton.setOnClickListener(v -> cycleQualityProfile());
+        root.addView(qualityButton, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(44)
+        ));
+        updateQualityButton();
 
         status = new TextView(this);
         status.setTextColor(Color.rgb(117, 231, 214));
@@ -202,9 +211,36 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openTour(TourArchive.Item item) {
+        String profile = getSharedPreferences("player", MODE_PRIVATE)
+            .getString("quality_profile", "auto");
         startActivity(new Intent(this, PlayerActivity.class)
             .putExtra(PlayerActivity.EXTRA_ROOT, item.rootDir.getAbsolutePath())
-            .putExtra(PlayerActivity.EXTRA_TITLE, item.title));
+            .putExtra(PlayerActivity.EXTRA_TITLE, item.title)
+            .putExtra(PlayerActivity.EXTRA_QUALITY, profile));
+    }
+
+    private void cycleQualityProfile() {
+        android.content.SharedPreferences prefs = getSharedPreferences("player", MODE_PRIVATE);
+        String current = prefs.getString("quality_profile", "auto");
+        String next;
+        if ("auto".equals(current)) next = "eco";
+        else if ("eco".equals(current)) next = "balanced";
+        else if ("balanced".equals(current)) next = "max";
+        else next = "auto";
+        prefs.edit().putString("quality_profile", next).apply();
+        updateQualityButton();
+    }
+
+    private void updateQualityButton() {
+        if (qualityButton == null) return;
+        String profile = getSharedPreferences("player", MODE_PRIVATE)
+            .getString("quality_profile", "auto");
+        String label;
+        if ("eco".equals(profile)) label = "ЭКОНОМИЯ";
+        else if ("balanced".equals(profile)) label = "БАЛАНС";
+        else if ("max".equals(profile)) label = "МАКСИМУМ";
+        else label = "АВТО";
+        qualityButton.setText("КАЧЕСТВО: " + label);
     }
 
     private void importArchive(Uri uri, boolean openAfter) {
