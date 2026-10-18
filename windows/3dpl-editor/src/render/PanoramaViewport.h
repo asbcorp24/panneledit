@@ -1,9 +1,12 @@
 #pragma once
 
 #include "StlMesh.h"
+#include "model/Hotspot.h"
 
 #include <QColor>
 #include <QImage>
+#include <QJsonArray>
+#include <QHash>
 #include <QMatrix4x4>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
@@ -50,6 +53,12 @@ public:
 
     void setView(double yaw, double pitch, double fov);
     void setStlStyle(const QColor& color, bool wireframe, double zoom);
+    void setSceneOverlays(
+        const QJsonArray& textObjects,
+        const QJsonArray& mediaObjects,
+        const QVector<Hotspot>& hotspots,
+        const QString& projectDirectory
+    );
 
     Mode mode() const { return m_mode; }
     double yaw() const { return m_yaw; }
@@ -66,11 +75,13 @@ signals:
     void objectFrameChanged(int sector, int row);
     void imageLoadFailed(const QString& message);
     void stlLoadFailed(const QString& message);
+    void hotspotSelected(int index);
 
 protected:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
+    void paintEvent(QPaintEvent* event) override;
 
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -96,6 +107,9 @@ private:
     void renderSphere();
     void renderObject();
     void renderStl();
+    void drawSceneOverlays(QPainter& painter);
+    QPointF panoramaPointToScreen(double yaw, double pitch, bool* visible = nullptr) const;
+    QRectF objectImageRect() const;
 
     QMatrix4x4 projectionMatrix() const;
     QMatrix4x4 viewMatrix() const;
@@ -143,6 +157,12 @@ private:
     double m_yaw = 0.0;
     double m_pitch = 0.0;
     double m_fov = 100.0;
+
+    QJsonArray m_textObjects;
+    QJsonArray m_mediaObjects;
+    QVector<Hotspot> m_hotspots;
+    QString m_overlayProjectDirectory;
+    QHash<QString, QImage> m_overlayImages;
 
     bool m_dragging = false;
     QPoint m_lastMouse;
