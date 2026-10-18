@@ -47,6 +47,11 @@ struct Scene {
     QString narrationSource;
     int narrationVolume = 80;
 
+    QString multiresBasePath;
+    int multiresTileResolution = 512;
+    int multiresMaxLevel = 1;
+    int multiresCubeResolution = 0;
+
     QVector<Hotspot> hotspots;
 
     static Scene fromJson(const QJsonObject& json);
