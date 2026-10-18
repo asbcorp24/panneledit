@@ -44,6 +44,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path windows/3dpl-editor/dist | Out-Null
           Copy-Item windows/3dpl-editor/build/Release/3dpl-editor.exe windows/3dpl-editor/dist/
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations windows/3dpl-editor/dist/3dpl-editor.exe
+
+          New-Item -ItemType Directory -Force -Path windows/3dpl-editor/dist/runtime/assets | Out-Null
+          Copy-Item windows/3dpl-editor/runtime/index.html windows/3dpl-editor/dist/runtime/index.html
+          Copy-Item windows/3dpl-editor/runtime/player.css windows/3dpl-editor/dist/runtime/assets/player.css
+          Copy-Item windows/3dpl-editor/runtime/tour.js windows/3dpl-editor/dist/runtime/assets/tour.js
+          Copy-Item assets/three.module.min.js windows/3dpl-editor/dist/runtime/assets/three.module.min.js
+          Copy-Item assets/xr-media-viewer.js windows/3dpl-editor/dist/runtime/assets/xr-media-viewer.js
+          Copy-Item assets/object360-xr-viewer.js windows/3dpl-editor/dist/runtime/assets/object360-xr-viewer.js
+          Copy-Item assets/stl-xr-viewer.js windows/3dpl-editor/dist/runtime/assets/stl-xr-viewer.js
+          Copy-Item assets/stl-viewer.js windows/3dpl-editor/dist/runtime/assets/stl-viewer.js
+          Copy-Item assets/multires-panorama-viewer.js windows/3dpl-editor/dist/runtime/assets/multires-panorama-viewer.js
+
           Compress-Archive -Path windows/3dpl-editor/dist/* -DestinationPath 3DPL-Editor-Windows.zip -Force
 
       - name: Upload artifact
