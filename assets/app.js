@@ -4316,9 +4316,14 @@
       '  <div id="tourInfoPanel" class="tour-info-panel" hidden><button id="tourInfoClose" type="button">×</button><div id="tourInfoContent"></div></div>\n' +
       '  <div id="tourBottomDock" class="tour-bottom-dock">\n' +
       '    <button id="tourGuideButton" type="button" title="Экскурсия с гидом" hidden>▶ Гид</button>\n' +
+      '    <button id="tourCardboardButton" type="button" title="Cardboard VR">VR</button>\n' +
       '    <button id="tourFullscreenButton" type="button" title="На весь экран">⛶</button>\n' +
       '    <button id="tourMusicButton" type="button" title="Музыка">♪</button>\n' +
       '    <button id="tourNarrationButton" type="button" title="Озвучка" hidden>🔊</button>\n' +
+      '  </div>\n' +
+      '  <div id="tourCardboardOverlay" class="tour-cardboard-overlay" hidden>\n' +
+      '    <div class="tour-cardboard-eye eye-left"><div class="tour-gaze-reticle"><i></i><span></span></div></div>\n' +
+      '    <div class="tour-cardboard-eye eye-right"><div class="tour-gaze-reticle"><i></i><span></span></div></div>\n' +
       '  </div>\n' +
       '  <div id="tourStartScreen" class="tour-start-screen" hidden>\n' +
       '    <div class="tour-start-shade"></div>\n' +
@@ -4438,6 +4443,7 @@
       '.scene-media-stereo-photo{background:#03060d;border:1px solid rgba(255,255,255,.12)}.scene-stereo-viewer-host{position:absolute;inset:0}.scene-media-stereo-photo .xr-media-hud{left:6px;right:6px;bottom:6px;padding:5px 6px;gap:4px}.scene-media-stereo-photo .xr-media-hint{display:none}.scene-media-stereo-photo .xr-media-btn{height:24px;min-width:30px;padding:0 5px;font-size:8px}.scene-media-stereo-photo .xr-media-projection{font-size:8px;padding:3px 5px}\n';
 
     css +=
+      '.tour-cardboard-overlay{position:fixed;inset:0;z-index:2147483000;pointer-events:none;display:grid;grid-template-columns:1fr 1fr}.tour-cardboard-overlay[hidden]{display:none}.tour-cardboard-eye{position:relative;overflow:hidden}.tour-cardboard-eye:after{content:"";position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.12)}.tour-cardboard-eye.eye-left:after{right:0}.tour-cardboard-eye.eye-right:after{left:0}.tour-gaze-reticle{--gaze-progress:0deg;position:absolute;left:50%;top:50%;translate:-50% -50%;width:44px;height:44px;border-radius:50%;background:conic-gradient(#75e7d6 var(--gaze-progress),rgba(255,255,255,.18) 0);padding:3px;display:grid;place-items:center;filter:drop-shadow(0 2px 9px rgba(0,0,0,.55))}.tour-gaze-reticle:before{content:"";position:absolute;inset:6px;border-radius:50%;background:rgba(4,8,16,.75);border:1px solid rgba(255,255,255,.55)}.tour-gaze-reticle i{position:relative;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 8px #75e7d6}.tour-gaze-reticle span{position:absolute;top:50px;left:50%;translate:-50% 0;min-width:150px;max-width:38vw;text-align:center;color:#fff;font:800 11px system-ui;text-shadow:0 2px 5px #000}.tour-gaze-reticle.is-target i{background:#75e7d6}.cardboard-tour #sceneTextOverlay{display:none!important}.cardboard-tour #tourNavBar,.cardboard-tour #tourBottomDock{opacity:.12;transition:opacity .2s}.cardboard-tour #tourBottomDock:hover,.cardboard-tour #tourNavBar:hover{opacity:1}\n' +
       '.object360-three-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}\n' +
       '.object360-xr-button,.stl-xr-button{flex:none;height:28px;min-width:34px;padding:0 8px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#121b2e;color:#fff;cursor:pointer;font-size:9px;font-weight:900}.object360-xr-button.active,.stl-xr-button.active{border-color:#75e7d6;color:#75e7d6}.object360-xr-button:disabled,.stl-xr-button:disabled{opacity:.38;cursor:not-allowed}\n' +
       '.object360-viewer.cardboard-active .object360-hint,.stl-viewer.cardboard-active .stl-hint{display:none}.object360-viewer.cardboard-active .object360-hud,.stl-viewer.cardboard-active .stl-hud{left:50%;right:auto;transform:translateX(-50%);width:auto;max-width:96vw}\n' +
