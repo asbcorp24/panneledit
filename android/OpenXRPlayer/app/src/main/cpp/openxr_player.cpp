@@ -258,6 +258,14 @@ struct JniBridge {
         return result == JNI_TRUE;
     }
 
+    void callVoid(const char* name) const {
+        if (!env || !activityClass) return;
+        jmethodID mid = env->GetMethodID(activityClass, name, "()V");
+        if (!mid) { env->ExceptionClear(); return; }
+        env->CallVoidMethod(app->activity->clazz, mid);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
     void toast(const std::string& text) const {
         if (!env || !activityClass) return;
         jmethodID mid = env->GetMethodID(activityClass, "nativeToast", "(Ljava/lang/String;)V");
@@ -1130,9 +1138,11 @@ private:
     XrAction selectAction_ = XR_NULL_HANDLE;
     XrAction triggerAction_ = XR_NULL_HANDLE;
     XrAction recenterAction_ = XR_NULL_HANDLE;
+    XrAction narrationAction_ = XR_NULL_HANDLE;
     std::array<XrPath,2> handPaths_{XR_NULL_PATH,XR_NULL_PATH};
     bool previousSelect_ = false;
     bool previousRecenter_ = false;
+    bool previousNarration_ = false;
     float recenterYaw_ = 0.0f;
 
     XrEnvironmentBlendMode blendMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -1289,6 +1299,7 @@ private:
         if(!makeAction(XR_ACTION_TYPE_BOOLEAN_INPUT,"select","Select",selectAction_)) return false;
         if(!makeAction(XR_ACTION_TYPE_FLOAT_INPUT,"trigger","Trigger",triggerAction_)) return false;
         if(!makeAction(XR_ACTION_TYPE_BOOLEAN_INPUT,"recenter","Recenter",recenterAction_)) return false;
+        if(!makeAction(XR_ACTION_TYPE_BOOLEAN_INPUT,"narration","Narration",narrationAction_)) return false;
 
         XrPath simpleProfile=XR_NULL_PATH;
         xrStringToPath(instance_,"/interaction_profiles/khr/simple_controller",&simpleProfile);
@@ -1322,6 +1333,9 @@ private:
             std::snprintf(path,sizeof(path),"/user/hand/%s/input/%s/click",side,i==0?"x":"a");
             p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
             touchBindings.push_back({recenterAction_,p});
+            std::snprintf(path,sizeof(path),"/user/hand/%s/input/%s/click",side,i==0?"y":"b");
+            p=XR_NULL_PATH; xrStringToPath(instance_,path,&p);
+            touchBindings.push_back({narrationAction_,p});
         }
         XrInteractionProfileSuggestedBinding touchSuggest{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
         touchSuggest.interactionProfile=touchProfile;
@@ -1342,6 +1356,9 @@ private:
                 std::snprintf(path,sizeof(path),"/user/hand/%s/input/menu/click",side);
                 p=XR_NULL_PATH;
                 if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({recenterAction_,p});
+                std::snprintf(path,sizeof(path),"/user/hand/%s/input/%s/click",side,i==0?"y":"b");
+                p=XR_NULL_PATH;
+                if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({narrationAction_,p});
             }
             XrInteractionProfileSuggestedBinding suggestion{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
             suggestion.interactionProfile=profile;
@@ -1369,6 +1386,7 @@ private:
 
         bool select=false;
         bool recenter=false;
+        bool narration=false;
 
         for(auto hand:handPaths_){
             XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
@@ -1385,6 +1403,10 @@ private:
             get.action=recenterAction_;
             XrActionStateBoolean rc{XR_TYPE_ACTION_STATE_BOOLEAN};
             if(XR_SUCCEEDED(xrGetActionStateBoolean(session_,&get,&rc)) && rc.isActive && rc.currentState) recenter=true;
+
+            get.action=narrationAction_;
+            XrActionStateBoolean na{XR_TYPE_ACTION_STATE_BOOLEAN};
+            if(XR_SUCCEEDED(xrGetActionStateBoolean(session_,&get,&na)) && na.isActive && na.currentState) narration=true;
         }
 
         if(select && !previousSelect_ && !gazeId_.empty()){
@@ -1397,8 +1419,12 @@ private:
             recenterYaw_=yaw;
             jni_.toast("OpenXR: центр обновлён");
         }
+        if(narration && !previousNarration_) {
+            jni_.callVoid("nativeToggleNarration");
+        }
         previousSelect_=select;
         previousRecenter_=recenter;
+        previousNarration_=narration;
     }
 
     bool createSpaces() {
@@ -1985,6 +2011,7 @@ private:
         if (selectAction_ != XR_NULL_HANDLE) { xrDestroyAction(selectAction_); selectAction_=XR_NULL_HANDLE; }
         if (triggerAction_ != XR_NULL_HANDLE) { xrDestroyAction(triggerAction_); triggerAction_=XR_NULL_HANDLE; }
         if (recenterAction_ != XR_NULL_HANDLE) { xrDestroyAction(recenterAction_); recenterAction_=XR_NULL_HANDLE; }
+        if (narrationAction_ != XR_NULL_HANDLE) { xrDestroyAction(narrationAction_); narrationAction_=XR_NULL_HANDLE; }
         if (actionSet_ != XR_NULL_HANDLE) { xrDestroyActionSet(actionSet_); actionSet_=XR_NULL_HANDLE; }
 
         if (appSpace_ != XR_NULL_HANDLE) {
