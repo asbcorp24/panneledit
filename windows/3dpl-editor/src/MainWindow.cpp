@@ -8,6 +8,7 @@
 #include "ui/ProjectOptionsDialog.h"
 #include "ui/SceneObjectsDialog.h"
 #include "ui/AssetManagerDialog.h"
+#include "ui/ObjectAlignmentDialog.h"
 
 #include <QCloseEvent>
 #include <QSpinBox>
@@ -314,6 +315,7 @@ void MainWindow::buildMenus() {
     sceneMenu->addAction("Добавить XR", this, &MainWindow::addXr);
     sceneMenu->addSeparator();
     sceneMenu->addAction("Текст и медиа сцены…", this, &MainWindow::editSceneObjects);
+    sceneMenu->addAction("Выровнять кадры Object360…", this, &MainWindow::editObjectAlignment);
     sceneMenu->addSeparator();
     sceneMenu->addAction("Удалить текущую сцену", this, &MainWindow::deleteCurrentScene, QKeySequence::Delete);
 }
@@ -1024,6 +1026,43 @@ void MainWindow::editSceneObjects() {
             if (Scene* target = m_project.findScene(sceneId)) *target = before;
             markDirty();
             refreshSceneControls();
+            loadCurrentSceneIntoViewport();
+        }
+    ));
+}
+
+void MainWindow::editObjectAlignment() {
+    Scene* scene = currentScene();
+    if (!scene || scene->type != SceneType::Object360) {
+        QMessageBox::information(
+            this,
+            QString::fromUtf8("Object360"),
+            QString::fromUtf8("Выберите сцену Object360.")
+        );
+        return;
+    }
+
+    const QString sceneId = scene->id;
+    const Scene before = *scene;
+
+    ObjectAlignmentDialog dialog(*scene, m_projectDir, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const Scene after = dialog.resultScene();
+    m_undoStack.push(new LambdaCommand(
+        QString::fromUtf8("Выравнивание Object360"),
+        [this, sceneId, after] {
+            if (Scene* target = m_project.findScene(sceneId)) *target = after;
+            markDirty();
+            refreshSceneControls();
+            refreshHotspots();
+            loadCurrentSceneIntoViewport();
+        },
+        [this, sceneId, before] {
+            if (Scene* target = m_project.findScene(sceneId)) *target = before;
+            markDirty();
+            refreshSceneControls();
+            refreshHotspots();
             loadCurrentSceneIntoViewport();
         }
     ));
