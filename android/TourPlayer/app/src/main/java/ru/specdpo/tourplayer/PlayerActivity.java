@@ -13,6 +13,8 @@ import android.webkit.ConsoleMessage;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
+import android.webkit.JavascriptInterface;
+import android.content.pm.ActivityInfo;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
@@ -110,6 +112,7 @@ public class PlayerActivity extends AppCompatActivity {
         );
 
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        webView.addJavascriptInterface(new NativeBridge(), "TourPlayerNative");
         webView.setWebViewClient(new TourWebViewClient(this, tourRoot));
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -161,6 +164,20 @@ public class PlayerActivity extends AppCompatActivity {
         webView.loadUrl(
             TourWebViewClient.ORIGIN + "/tour/index.html?playerProfile=" + profile
         );
+    }
+
+    private final class NativeBridge {
+        @JavascriptInterface
+        public void setCardboard(boolean enabled) {
+            runOnUiThread(() -> {
+                setRequestedOrientation(
+                    enabled
+                        ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        : ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                );
+                enterImmersive();
+            });
+        }
     }
 
     private void hideCustomView() {
