@@ -12,9 +12,39 @@
 #include <QtMath>
 
 #include <algorithm>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <cmath>
 
 namespace {
+
+quint64 physicalMemoryBytes() {
+#ifdef Q_OS_WIN
+    MEMORYSTATUSEX status{};
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status))
+        return static_cast<quint64>(status.ullTotalPhys);
+#endif
+    return 16ull * 1024ull * 1024ull * 1024ull;
+}
+
+QSize previewLimitForMemory(bool objectMode) {
+    const quint64 ram = physicalMemoryBytes();
+    const quint64 gb = 1024ull * 1024ull * 1024ull;
+    if (objectMode) {
+        if (ram < 8ull * gb) return {2048, 2048};
+        return {4096, 4096};
+    }
+    if (ram < 8ull * gb) return {4096, 2048};
+    if (ram < 16ull * gb) return {6144, 3072};
+    return {8192, 4096};
+}
+
 constexpr float kPi = 3.14159265358979323846f;
 
 int wrapIndex(int value, int count) {
@@ -65,11 +95,12 @@ bool PanoramaViewport::loadImage(const QString& filePath) {
     reader.setAutoTransform(true);
 
     const QSize original = reader.size();
-    int maxW = 8192;
-    int maxH = 4096;
-    if (m_mode == Mode::Object360) {
-        maxW = 4096;
-        maxH = 4096;
+    const QSize memoryLimit = previewLimitForMemory(m_mode == Mode::Object360);
+    int maxW = std::min(memoryLimit.width(), m_glMaxTextureSize);
+    int maxH = std::min(memoryLimit.height(), m_glMaxTextureSize);
+    if (m_mode != Mode::Object360) {
+        m_previewMaxWidth = maxW;
+        m_previewMaxHeight = maxH;
     }
 
     if (original.isValid() && (original.width() > maxW || original.height() > maxH)) {
@@ -102,7 +133,13 @@ void PanoramaViewport::setVideoFrame(const QImage& frame, const QString& project
     if (frame.isNull()) return;
     m_mode = Mode::Panorama;
     m_projection = projection.toUpper();
-    m_pendingImage = frame.convertToFormat(QImage::Format_RGBA8888);
+
+    QImage preview = frame;
+    const QSize limit(m_previewMaxWidth, m_previewMaxHeight);
+    if (preview.width() > limit.width() || preview.height() > limit.height())
+        preview = preview.scaled(limit, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    m_pendingImage = preview.convertToFormat(QImage::Format_RGBA8888);
     m_hasPendingImage = true;
     update();
 }
@@ -233,6 +270,13 @@ void PanoramaViewport::setView(double yaw, double pitch, double fov) {
 
 void PanoramaViewport::initializeGL() {
     initializeOpenGLFunctions();
+    GLint textureLimit = 8192;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &textureLimit);
+    m_glMaxTextureSize = std::max(2048, int(textureLimit));
+    const QSize memoryLimit = previewLimitForMemory(false);
+    m_previewMaxWidth = std::min(memoryLimit.width(), m_glMaxTextureSize);
+    m_previewMaxHeight = std::min(memoryLimit.height(), m_glMaxTextureSize);
+
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
