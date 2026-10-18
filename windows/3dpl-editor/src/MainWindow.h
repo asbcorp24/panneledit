@@ -46,6 +46,8 @@ private:
     void saveProjectAs();
     bool saveCurrent(bool showErrors = true);
     void exportOpenXrPackage();
+    void editProjectOptions();
+    void editSceneObjects();
     void generateCurrentMultires();
 
     void addPanorama();
