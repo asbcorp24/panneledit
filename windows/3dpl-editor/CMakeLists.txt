@@ -25,6 +25,8 @@ qt_add_executable(3dpl-editor WIN32
     src/model/Hotspot.h
     src/io/ProjectStorage.cpp
     src/io/ProjectStorage.h
+    src/export/PackageExporter.cpp
+    src/export/PackageExporter.h
     src/render/PanoramaViewport.cpp
     src/render/PanoramaViewport.h
     src/render/StlMesh.cpp
