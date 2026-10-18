@@ -466,7 +466,14 @@ GLuint linkProgram(const char* vsSrc, const char* fsSrc) {
 struct Renderer {
     GLuint program = 0;
     GLuint reticleProgram = 0;
+    GLuint stlProgram = 0;
     GLuint vao = 0;
+    GLuint quadVao = 0;
+    GLuint quadVbo = 0;
+    GLuint quadIbo = 0;
+    GLuint stlVao = 0;
+    GLuint stlVbo = 0;
+    GLsizei stlVertexCount = 0;
     GLuint vbo = 0;
     GLuint ibo = 0;
     GLsizei indexCount = 0;
@@ -479,8 +486,13 @@ struct Renderer {
     GLint uYawOffset = -1;
 
     std::string projection = "360";
+    std::string mode = "panorama";
     float sceneYaw = 0.0f;
     float scenePitch = 0.0f;
+    float objectAspect = 1.5f;
+    float stlZoom = 1.0f;
+    bool stlWireframe = false;
+    float stlColor[3]{0.49f,0.55f,1.0f};
 
     bool init() {
         static const char* vs = R"(
@@ -532,9 +544,35 @@ struct Renderer {
             }
         )";
 
+        static const char* stlVs = R"(
+            #version 300 es
+            layout(location=0) in vec3 aPos;
+            layout(location=1) in vec3 aNormal;
+            uniform mat4 uMvp;
+            uniform mat4 uModel;
+            out vec3 vNormal;
+            void main() {
+                vNormal = mat3(uModel) * aNormal;
+                gl_Position = uMvp * vec4(aPos,1.0);
+            }
+        )";
+        static const char* stlFs = R"(
+            #version 300 es
+            precision mediump float;
+            in vec3 vNormal;
+            uniform vec3 uColor;
+            out vec4 fragColor;
+            void main() {
+                vec3 n = normalize(vNormal);
+                float light = 0.28 + 0.72 * max(dot(n,normalize(vec3(0.35,0.7,0.6))),0.0);
+                fragColor = vec4(uColor * light,1.0);
+            }
+        )";
+
         program = linkProgram(vs, fs);
         reticleProgram = linkProgram(retVs, retFs);
-        if (!program || !reticleProgram) return false;
+        stlProgram = linkProgram(stlVs, stlFs);
+        if (!program || !reticleProgram || !stlProgram) return false;
 
         uMvp = glGetUniformLocation(program, "uMvp");
         uUvScale = glGetUniformLocation(program, "uUvScale");
@@ -542,6 +580,7 @@ struct Renderer {
         uYawOffset = glGetUniformLocation(program, "uYawOffset");
 
         buildSphere();
+        buildQuad();
         glGenFramebuffers(1, &fbo);
         return vao != 0 && fbo != 0;
     }
@@ -610,6 +649,60 @@ struct Renderer {
         glBindVertexArray(0);
     }
 
+    void buildQuad() {
+        const float vertices[] = {
+            -1.0f,-1.0f,0.0f, 0.0f,1.0f,
+             1.0f,-1.0f,0.0f, 1.0f,1.0f,
+             1.0f, 1.0f,0.0f, 1.0f,0.0f,
+            -1.0f, 1.0f,0.0f, 0.0f,0.0f
+        };
+        const uint16_t indices[] = {0,1,2,0,2,3};
+        glGenVertexArrays(1,&quadVao);
+        glBindVertexArray(quadVao);
+        glGenBuffers(1,&quadVbo);
+        glBindBuffer(GL_ARRAY_BUFFER,quadVbo);
+        glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices,GL_STATIC_DRAW);
+        glGenBuffers(1,&quadIbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,quadIbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(indices),indices,GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,5*sizeof(float),nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,5*sizeof(float),reinterpret_cast<void*>(3*sizeof(float)));
+        glBindVertexArray(0);
+    }
+
+    void setMode(const std::string& value) { mode=value; }
+
+    bool setStlMesh(const std::vector<StlVertex>& vertices,float zoom,bool wireframe,int rgb) {
+        if (stlVbo) glDeleteBuffers(1,&stlVbo);
+        if (stlVao) glDeleteVertexArrays(1,&stlVao);
+        stlVao=stlVbo=0;
+        stlVertexCount=0;
+        if(vertices.empty()) return false;
+        glGenVertexArrays(1,&stlVao);
+        glBindVertexArray(stlVao);
+        glGenBuffers(1,&stlVbo);
+        glBindBuffer(GL_ARRAY_BUFFER,stlVbo);
+        glBufferData(GL_ARRAY_BUFFER,vertices.size()*sizeof(StlVertex),vertices.data(),GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(StlVertex),nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(StlVertex),reinterpret_cast<void*>(3*sizeof(float)));
+        glBindVertexArray(0);
+        stlVertexCount=static_cast<GLsizei>(vertices.size());
+        stlZoom=std::clamp(zoom,0.35f,5.0f);
+        stlWireframe=wireframe;
+        stlColor[0]=((rgb>>16)&255)/255.0f;
+        stlColor[1]=((rgb>>8)&255)/255.0f;
+        stlColor[2]=(rgb&255)/255.0f;
+        return true;
+    }
+
+    void setObjectAspect(float aspect) {
+        objectAspect=std::clamp(aspect,0.4f,3.0f);
+    }
+
     void setSceneTexture(GLuint newTexture, std::string proj, float yaw, float pitch) {
         if (texture) glDeleteTextures(1, &texture);
         texture = newTexture;
@@ -635,11 +728,43 @@ struct Renderer {
         glClearColor(0.015f, 0.02f, 0.04f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        if (texture) {
-            const Mat4 projectionM = projectionFromFov(view.fov);
-            const Mat4 viewM = viewFromPose(view.pose);
-            const Mat4 mvp = multiply(projectionM, viewM);
+        const Mat4 projectionM = projectionFromFov(view.fov);
+        const Mat4 viewM = viewFromPose(view.pose);
 
+        if (mode == "stl" && stlVao && stlVertexCount > 0) {
+            Mat4 model = multiply(
+                translation(0.0f,-0.1f,-2.5f),
+                multiply(
+                    rotationY(sceneYaw * kDeg),
+                    multiply(rotationX(scenePitch * kDeg),scaleMatrix(stlZoom,stlZoom,stlZoom))
+                )
+            );
+            Mat4 mvp = multiply(projectionM,multiply(viewM,model));
+            glEnable(GL_DEPTH_TEST);
+            glUseProgram(stlProgram);
+            glUniformMatrix4fv(glGetUniformLocation(stlProgram,"uMvp"),1,GL_FALSE,mvp.m);
+            glUniformMatrix4fv(glGetUniformLocation(stlProgram,"uModel"),1,GL_FALSE,model.m);
+            glUniform3fv(glGetUniformLocation(stlProgram,"uColor"),1,stlColor);
+            glBindVertexArray(stlVao);
+            glDrawArrays(stlWireframe ? GL_LINES : GL_TRIANGLES,0,stlVertexCount);
+            glBindVertexArray(0);
+            glDisable(GL_DEPTH_TEST);
+        } else if (texture) {
+            Mat4 model = identity();
+            GLuint drawVao = vao;
+            GLenum indexType = GL_UNSIGNED_INT;
+            GLsizei drawCount = indexCount;
+
+            if (mode == "object360") {
+                const float sy = 0.95f;
+                const float sx = sy * objectAspect;
+                model = multiply(translation(0.0f,0.0f,-2.4f),scaleMatrix(sx,sy,1.0f));
+                drawVao = quadVao;
+                indexType = GL_UNSIGNED_SHORT;
+                drawCount = 6;
+            }
+
+            const Mat4 mvp = multiply(projectionM,multiply(viewM,model));
             glUseProgram(program);
             glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.m);
 
@@ -654,14 +779,14 @@ struct Renderer {
 
             glUniform2f(uUvScale, sx, sy);
             glUniform2f(uUvOffset, ox, oy);
-            glUniform1f(uYawOffset, sceneYaw / 360.0f);
+            glUniform1f(uYawOffset, mode=="panorama" ? sceneYaw/360.0f : 0.0f);
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, texture);
             glUniform1i(glGetUniformLocation(program, "uTex"), 0);
 
-            glBindVertexArray(vao);
-            glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(drawVao);
+            glDrawElements(GL_TRIANGLES, drawCount, indexType, nullptr);
             glBindVertexArray(0);
             glBindTexture(GL_TEXTURE_2D, 0);
         }
@@ -686,13 +811,21 @@ struct Renderer {
 
     void destroy() {
         if (texture) glDeleteTextures(1, &texture);
+        if (stlVbo) glDeleteBuffers(1,&stlVbo);
+        if (stlVao) glDeleteVertexArrays(1,&stlVao);
+        if (quadIbo) glDeleteBuffers(1,&quadIbo);
+        if (quadVbo) glDeleteBuffers(1,&quadVbo);
+        if (quadVao) glDeleteVertexArrays(1,&quadVao);
         if (fbo) glDeleteFramebuffers(1, &fbo);
         if (ibo) glDeleteBuffers(1, &ibo);
         if (vbo) glDeleteBuffers(1, &vbo);
         if (vao) glDeleteVertexArrays(1, &vao);
         if (program) glDeleteProgram(program);
         if (reticleProgram) glDeleteProgram(reticleProgram);
-        texture = fbo = ibo = vbo = vao = program = reticleProgram = 0;
+        if (stlProgram) glDeleteProgram(stlProgram);
+        texture = fbo = ibo = vbo = vao = program = reticleProgram = stlProgram = 0;
+        quadVao=quadVbo=quadIbo=stlVao=stlVbo=0;
+        stlVertexCount=0;
     }
 };
 
