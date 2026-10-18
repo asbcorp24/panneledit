@@ -140,6 +140,9 @@ private:
     std::unique_ptr<QOpenGLTexture> m_texture;
     QImage m_pendingImage;
     bool m_hasPendingImage = false;
+    int m_glMaxTextureSize = 8192;
+    int m_previewMaxWidth = 8192;
+    int m_previewMaxHeight = 4096;
 
     QVector<StlVertex> m_pendingStl;
     bool m_hasPendingStl = false;
