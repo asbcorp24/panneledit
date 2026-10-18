@@ -83,14 +83,7 @@ public final class XrActivity extends NativeActivity {
         if (s == null || root == null) return "";
         String source = s.optString("source", "");
         if (source.isEmpty()) return "";
-        try {
-            File f = new File(root, source);
-            String rp = root.getCanonicalPath() + File.separator;
-            String fp = f.getCanonicalPath();
-            return fp.startsWith(rp) ? fp : "";
-        } catch (Exception e) {
-            return "";
-        }
+        return safePath(source);
     }
 
     public synchronized String nativeGetSceneProjection() {
@@ -117,6 +110,68 @@ public final class XrActivity extends NativeActivity {
         JSONObject s = currentScene();
         return s != null ? (float)s.optDouble("fov", 90.0) : 90f;
     }
+    public synchronized int nativeGetObjectSectors() {
+        JSONObject s = currentScene();
+        return s != null ? Math.max(1, s.optInt("sectors", 1)) : 1;
+    }
+
+    public synchronized int nativeGetObjectRows() {
+        JSONObject s = currentScene();
+        return s != null ? Math.max(1, s.optInt("rows", 1)) : 1;
+    }
+
+    public synchronized int nativeGetObjectStartSector() {
+        JSONObject s = currentScene();
+        return s != null ? Math.max(0, s.optInt("startSector", 0)) : 0;
+    }
+
+    public synchronized int nativeGetObjectStartRow() {
+        JSONObject s = currentScene();
+        return s != null ? Math.max(0, s.optInt("startRow", 0)) : 0;
+    }
+
+    public synchronized String nativeGetObjectFramesPacked() {
+        JSONObject s = currentScene();
+        if (s == null || root == null) return "";
+        JSONArray rows = s.optJSONArray("frames");
+        if (rows == null) return "";
+
+        StringBuilder out = new StringBuilder();
+        for (int r = 0; r < rows.length(); r++) {
+            JSONArray row = rows.optJSONArray(r);
+            if (row == null) continue;
+            for (int sector = 0; sector < row.length(); sector++) {
+                String rel = row.optString(sector, "");
+                String abs = safePath(rel);
+                if (abs.isEmpty()) continue;
+                out.append(r).append('\t')
+                    .append(sector).append('\t')
+                    .append(clean(abs)).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    public synchronized float nativeGetStlZoom() {
+        JSONObject s = currentScene();
+        return s != null ? (float)s.optDouble("zoom", 1.0) : 1f;
+    }
+
+    public synchronized boolean nativeGetStlWireframe() {
+        JSONObject s = currentScene();
+        return s != null && s.optBoolean("wireframe", false);
+    }
+
+    public synchronized int nativeGetStlColorRgb() {
+        JSONObject s = currentScene();
+        String color = s != null ? s.optString("color", "#7c8cff") : "#7c8cff";
+        try {
+            return android.graphics.Color.parseColor(color) & 0x00ffffff;
+        } catch (Exception ignored) {
+            return 0x7c8cff;
+        }
+    }
+
 
     // One line per hotspot:
     // id<TAB>type<TAB>targetSceneId<TAB>yaw<TAB>pitch
@@ -188,6 +243,18 @@ public final class XrActivity extends NativeActivity {
 
     public void nativeToast(String message) {
         runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+    }
+
+    private synchronized String safePath(String relative) {
+        if (root == null || relative == null || relative.isEmpty()) return "";
+        try {
+            File f = new File(root, relative);
+            String rp = root.getCanonicalPath() + File.separator;
+            String fp = f.getCanonicalPath();
+            return fp.startsWith(rp) ? fp : "";
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static String readText(File file) throws Exception {
