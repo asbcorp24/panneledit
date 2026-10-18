@@ -30,6 +30,7 @@ bool ProjectStorage::ensureLayout(const QString& directory, QString* error) {
         "assets/stl",
         "assets/xr",
         "assets/audio",
+        "assets/media",
         "multires",
         "thumbnails",
         "cache"
