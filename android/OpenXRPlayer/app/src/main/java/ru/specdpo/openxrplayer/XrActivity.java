@@ -10,8 +10,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,7 +36,7 @@ public final class XrActivity extends NativeActivity {
             File file = new File(root, "openxr-manifest.json");
             if (!file.isFile()) throw new IllegalArgumentException("openxr-manifest.json отсутствует");
 
-            manifest = new JSONObject(Files.readString(file.toPath(), StandardCharsets.UTF_8));
+            manifest = new JSONObject(readText(file));
             JSONArray items = manifest.optJSONArray("scenes");
             if (items == null || items.length() == 0) throw new IllegalArgumentException("Нет сцен");
 
@@ -188,6 +188,22 @@ public final class XrActivity extends NativeActivity {
 
     public void nativeToast(String message) {
         runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+    }
+
+    private static String readText(File file) throws Exception {
+        if (file.length() > 4L * 1024L * 1024L) {
+            throw new IllegalArgumentException("OpenXR manifest слишком большой");
+        }
+        byte[] data = new byte[(int)file.length()];
+        int offset = 0;
+        try (FileInputStream in = new FileInputStream(file)) {
+            while (offset < data.length) {
+                int n = in.read(data, offset, data.length - offset);
+                if (n <= 0) break;
+                offset += n;
+            }
+        }
+        return new String(data, 0, offset, StandardCharsets.UTF_8);
     }
 
     private static String clean(String value) {
