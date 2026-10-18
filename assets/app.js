@@ -4193,6 +4193,7 @@
         id,
         title: meta.title || id,
         type,
+        audio: meta.audio || { music:null, narration:null },
         hotspots: (meta.screenHotspots || []).map((h) => ({
           id: h.id || '',
           type: h.type || 'info',
@@ -4278,6 +4279,7 @@
       title: project.title || 'Виртуальная экскурсия',
       firstScene: config.tourFirstScene || scenes[0]?.id || null,
       sceneOrder: config.sceneOrder || scenes.map((s) => s.id),
+      projectAudio: config.projectAudio || { music:null },
       scenes
     };
   }
