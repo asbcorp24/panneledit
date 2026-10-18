@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1353,9 +1354,11 @@ private:
                 std::snprintf(path,sizeof(path),"/user/hand/%s/input/trigger/value",side);
                 XrPath p=XR_NULL_PATH;
                 if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({triggerAction_,p});
-                std::snprintf(path,sizeof(path),"/user/hand/%s/input/menu/click",side);
-                p=XR_NULL_PATH;
-                if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({recenterAction_,p});
+                if(i==0){
+                    std::snprintf(path,sizeof(path),"/user/hand/left/input/menu/click");
+                    p=XR_NULL_PATH;
+                    if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({recenterAction_,p});
+                }
                 std::snprintf(path,sizeof(path),"/user/hand/%s/input/%s/click",side,i==0?"y":"b");
                 p=XR_NULL_PATH;
                 if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({narrationAction_,p});
