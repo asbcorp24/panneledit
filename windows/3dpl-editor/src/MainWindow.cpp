@@ -269,6 +269,11 @@ void MainWindow::buildUi() {
     connect(m_viewport, &PanoramaViewport::stlLoadFailed, this, [this](const QString& message) {
         statusBar()->showMessage("STL: " + message, 4000);
     });
+    connect(m_viewport, &PanoramaViewport::hotspotSelected, this, [this](int index) {
+        if (!m_hotspotTable || index < 0 || index >= m_hotspotTable->rowCount()) return;
+        m_hotspotTable->selectRow(index);
+        m_hotspotTable->scrollToItem(m_hotspotTable->item(index, 0));
+    });
     connect(m_viewport, &PanoramaViewport::imageLoadFailed, this, [this](const QString& message) {
         statusBar()->showMessage(message, 4000);
     });
@@ -1429,10 +1434,17 @@ void MainWindow::loadCurrentSceneIntoViewport() {
     stopVideoPreview();
     const Scene* scene = currentScene();
     if (!scene) {
+        m_viewport->setSceneOverlays({}, {}, {}, {});
         m_viewport->clearImage();
         return;
     }
 
+    m_viewport->setSceneOverlays(
+        scene->textObjects,
+        scene->mediaObjects,
+        scene->hotspots,
+        m_projectDir
+    );
     m_viewport->setView(scene->yaw, scene->pitch, scene->fov);
 
     if (scene->type == SceneType::Panorama && !scene->source.isEmpty()) {
