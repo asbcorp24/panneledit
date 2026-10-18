@@ -41,6 +41,7 @@
 #include <QVideoSink>
 #include <QVideoFrame>
 #include <QMediaPlayer>
+#include <QApplication>
 #include <QAudioOutput>
 
 #include <functional>
