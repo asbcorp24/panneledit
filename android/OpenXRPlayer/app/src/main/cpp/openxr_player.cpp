@@ -1226,7 +1226,9 @@ private:
                      XR_MAX_ENGINE_NAME_SIZE - 1);
         createInfo.applicationInfo.applicationVersion = 1;
         createInfo.applicationInfo.engineVersion = 1;
-        createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
+        // Request the OpenXR 1.0 baseline for maximum runtime compatibility.
+        // Newer 1.1 runtimes still expose their additional interaction profiles.
+        createInfo.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         createInfo.enabledExtensionNames = extensions.data();
 
