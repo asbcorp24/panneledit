@@ -4498,6 +4498,12 @@
   let guideTimer = 0;
   let guideIndex = -1;
   let guideRunning = false;
+  let cardboardMode = false;
+  let gazeTimer = 0;
+  let gazeTargetId = '';
+  let gazeStartedAt = 0;
+  let gazeCooldownUntil = 0;
+  const GAZE_DWELL_MS = 1100;
   const historyStack = [];
   const galleryIndexes = new Map();
 
@@ -4513,6 +4519,9 @@
   const narrationButton = document.getElementById('tourNarrationButton');
   const fullscreenButton = document.getElementById('tourFullscreenButton');
   const guideButton = document.getElementById('tourGuideButton');
+  const cardboardButton = document.getElementById('tourCardboardButton');
+  const cardboardOverlay = document.getElementById('tourCardboardOverlay');
+  const gazeReticles = [...document.querySelectorAll('.tour-gaze-reticle')];
   const startScreen = document.getElementById('tourStartScreen');
   const startTitle = document.getElementById('tourStartTitle');
   const startSubtitle = document.getElementById('tourStartSubtitle');
@@ -4623,6 +4632,139 @@
     }
     if (hotspot.type === 'info') {
       showInfo((hotspot.text ? hotspot.text + '\\n\\n' : '') + (hotspot.info || ''));
+    }
+  };
+
+  const activeViewer = () => panoViewer || objectViewer || stlViewer || xrViewer || null;
+
+  const activeProjector = () => {
+    const viewer = activeViewer();
+    if (!viewer) return null;
+    if (typeof viewer.viewToScreen === 'function') return viewer;
+    if (typeof viewer.projectPoint === 'function') return viewer;
+    return null;
+  };
+
+  const setGazeUi = (hotspot, progress = 0) => {
+    const label = hotspot
+      ? (hotspot.text || (hotspot.type === 'scene' ? 'Переход' : hotspot.type === 'url' ? 'Ссылка' : 'Подробнее'))
+      : '';
+    const degrees = Math.round(clamp(progress,0,1) * 360) + 'deg';
+    gazeReticles.forEach((reticle) => {
+      reticle.style.setProperty('--gaze-progress', degrees);
+      reticle.classList.toggle('is-target', Boolean(hotspot));
+      const text = reticle.querySelector('span');
+      if (text) text.textContent = label;
+    });
+  };
+
+  const resetGaze = () => {
+    gazeTargetId = '';
+    gazeStartedAt = 0;
+    setGazeUi(null,0);
+  };
+
+  const gazeCandidate = () => {
+    if (!cardboardMode || !currentSceneId) return null;
+    const meta = config.sceneMeta?.[currentSceneId] || {};
+    const state = activeViewer()?.getState?.() || null;
+    const projector = activeProjector();
+    const candidates = [];
+
+    (meta.screenHotspots || []).forEach((hotspot) => {
+      if (hotspot.visible === false) return;
+      if (!screenHotspotVisible(hotspot, meta, state, projector)) return;
+      const pos = screenHotspotPosition(hotspot, meta, state, projector);
+      const dx = Number(pos.x) - 50;
+      const dy = Number(pos.y) - 50;
+      const score = Math.sqrt(dx*dx + dy*dy);
+      if (score <= 13) candidates.push({hotspot,score});
+    });
+
+    candidates.sort((a,b) => a.score - b.score);
+    return candidates[0]?.hotspot || null;
+  };
+
+  const updateGazeSelection = () => {
+    if (!cardboardMode) return;
+    const now = performance.now();
+    const hotspot = gazeCandidate();
+
+    if (!hotspot) {
+      resetGaze();
+      return;
+    }
+
+    const id = String(hotspot.id || '');
+    if (id !== gazeTargetId) {
+      gazeTargetId = id;
+      gazeStartedAt = now;
+      setGazeUi(hotspot,0);
+      return;
+    }
+
+    const progress = clamp((now - gazeStartedAt) / GAZE_DWELL_MS,0,1);
+    setGazeUi(hotspot,progress);
+
+    if (progress >= 1 && now >= gazeCooldownUntil) {
+      gazeCooldownUntil = now + 1400;
+      gazeStartedAt = now;
+      runHotspotAction(hotspot);
+    }
+  };
+
+  const startGazeLoop = () => {
+    clearInterval(gazeTimer);
+    gazeTimer = window.setInterval(updateGazeSelection, 60);
+  };
+
+  const stopGazeLoop = () => {
+    clearInterval(gazeTimer);
+    gazeTimer = 0;
+    resetGaze();
+  };
+
+  const applyCardboardToViewer = async () => {
+    const viewer = activeViewer();
+    if (!viewer) return;
+
+    const current = Boolean(viewer.getState?.().cardboard);
+    if (current === cardboardMode) return;
+
+    try {
+      if (typeof viewer.setCardboard === 'function') {
+        await viewer.setCardboard(cardboardMode,{fullscreen:false});
+      } else if (typeof viewer.toggleCardboard === 'function') {
+        await viewer.toggleCardboard();
+      }
+    } catch (error) {
+      console.warn('Cardboard:', error);
+    }
+  };
+
+  const setTourCardboard = async (enabled) => {
+    cardboardMode = Boolean(enabled);
+    document.body.classList.toggle('cardboard-tour',cardboardMode);
+    if (cardboardOverlay) cardboardOverlay.hidden = !cardboardMode;
+    if (cardboardButton) {
+      cardboardButton.classList.toggle('active',cardboardMode);
+      cardboardButton.textContent = cardboardMode ? 'ВЫХОД VR' : 'VR';
+    }
+
+    await applyCardboardToViewer();
+
+    if (cardboardMode) {
+      startGazeLoop();
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (_) {}
+    } else {
+      stopGazeLoop();
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+      } catch (_) {}
     }
   };
 
