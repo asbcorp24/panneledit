@@ -17,6 +17,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QEventLoop>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHeaderView>
