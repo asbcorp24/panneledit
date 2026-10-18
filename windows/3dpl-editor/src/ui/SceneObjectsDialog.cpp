@@ -3,11 +3,13 @@
 #include "io/ProjectStorage.h"
 
 #include <QCheckBox>
+#include <QColor>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QHBoxLayout>
