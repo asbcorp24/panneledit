@@ -21,6 +21,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include "stl_mesh.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "OpenXRPlayer", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "OpenXRPlayer", __VA_ARGS__)
@@ -52,6 +54,20 @@ Mat4 multiply(const Mat4& a, const Mat4& b) {
         }
     }
     return r;
+}
+Mat4 translation(float x,float y,float z){
+    Mat4 m=identity(); m.m[12]=x; m.m[13]=y; m.m[14]=z; return m;
+}
+Mat4 scaleMatrix(float x,float y,float z){
+    Mat4 m{}; m.m[0]=x; m.m[5]=y; m.m[10]=z; m.m[15]=1; return m;
+}
+Mat4 rotationX(float a){
+    Mat4 m=identity(); float c=std::cos(a),s=std::sin(a);
+    m.m[5]=c; m.m[9]=-s; m.m[6]=s; m.m[10]=c; return m;
+}
+Mat4 rotationY(float a){
+    Mat4 m=identity(); float c=std::cos(a),s=std::sin(a);
+    m.m[0]=c; m.m[8]=s; m.m[2]=-s; m.m[10]=c; return m;
 }
 
 Mat4 projectionFromFov(const XrFovf& fov, float nearZ = 0.05f, float farZ = 100.0f) {
@@ -210,6 +226,15 @@ struct JniBridge {
         if (env->ExceptionCheck()) { env->ExceptionClear(); return 0; }
         return static_cast<int>(v);
     }
+    bool callBool(const char* name) const {
+        if (!env || !activityClass) return false;
+        jmethodID mid = env->GetMethodID(activityClass, name, "()Z");
+        if (!mid) { env->ExceptionClear(); return false; }
+        jboolean v = env->CallBooleanMethod(app->activity->clazz, mid);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+        return v == JNI_TRUE;
+    }
+
 
     float callFloat(const char* name) const {
         if (!env || !activityClass) return 0.0f;
@@ -318,6 +343,34 @@ struct Hotspot {
     float yaw = 0;
     float pitch = 0;
 };
+
+struct ObjectFrameRef {
+    int row=0;
+    int sector=0;
+    std::string path;
+};
+
+std::vector<ObjectFrameRef> parseObjectFrames(const std::string& packed) {
+    std::vector<ObjectFrameRef> out;
+    std::istringstream lines(packed);
+    std::string line;
+    while (std::getline(lines,line)) {
+        if(line.empty()) continue;
+        std::vector<std::string> f;
+        std::stringstream ss(line);
+        std::string field;
+        while(std::getline(ss,field,'\t')) f.push_back(field);
+        if(f.size()<3) continue;
+        try {
+            ObjectFrameRef r;
+            r.row=std::stoi(f[0]);
+            r.sector=std::stoi(f[1]);
+            r.path=f[2];
+            out.push_back(std::move(r));
+        } catch (...) {}
+    }
+    return out;
+}
 
 std::vector<Hotspot> parseHotspots(const std::string& packed) {
     std::vector<Hotspot> out;
