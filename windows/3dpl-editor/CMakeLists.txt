@@ -27,6 +27,8 @@ qt_add_executable(3dpl-editor WIN32
     src/io/ProjectStorage.h
     src/render/PanoramaViewport.cpp
     src/render/PanoramaViewport.h
+    src/render/StlMesh.cpp
+    src/render/StlMesh.h
 )
 
 target_include_directories(3dpl-editor PRIVATE src)
