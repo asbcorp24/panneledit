@@ -3,6 +3,7 @@
 #include "Hotspot.h"
 
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QString>
 #include <QVector>
 
@@ -40,6 +41,14 @@ struct Scene {
     double zoom = 1.0;
     bool wireframe = false;
     QString color = "#7c8cff";
+
+    QString backgroundMode = "hitech";
+    QString backgroundColor = "#ffffff";
+    QString backgroundImageSource;
+    QString backgroundSceneId;
+
+    QJsonArray textObjects;
+    QJsonArray mediaObjects;
 
     QString musicSource;
     int musicVolume = 60;
