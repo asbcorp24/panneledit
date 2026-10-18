@@ -41,6 +41,7 @@ private:
 
     void newProject();
     void openProject();
+    void importLegacyProject();
     void saveProject();
     void saveProjectAs();
     bool saveCurrent(bool showErrors = true);
