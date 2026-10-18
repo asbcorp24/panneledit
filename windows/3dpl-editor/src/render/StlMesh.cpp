@@ -2,9 +2,11 @@
 
 #include <QFile>
 #include <QTextStream>
+#include <QRegularExpression>
 #include <QtEndian>
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <limits>
 
