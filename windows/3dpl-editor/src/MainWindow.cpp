@@ -7,6 +7,7 @@
 #include "render/MultiresGenerator.h"
 #include "ui/ProjectOptionsDialog.h"
 #include "ui/SceneObjectsDialog.h"
+#include "ui/AssetManagerDialog.h"
 
 #include <QCloseEvent>
 #include <QSpinBox>
@@ -302,6 +303,9 @@ void MainWindow::buildMenus() {
     auto* editMenu = menuBar()->addMenu("Правка");
     editMenu->addAction(m_undoStack.createUndoAction(this, "Отмена"));
     editMenu->addAction(m_undoStack.createRedoAction(this, "Повтор"));
+
+    auto* toolsMenu = menuBar()->addMenu("Инструменты");
+    toolsMenu->addAction("Asset Manager…", this, &MainWindow::manageAssets);
 
     auto* sceneMenu = menuBar()->addMenu("Сцена");
     sceneMenu->addAction("Добавить панораму", this, &MainWindow::addPanorama);
@@ -1023,6 +1027,25 @@ void MainWindow::editSceneObjects() {
             loadCurrentSceneIntoViewport();
         }
     ));
+}
+
+void MainWindow::manageAssets() {
+    if (m_projectDir.isEmpty()) {
+        QMessageBox::information(
+            this,
+            QString::fromUtf8("Asset Manager"),
+            QString::fromUtf8("Сначала создайте или откройте проект.")
+        );
+        return;
+    }
+
+    AssetManagerDialog dialog(m_project, m_projectDir, this);
+    dialog.exec();
+
+    // Assets may have been removed. Refresh the viewport so a deleted unused
+    // image is never kept alive just because Qt still has a decoded copy.
+    loadCurrentSceneIntoViewport();
+    statusBar()->showMessage(QString::fromUtf8("Asset Manager закрыт"), 2000);
 }
 
 void MainWindow::exportOpenXrPackage() {
