@@ -9,6 +9,13 @@ const loading = $('loading');
 const message = $('message');
 const sceneNav = $('sceneNav');
 const vrButton = $('vrButton');
+const guideButton = $('guideButton');
+const startScreen = $('startScreen');
+const startCover = $('startCover');
+const startTitle = $('startTitle');
+const startSubtitle = $('startSubtitle');
+const startSound = $('startSound');
+const startSilent = $('startSilent');
 const gazeOverlay = $('gazeOverlay');
 const gazeEls = [...document.querySelectorAll('.gaze')];
 
@@ -23,6 +30,12 @@ let gazeCooldown = 0;
 let gazeTimer = 0;
 let music = null;
 let narration = null;
+let silentEntry = false;
+let tourEntered = false;
+let guideRunning = false;
+let guideIndex = -1;
+let guideTimer = 0;
+let currentGuideStep = null;
 const DWELL = 1100;
 
 const clamp = (v,a,b) => Math.min(b,Math.max(a,Number(v)||0));
@@ -56,9 +69,21 @@ function resolveAudioSlot(scene, key) {
   return null;
 }
 
+function playNarration(scene) {
+  narration = stopAudio(narration);
+  if (silentEntry) return;
+  const n = scene?.audio?.narration;
+  if (!n?.src) return;
+  narration = new Audio(n.src);
+  narration.loop = false;
+  narration.volume = clamp((n.volume ?? 80)/100,0,1);
+  narration.play().catch(()=>{});
+}
+
 function playSceneAudio(scene) {
   music = stopAudio(music);
   narration = stopAudio(narration);
+  if (silentEntry) return;
   const m = resolveAudioSlot(scene,'music');
   if (m?.src) {
     music = new Audio(m.src);
@@ -183,6 +208,10 @@ function renderHotspots() {
     b.style.left = p.x + '%';
     b.style.top = p.y + '%';
     b.textContent = h.text || (h.type === 'scene' ? 'Переход' : h.type === 'url' ? 'Ссылка' : 'Инфо');
+    b.dataset.hotspotId = String(h.id || '');
+    if (guideRunning && currentGuideStep?.highlightHotspotId && String(h.id||'') === String(currentGuideStep.highlightHotspotId)) {
+      b.classList.add('guide-highlight');
+    }
     b.addEventListener('click',() => activateHotspot(h));
     hotspotLayer.appendChild(b);
   }
@@ -287,6 +316,87 @@ async function setCardboard(value) {
   }
 }
 
+function stopGuide() {
+  guideRunning=false;
+  guideIndex=-1;
+  currentGuideStep=null;
+  clearTimeout(guideTimer);
+  guideTimer=0;
+  document.body.classList.remove('guide-running');
+  if(guideButton) guideButton.textContent='▶ Гид';
+  renderHotspots();
+}
+
+async function runGuideStep(index) {
+  const steps=Array.isArray(manifest?.guide?.steps)?manifest.guide.steps:[];
+  if(!guideRunning) return;
+  if(index<0 || index>=steps.length) {
+    stopGuide();
+    showMessage('Экскурсия с гидом завершена',3000);
+    return;
+  }
+
+  guideIndex=index;
+  currentGuideStep=steps[index];
+  const scene=sceneById(currentGuideStep.sceneId);
+  if(!scene) {
+    guideTimer=setTimeout(()=>runGuideStep(index+1),500);
+    return;
+  }
+
+  await openScene(scene.id,false);
+  if(!guideRunning) return;
+  if(currentGuideStep.narrationAuto) playNarration(scene);
+  renderHotspots();
+
+  const duration=clamp(currentGuideStep.duration ?? 12,2,600);
+  guideTimer=setTimeout(()=>runGuideStep(index+1),duration*1000);
+}
+
+function toggleGuide() {
+  const steps=Array.isArray(manifest?.guide?.steps)?manifest.guide.steps:[];
+  if(guideRunning) {
+    stopGuide();
+    return;
+  }
+  if(!steps.length) {
+    showMessage('В туре нет шагов гида',3000);
+    return;
+  }
+  guideRunning=true;
+  document.body.classList.add('guide-running');
+  if(guideButton) guideButton.textContent='■ Гид';
+  runGuideStep(0);
+}
+
+function showStartScreen() {
+  const s=manifest?.startScreen||{};
+  if(s.enabled===false) return false;
+
+  startTitle.textContent=s.title || manifest?.title || 'Виртуальная экскурсия';
+  startSubtitle.textContent=s.subtitle || '';
+  if(s.coverData) {
+    startCover.src=s.coverData;
+    startCover.hidden=false;
+  } else {
+    startCover.removeAttribute('src');
+    startCover.hidden=true;
+  }
+  startSilent.hidden=s.allowSilent===false;
+  startScreen.hidden=false;
+  loading.hidden=true;
+  return true;
+}
+
+async function enterTour(silent=false) {
+  silentEntry=!!silent;
+  tourEntered=true;
+  startScreen.hidden=true;
+  const first=manifest.firstScene || manifest.sceneOrder?.[0] || manifest.scenes?.[0]?.id;
+  if(!first) throw new Error('В туре нет сцен');
+  await openScene(first,false);
+}
+
 async function makeViewer(scene) {
   const common={threeModuleUrl:'assets/three.module.min.js',domOverlayRoot:document.body};
   if(scene.type==='object360') {
@@ -373,21 +483,28 @@ async function init() {
     manifest=await response.json();
     $('tourTitle').textContent=manifest.title||'3DPL';
     renderNav();
-    const first=manifest.firstScene || manifest.sceneOrder?.[0] || manifest.scenes?.[0]?.id;
-    if(!first) throw new Error('В туре нет сцен');
-    await openScene(first,false);
+
+    const guideSteps=Array.isArray(manifest?.guide?.steps)?manifest.guide.steps:[];
+    guideButton.hidden=!(manifest?.guide?.enabled && guideSteps.length);
+
+    if(showStartScreen()) return;
+    await enterTour(false);
   } catch(error) {
     loading.textContent='Ошибка загрузки тура';
     showMessage(error?.message||String(error),0);
   }
 }
 
+guideButton.addEventListener('click',toggleGuide);
+startSound.addEventListener('click',()=>enterTour(false).catch(error=>showMessage(error?.message||String(error),6000)));
+startSilent.addEventListener('click',()=>enterTour(true).catch(error=>showMessage(error?.message||String(error),6000)));
 vrButton.addEventListener('click',()=>setCardboard(!cardboard));
 $('fullscreenButton').addEventListener('click',()=>{
   if(document.fullscreenElement) document.exitFullscreen?.();
   else document.documentElement.requestFullscreen?.();
 });
 $('backButton').addEventListener('click',()=>{
+  if(guideRunning) stopGuide();
   const id=history.pop();
   if(id) openScene(id,false);
 });
