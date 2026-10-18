@@ -12,6 +12,9 @@
 #include <QColor>
 #include <QComboBox>
 #include <QDateTime>
+#include <QTextEdit>
+#include <QDialogButtonBox>
+#include <QDialog>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -364,7 +367,44 @@ QWidget* MainWindow::buildProjectPage() {
     form->addRow("Стартовая сцена", m_firstScene);
 
     layout->addWidget(group);
+
+    auto* audioGroup = new QGroupBox("Музыка тура");
+    auto* audioLayout = new QVBoxLayout(audioGroup);
+    m_projectMusicName = new QLabel("Не выбрана");
+    m_projectMusicName->setWordWrap(true);
+    audioLayout->addWidget(m_projectMusicName);
+
+    auto* audioButtons = new QHBoxLayout;
+    auto* chooseMusic = smallButton("Выбрать");
+    auto* removeMusic = smallButton("Убрать");
+    audioButtons->addWidget(chooseMusic);
+    audioButtons->addWidget(removeMusic);
+    audioLayout->addLayout(audioButtons);
+
+    auto* audioForm = new QFormLayout;
+    m_projectMusicVolume = new QSpinBox;
+    m_projectMusicVolume->setRange(0, 100);
+    m_projectMusicVolume->setSuffix("%");
+    m_projectMusicLoop = new QCheckBox("Повторять");
+    audioForm->addRow("Громкость", m_projectMusicVolume);
+    audioForm->addRow("", m_projectMusicLoop);
+    audioLayout->addLayout(audioForm);
+
+    layout->addWidget(audioGroup);
     layout->addStretch();
+
+    connect(chooseMusic, &QPushButton::clicked, this, &MainWindow::chooseProjectMusic);
+    connect(removeMusic, &QPushButton::clicked, this, &MainWindow::removeProjectMusic);
+    connect(m_projectMusicVolume, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        m_project.musicVolume = value;
+        markDirty();
+    });
+    connect(m_projectMusicLoop, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_refreshing) return;
+        m_project.musicLoop = checked;
+        markDirty();
+    });
 
     connect(m_projectTitle, &QLineEdit::editingFinished, this, [this] {
         if (!m_refreshing) setProjectTitle(m_projectTitle->text());
@@ -483,6 +523,68 @@ QWidget* MainWindow::buildScenePage() {
     xrForm->addRow("Громкость", m_xrVolume);
     layout->addWidget(m_xrOptions);
 
+    m_sceneAudioOptions = new QGroupBox("Аудио сцены");
+    auto* sceneAudioLayout = new QVBoxLayout(m_sceneAudioOptions);
+
+    auto* musicTitle = new QLabel("<b>Музыка сцены</b>");
+    sceneAudioLayout->addWidget(musicTitle);
+    m_sceneMusicName = new QLabel("Не выбрана");
+    m_sceneMusicName->setWordWrap(true);
+    sceneAudioLayout->addWidget(m_sceneMusicName);
+    auto* musicButtons = new QHBoxLayout;
+    auto* chooseSceneMusicButton = smallButton("Выбрать");
+    auto* removeSceneMusicButton = smallButton("Убрать");
+    musicButtons->addWidget(chooseSceneMusicButton);
+    musicButtons->addWidget(removeSceneMusicButton);
+    sceneAudioLayout->addLayout(musicButtons);
+
+    auto* musicForm = new QFormLayout;
+    m_sceneMusicVolume = new QSpinBox;
+    m_sceneMusicVolume->setRange(0,100);
+    m_sceneMusicVolume->setSuffix("%");
+    m_sceneMusicLoop = new QCheckBox("Повторять");
+    musicForm->addRow("Громкость", m_sceneMusicVolume);
+    musicForm->addRow("", m_sceneMusicLoop);
+    sceneAudioLayout->addLayout(musicForm);
+
+    auto* narrationTitle = new QLabel("<b>Озвучка сцены</b>");
+    sceneAudioLayout->addWidget(narrationTitle);
+    m_sceneNarrationName = new QLabel("Не выбрана");
+    m_sceneNarrationName->setWordWrap(true);
+    sceneAudioLayout->addWidget(m_sceneNarrationName);
+    auto* narrationButtons = new QHBoxLayout;
+    auto* chooseNarrationButton = smallButton("Выбрать");
+    auto* removeNarrationButton = smallButton("Убрать");
+    narrationButtons->addWidget(chooseNarrationButton);
+    narrationButtons->addWidget(removeNarrationButton);
+    sceneAudioLayout->addLayout(narrationButtons);
+
+    auto* narrationForm = new QFormLayout;
+    m_sceneNarrationVolume = new QSpinBox;
+    m_sceneNarrationVolume->setRange(0,100);
+    m_sceneNarrationVolume->setSuffix("%");
+    narrationForm->addRow("Громкость", m_sceneNarrationVolume);
+    sceneAudioLayout->addLayout(narrationForm);
+
+    layout->addWidget(m_sceneAudioOptions);
+
+    connect(chooseSceneMusicButton, &QPushButton::clicked, this, &MainWindow::chooseSceneMusic);
+    connect(removeSceneMusicButton, &QPushButton::clicked, this, &MainWindow::removeSceneMusic);
+    connect(chooseNarrationButton, &QPushButton::clicked, this, &MainWindow::chooseSceneNarration);
+    connect(removeNarrationButton, &QPushButton::clicked, this, &MainWindow::removeSceneNarration);
+    connect(m_sceneMusicVolume, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) { scene->musicVolume = value; markDirty(); }
+    });
+    connect(m_sceneMusicLoop, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) { scene->musicLoop = checked; markDirty(); }
+    });
+    connect(m_sceneNarrationVolume, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) { scene->narrationVolume = value; markDirty(); }
+    });
+
     auto* hotspotGroup = new QGroupBox("Hotspot-ы");
     auto* hotspotLayout = new QVBoxLayout(hotspotGroup);
 
@@ -495,13 +597,19 @@ QWidget* MainWindow::buildScenePage() {
 
     auto* hsRow = new QHBoxLayout;
     auto* addCenter = smallButton("+ В центр");
+    auto* editHotspot = smallButton("Изменить");
     m_deleteHotspot = smallButton("Удалить");
     hsRow->addWidget(addCenter);
+    hsRow->addWidget(editHotspot);
     hsRow->addWidget(m_deleteHotspot);
     hotspotLayout->addLayout(hsRow);
 
     connect(addCenter, &QPushButton::clicked, this, [this] {
         addHotspot(m_viewport->yaw(), m_viewport->pitch());
+    });
+    connect(editHotspot, &QPushButton::clicked, this, &MainWindow::editSelectedHotspot);
+    connect(m_hotspotTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
+        editSelectedHotspot();
     });
     connect(m_deleteHotspot, &QPushButton::clicked, this, &MainWindow::deleteSelectedHotspot);
 
@@ -1050,6 +1158,13 @@ void MainWindow::refreshSceneList() {
 
 void MainWindow::refreshProjectControls() {
     m_projectTitle->setText(m_project.title);
+    m_projectMusicName->setText(
+        m_project.musicSource.isEmpty()
+            ? "Не выбрана"
+            : QFileInfo(m_project.musicSource).fileName()
+    );
+    m_projectMusicVolume->setValue(m_project.musicVolume);
+    m_projectMusicLoop->setChecked(m_project.musicLoop);
 
     m_firstScene->clear();
     for (const auto& scene : m_project.scenes) {
@@ -1125,6 +1240,16 @@ void MainWindow::refreshSceneControls() {
     m_sceneAutoplay->setChecked(scene->autoplay);
     m_sceneLoop->setChecked(scene->loop);
     m_xrVolume->setValue(scene->volume);
+
+    m_sceneMusicName->setText(
+        scene->musicSource.isEmpty() ? "Не выбрана" : QFileInfo(scene->musicSource).fileName()
+    );
+    m_sceneMusicVolume->setValue(scene->musicVolume);
+    m_sceneMusicLoop->setChecked(scene->musicLoop);
+    m_sceneNarrationName->setText(
+        scene->narrationSource.isEmpty() ? "Не выбрана" : QFileInfo(scene->narrationSource).fileName()
+    );
+    m_sceneNarrationVolume->setValue(scene->narrationVolume);
     m_sceneLoop->setVisible(isXr && scene->xrKind == "video");
     m_xrVolume->setVisible(isXr && scene->xrKind == "video");
 }
