@@ -35,6 +35,10 @@ qt_add_executable(3dpl-editor WIN32
     src/render/StlMesh.h
     src/render/MultiresGenerator.cpp
     src/render/MultiresGenerator.h
+    src/ui/ProjectOptionsDialog.cpp
+    src/ui/ProjectOptionsDialog.h
+    src/ui/SceneObjectsDialog.cpp
+    src/ui/SceneObjectsDialog.h
 )
 
 target_include_directories(3dpl-editor PRIVATE src)
