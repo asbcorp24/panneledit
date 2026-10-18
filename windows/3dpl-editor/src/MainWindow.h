@@ -75,6 +75,13 @@ private:
     void addHotspot(double yaw, double pitch);
     void addObjectHotspot(double xPercent, double yPercent, int sector, int row);
     void deleteSelectedHotspot();
+    void editSelectedHotspot();
+    void chooseProjectMusic();
+    void removeProjectMusic();
+    void chooseSceneMusic();
+    void removeSceneMusic();
+    void chooseSceneNarration();
+    void removeSceneNarration();
 
     void setProjectTitle(const QString& value);
     void setSceneTitle(const QString& value);
@@ -100,6 +107,9 @@ private:
 
     QLineEdit* m_projectTitle = nullptr;
     QComboBox* m_firstScene = nullptr;
+    QLabel* m_projectMusicName = nullptr;
+    QSpinBox* m_projectMusicVolume = nullptr;
+    QCheckBox* m_projectMusicLoop = nullptr;
 
     QLineEdit* m_sceneTitle = nullptr;
     QLineEdit* m_sceneId = nullptr;
@@ -111,6 +121,13 @@ private:
 
     QTableWidget* m_hotspotTable = nullptr;
     QPushButton* m_deleteHotspot = nullptr;
+
+    QGroupBox* m_sceneAudioOptions = nullptr;
+    QLabel* m_sceneMusicName = nullptr;
+    QSpinBox* m_sceneMusicVolume = nullptr;
+    QCheckBox* m_sceneMusicLoop = nullptr;
+    QLabel* m_sceneNarrationName = nullptr;
+    QSpinBox* m_sceneNarrationVolume = nullptr;
 
     QGroupBox* m_panoramaOptions = nullptr;
     QComboBox* m_multiresTileSize = nullptr;
