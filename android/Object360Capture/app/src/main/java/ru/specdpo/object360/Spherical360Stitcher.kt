@@ -38,8 +38,10 @@ object Spherical360Stitcher {
         val weights = Mat.zeros(OUT_H, OUT_W, CvType.CV_32FC1)
 
         try {
-            val ordered = frames.sortedWith(
-                compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
+            val ordered = optimizeOrientations(
+                frames.sortedWith(
+                    compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
+                )
             )
 
             ordered.forEachIndexed { idx, frame ->
@@ -301,6 +303,74 @@ object Spherical360Stitcher {
         return out
     }
 
+    private fun optimizeOrientations(frames: List<PanoramaFrame>): List<PanoramaFrame> {
+        val sectorStep = 360.0 / 12.0
+        val byRow = frames.groupBy { it.row }
+        val result = ArrayList<PanoramaFrame>(frames.size)
+
+        for ((row, rowFrames) in byRow) {
+            val valid = rowFrames.filter { it.yawDeg.isFinite() }
+            val center = if (valid.isNotEmpty()) valid.map { it.index }.average() else 0.0
+
+            var sumX = 0.0
+            var sumY = 0.0
+            var sumXX = 0.0
+            var sumXY = 0.0
+
+            valid.forEach { frame ->
+                val x = frame.index - center
+                val nominal = frame.index * sectorStep
+                val error = signedAngle(frame.yawDeg.toDouble() - nominal)
+                sumX += x
+                sumY += error
+                sumXX += x * x
+                sumXY += x * error
+            }
+
+            val n = valid.size.toDouble().coerceAtLeast(1.0)
+            val denom = (sumXX - sumX * sumX / n)
+            val slope = if (kotlin.math.abs(denom) > 1e-6) {
+                (sumXY - sumX * sumY / n) / denom
+            } else 0.0
+            val bias = sumY / n - slope * (sumX / n)
+
+            val nominalPitch = when (row) {
+                0 -> 28.0
+                1 -> 0.0
+                else -> -28.0
+            }
+
+            rowFrames.forEach { frame ->
+                val optimizedYaw = if (frame.yawDeg.isFinite()) {
+                    val x = frame.index - center
+                    val correction = (bias + slope * x).coerceIn(-12.0, 12.0)
+                    normalize360(frame.yawDeg.toDouble() - correction).toFloat()
+                } else {
+                    normalize360(frame.index * sectorStep).toFloat()
+                }
+
+                val optimizedPitch = if (frame.pitchDeg.isFinite()) {
+                    (frame.pitchDeg * 0.35f + nominalPitch.toFloat() * 0.65f)
+                } else nominalPitch.toFloat()
+
+                result += frame.copy(
+                    yawDeg = optimizedYaw,
+                    pitchDeg = optimizedPitch
+                )
+            }
+        }
+
+        return result.sortedWith(
+            compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
+        )
+    }
+
+    private fun signedAngle(value: Double): Double {
+        var d = (value + 180.0) % 360.0 - 180.0
+        if (d < -180.0) d += 360.0
+        return d
+    }
+
     private fun createFeatherMask(w: Int, h: Int): Mat {
         val binary = Mat(
             h,
@@ -346,7 +416,32 @@ object Spherical360Stitcher {
             dist
         )
 
-        return dist
+        // Multi-scale feather: broad gradients hide exposure/seam transitions,
+        // while the original distance mask preserves local detail.
+        val blurSmall = Mat()
+        val blurLarge = Mat()
+        Imgproc.GaussianBlur(
+            dist,
+            blurSmall,
+            Size(0.0, 0.0),
+            max(2.0, min(w, h) / 120.0)
+        )
+        Imgproc.GaussianBlur(
+            dist,
+            blurLarge,
+            Size(0.0, 0.0),
+            max(6.0, min(w, h) / 45.0)
+        )
+
+        val mixed = Mat()
+        Core.addWeighted(dist, 0.55, blurSmall, 0.30, 0.0, mixed)
+        Core.addWeighted(mixed, 1.0, blurLarge, 0.15, 0.0, mixed)
+
+        blurSmall.release()
+        blurLarge.release()
+        dist.release()
+
+        return mixed
     }
 
     private fun blendWrapped(
