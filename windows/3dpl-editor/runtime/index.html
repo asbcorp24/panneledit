@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#05070c">
+  <title>3DPL Tour</title>
+  <link rel="stylesheet" href="assets/player.css">
+</head>
+<body>
+  <main id="app">
+    <div id="viewer"></div>
+    <div id="hotspots"></div>
+    <header id="topbar">
+      <button id="backButton" title="Назад">←</button>
+      <div class="title-wrap">
+        <strong id="tourTitle">3DPL</strong>
+        <span id="sceneTitle"></span>
+      </div>
+      <button id="vrButton" title="Cardboard">VR</button>
+      <button id="fullscreenButton" title="Полный экран">⛶</button>
+    </header>
+    <nav id="sceneNav"></nav>
+    <div id="gazeOverlay" hidden>
+      <div class="gaze-eye"><div class="gaze"><i></i><span></span></div></div>
+      <div class="gaze-eye"><div class="gaze"><i></i><span></span></div></div>
+    </div>
+    <div id="message" hidden></div>
+    <div id="loading">Загрузка тура…</div>
+  </main>
+
+  <script src="assets/stl-viewer.js"></script>
+  <script src="assets/xr-media-viewer.js"></script>
+  <script src="assets/object360-xr-viewer.js"></script>
+  <script src="assets/stl-xr-viewer.js"></script>
+  <script src="assets/multires-panorama-viewer.js"></script>
+  <script src="assets/tour.js"></script>
+</body>
+</html>
