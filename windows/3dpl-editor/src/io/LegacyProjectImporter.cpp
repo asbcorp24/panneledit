@@ -13,6 +13,8 @@
 #include <QUuid>
 #include <QUrl>
 
+#include <algorithm>
+
 namespace {
 
 QString safeStem(QString name, const QString& fallback) {
