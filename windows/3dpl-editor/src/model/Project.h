@@ -22,6 +22,11 @@ public:
     bool autoRotateEnabled = false;
     double autoRotate = -2.0;
 
+    QJsonObject startScreen;
+    QJsonObject guide;
+    QJsonObject exportSettings;
+    QJsonObject extraSettings;
+
     QVector<Scene> scenes;
 
     static Project fromJson(const QJsonObject& json);
