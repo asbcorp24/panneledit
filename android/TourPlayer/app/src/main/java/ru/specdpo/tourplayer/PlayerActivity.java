@@ -25,6 +25,7 @@ import java.io.File;
 public class PlayerActivity extends AppCompatActivity {
     public static final String EXTRA_ROOT = "tour_root";
     public static final String EXTRA_TITLE = "tour_title";
+    public static final String EXTRA_QUALITY = "tour_quality";
 
     private FrameLayout root;
     private WebView webView;
@@ -143,7 +144,23 @@ public class PlayerActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl(TourWebViewClient.ORIGIN + "/tour/index.html");
+        String profile = getIntent().getStringExtra(EXTRA_QUALITY);
+        if (profile == null || profile.trim().isEmpty()) profile = "auto";
+
+        if ("auto".equals(profile)) {
+            long maxMemMb = Runtime.getRuntime().maxMemory() / (1024L * 1024L);
+            int maxPx = Math.max(
+                getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels
+            );
+            if (maxMemMb < 256 || maxPx < 1600) profile = "eco";
+            else if (maxMemMb >= 512 && maxPx >= 2400) profile = "max";
+            else profile = "balanced";
+        }
+
+        webView.loadUrl(
+            TourWebViewClient.ORIGIN + "/tour/index.html?playerProfile=" + profile
+        );
     }
 
     private void hideCustomView() {
