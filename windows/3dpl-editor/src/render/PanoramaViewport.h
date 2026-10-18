@@ -34,6 +34,7 @@ public:
 
     void setImage(const QString& filePath);
     void setPanoramaImage(const QString& filePath, const QString& projection = "360");
+    void setVideoFrame(const QImage& frame, const QString& projection);
     void setObject360(
         const QVector<QVector<QString>>& framePaths,
         int startSector = 0,
