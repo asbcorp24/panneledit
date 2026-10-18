@@ -55,6 +55,14 @@ QJsonObject sceneJson(const Scene& scene) {
         out.insert("yaw", scene.yaw);
         out.insert("pitch", scene.pitch);
         out.insert("fov", scene.fov);
+        if (!scene.multiresBasePath.isEmpty()) {
+            out.insert("multires", QJsonObject{
+                {"basePath", scene.multiresBasePath},
+                {"tileResolution", scene.multiresTileResolution},
+                {"maxLevel", scene.multiresMaxLevel},
+                {"cubeResolution", scene.multiresCubeResolution}
+            });
+        }
         break;
 
     case SceneType::Xr:
