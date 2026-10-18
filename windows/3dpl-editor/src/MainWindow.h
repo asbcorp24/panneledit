@@ -64,6 +64,7 @@ private:
     void markDirty();
     void scheduleAutosave();
     void addHotspot(double yaw, double pitch);
+    void addObjectHotspot(double xPercent, double yPercent, int sector, int row);
     void deleteSelectedHotspot();
 
     void setProjectTitle(const QString& value);
