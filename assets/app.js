@@ -4471,6 +4471,13 @@
 
   const config = ${json};
 
+  const playerProfileName = new URLSearchParams(location.search).get('playerProfile') || 'balanced';
+  const playerProfile = playerProfileName === 'eco'
+    ? { maxDetailOffset:2, pixelRatioCap:1.0, preload:false }
+    : playerProfileName === 'max'
+      ? { maxDetailOffset:0, pixelRatioCap:1.8, preload:true }
+      : { maxDetailOffset:1, pixelRatioCap:1.35, preload:true };
+
   let panoViewer = null;
   let objectViewer = null;
   let stlViewer = null;
@@ -4976,6 +4983,8 @@
           basePath:data.multires.basePath,
           tileResolution:data.multires.tileResolution,
           maxLevel:data.multires.maxLevel,
+          maxDetailLevel:Math.max(1,Number(data.multires.maxLevel||1)-playerProfile.maxDetailOffset),
+          pixelRatioCap:playerProfile.pixelRatioCap,
           cubeResolution:data.multires.cubeResolution,
           yaw:Number(data.yaw)||0,
           pitch:Number(data.pitch)||0,
@@ -5013,7 +5022,7 @@
     };
 
     await applyTransition(transition || config.defaultTransition || 'fade', switchScene);
-    preloadNeighbors(id);
+    if (playerProfile.preload) preloadNeighbors(id);
   };
 
   const goBack = () => {
