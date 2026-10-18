@@ -5,6 +5,8 @@
 #include "export/PackageExporter.h"
 #include "render/PanoramaViewport.h"
 #include "render/MultiresGenerator.h"
+#include "ui/ProjectOptionsDialog.h"
+#include "ui/SceneObjectsDialog.h"
 
 #include <QCloseEvent>
 #include <QSpinBox>
@@ -287,6 +289,7 @@ void MainWindow::buildMenus() {
     fileMenu->addAction("Сохранить", this, &MainWindow::saveProject, QKeySequence::Save);
     fileMenu->addAction("Сохранить как…", this, &MainWindow::saveProjectAs, QKeySequence::SaveAs);
     fileMenu->addSeparator();
+    fileMenu->addAction("Настройки тура…", this, &MainWindow::editProjectOptions);
     fileMenu->addAction("Экспорт Player ZIP (Android + OpenXR)", this, &MainWindow::exportOpenXrPackage);
     fileMenu->addSeparator();
     fileMenu->addAction("Выход", this, &QWidget::close);
@@ -300,6 +303,8 @@ void MainWindow::buildMenus() {
     sceneMenu->addAction("Добавить Object360", this, &MainWindow::addObject360);
     sceneMenu->addAction("Добавить STL", this, &MainWindow::addStl);
     sceneMenu->addAction("Добавить XR", this, &MainWindow::addXr);
+    sceneMenu->addSeparator();
+    sceneMenu->addAction("Текст и медиа сцены…", this, &MainWindow::editSceneObjects);
     sceneMenu->addSeparator();
     sceneMenu->addAction("Удалить текущую сцену", this, &MainWindow::deleteCurrentScene, QKeySequence::Delete);
 }
@@ -957,6 +962,62 @@ void MainWindow::generateCurrentMultires() {
             .arg(result.cubeResolution)
             .arg(result.maxLevel)
     );
+}
+
+void MainWindow::editProjectOptions() {
+    if (m_projectDir.isEmpty()) {
+        QMessageBox::information(this, "Проект", "Сначала создайте или откройте проект.");
+        return;
+    }
+
+    const Project before = m_project;
+    ProjectOptionsDialog dialog(m_project, m_projectDir, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    const Project after = dialog.resultProject();
+
+    m_undoStack.push(new LambdaCommand(
+        "Настройки тура",
+        [this, after] {
+            m_project = after;
+            markDirty();
+            refreshAll();
+        },
+        [this, before] {
+            m_project = before;
+            markDirty();
+            refreshAll();
+        }
+    ));
+}
+
+void MainWindow::editSceneObjects() {
+    Scene* scene = currentScene();
+    if (!scene) {
+        QMessageBox::information(this, "Объекты сцены", "Сначала выберите сцену.");
+        return;
+    }
+
+    const QString sceneId = scene->id;
+    const Scene before = *scene;
+    SceneObjectsDialog dialog(*scene, m_project, m_projectDir, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    const Scene after = dialog.resultScene();
+
+    m_undoStack.push(new LambdaCommand(
+        "Объекты сцены",
+        [this, sceneId, after] {
+            if (Scene* target = m_project.findScene(sceneId)) *target = after;
+            markDirty();
+            refreshSceneControls();
+            loadCurrentSceneIntoViewport();
+        },
+        [this, sceneId, before] {
+            if (Scene* target = m_project.findScene(sceneId)) *target = before;
+            markDirty();
+            refreshSceneControls();
+            loadCurrentSceneIntoViewport();
+        }
+    ));
 }
 
 void MainWindow::exportOpenXrPackage() {
