@@ -1285,6 +1285,29 @@ private:
         touchSuggest.suggestedBindings=touchBindings.data();
         xrSuggestInteractionProfileBindings(instance_,&touchSuggest);
 
+        auto suggestTriggerMenuProfile=[&](const char* profilePath){
+            XrPath profile=XR_NULL_PATH;
+            if(XR_FAILED(xrStringToPath(instance_,profilePath,&profile))) return;
+            std::vector<XrActionSuggestedBinding> bindings;
+            for(int i=0;i<2;i++){
+                const char* side=i==0?"left":"right";
+                char path[128]{};
+                std::snprintf(path,sizeof(path),"/user/hand/%s/input/trigger/value",side);
+                XrPath p=XR_NULL_PATH;
+                if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({triggerAction_,p});
+                std::snprintf(path,sizeof(path),"/user/hand/%s/input/menu/click",side);
+                p=XR_NULL_PATH;
+                if(XR_SUCCEEDED(xrStringToPath(instance_,path,&p))) bindings.push_back({recenterAction_,p});
+            }
+            XrInteractionProfileSuggestedBinding suggestion{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+            suggestion.interactionProfile=profile;
+            suggestion.countSuggestedBindings=static_cast<uint32_t>(bindings.size());
+            suggestion.suggestedBindings=bindings.data();
+            xrSuggestInteractionProfileBindings(instance_,&suggestion);
+        };
+        suggestTriggerMenuProfile("/interaction_profiles/bytedance/pico_neo3_controller");
+        suggestTriggerMenuProfile("/interaction_profiles/bytedance/pico4_controller");
+
         XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
         attach.countActionSets=1;
         attach.actionSets=&actionSet_;
