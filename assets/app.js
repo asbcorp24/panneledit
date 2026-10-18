@@ -4185,6 +4185,94 @@
     return config;
   }
 
+  function buildOpenXrManifest(config) {
+    const scenes = (config.sceneOrder || []).map((id) => {
+      const meta = config.sceneMeta?.[id] || {};
+      const type = meta.sceneType || 'panorama';
+      const base = {
+        id,
+        title: meta.title || id,
+        type,
+        hotspots: (meta.screenHotspots || []).map((h) => ({
+          id: h.id || '',
+          type: h.type || 'info',
+          text: h.text || '',
+          targetSceneId: h.targetSceneId || '',
+          url: h.url || '',
+          info: h.info || '',
+          yaw: Number(h.yaw) || 0,
+          pitch: Number(h.pitch) || 0,
+          anchorX: Number(h.anchorX) || 50,
+          anchorY: Number(h.anchorY) || 50,
+          anchorSector: Number(h.anchorSector) || 0,
+          anchorRow: Number(h.anchorRow) || 0,
+          modelPoint: Array.isArray(h.modelPoint) ? h.modelPoint : null
+        }))
+      };
+
+      if (type === 'panorama') {
+        const scene = config.scenes?.[id] || {};
+        return {
+          ...base,
+          source: scene.source || '',
+          projection: '360',
+          yaw: Number(scene.yaw) || 0,
+          pitch: Number(scene.pitch) || 0,
+          fov: Number(scene.fov) || 100
+        };
+      }
+
+      if (type === 'xr') {
+        const scene = config.xrScenes?.[id] || {};
+        return {
+          ...base,
+          source: scene.source || '',
+          kind: scene.kind || 'image',
+          projection: scene.projection || '360',
+          yaw: Number(scene.yaw) || 0,
+          pitch: Number(scene.pitch) || 0,
+          fov: Number(scene.fov) || 80
+        };
+      }
+
+      if (type === 'object360') {
+        const scene = config.object360Scenes?.[id] || {};
+        return {
+          ...base,
+          sectors: Number(scene.sectors) || 1,
+          rows: Number(scene.rows) || 1,
+          frames: scene.frames || [],
+          startSector: Number(scene.startSector) || 0,
+          startRow: Number(scene.startRow) || 0
+        };
+      }
+
+      if (type === 'stl') {
+        const scene = config.stlScenes?.[id] || {};
+        return {
+          ...base,
+          source: scene.source || '',
+          yaw: Number(scene.yaw) || 0,
+          pitch: Number(scene.pitch) || -15,
+          zoom: Number(scene.zoom) || 1,
+          color: scene.color || '#7c8cff',
+          wireframe: Boolean(scene.wireframe)
+        };
+      }
+
+      return base;
+    });
+
+    return {
+      format: 'xr-tour-openxr',
+      version: 1,
+      title: project.title || 'Виртуальная экскурсия',
+      firstScene: config.tourFirstScene || scenes[0]?.id || null,
+      sceneOrder: config.sceneOrder || scenes.map((s) => s.id),
+      scenes
+    };
+  }
+
   function extensionForDataUrl(data, fallback = '.bin') {
     const mime = String(data || '').match(/^data:([^;,]+)/i)?.[1]?.toLowerCase() || '';
     if (mime.includes('jpeg')) return '.jpg';
@@ -6290,11 +6378,13 @@
         button.textContent = 'Windows-сервер…';
         await bundleWindowsLauncher(root);
       } else {
+        root.file('openxr-manifest.json', JSON.stringify(buildOpenXrManifest(config), null, 2));
         root.file('player-manifest.json', JSON.stringify({
           format: 'xr-tour-player',
           version: 1,
           title: project.title || 'Виртуальная экскурсия',
           entry: 'index.html',
+          openxrManifest: 'openxr-manifest.json',
           optimized: {
             panoramaMaxWidth: 4096,
             objectFrameWidth: 960,
