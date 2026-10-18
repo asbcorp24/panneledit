@@ -19,7 +19,9 @@ data class CameraCalibration(
     val k4: Float = 0f,
     val k5: Float = 0f,
     val horizontalFovDeg: Float = Float.NaN,
-    val verticalFovDeg: Float = Float.NaN
+    val verticalFovDeg: Float = Float.NaN,
+    val sensorPixelWidth: Int = 0,
+    val sensorPixelHeight: Int = 0
 ) {
     val hasIntrinsics: Boolean
         get() = fx.isFinite() && fy.isFinite() && fx > 0f && fy > 0f
@@ -39,6 +41,7 @@ object CameraCalibrationReader {
             val distortion = c.get(CameraCharacteristics.LENS_DISTORTION)
             val focalLengths = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
             val sensorSize: SizeF? = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val pixelSize = c.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
 
             val fx = intr?.getOrNull(0) ?: Float.NaN
             val fy = intr?.getOrNull(1) ?: Float.NaN
@@ -66,7 +69,9 @@ object CameraCalibrationReader {
                 k4 = d.getOrElse(3) { 0f },
                 k5 = d.getOrElse(4) { 0f },
                 horizontalFovDeg = hfov,
-                verticalFovDeg = vfov
+                verticalFovDeg = vfov,
+                sensorPixelWidth = pixelSize?.width ?: 0,
+                sensorPixelHeight = pixelSize?.height ?: 0
             )
         } catch (_: Throwable) {
             CameraCalibration()
