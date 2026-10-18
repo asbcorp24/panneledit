@@ -477,6 +477,17 @@ struct Renderer {
     GLuint stlVao = 0;
     GLuint stlVbo = 0;
     GLsizei stlVertexCount = 0;
+
+    struct TileMesh {
+        GLuint texture=0;
+        GLuint vao=0;
+        GLuint vbo=0;
+        bool detail=false;
+        char face='f';
+    };
+    std::vector<TileMesh> multiresBase;
+    std::vector<TileMesh> multiresDetail;
+
     GLuint vbo = 0;
     GLuint ibo = 0;
     GLsizei indexCount = 0;
@@ -737,6 +748,115 @@ struct Renderer {
         objectAspect=std::clamp(aspect,0.4f,3.0f);
     }
 
+    std::array<float,3> facePoint(char face,float u,float v,float radius=10.0f) {
+        const float sx=u*2.0f-1.0f;
+        const float sy=1.0f-v*2.0f;
+        float x=0,y=0,z=0;
+        if(face=='f'){x=sx;y=sy;z=-1;}
+        else if(face=='b'){x=-sx;y=sy;z=1;}
+        else if(face=='u'){x=sx;y=1;z=sy;}
+        else if(face=='d'){x=sx;y=-1;z=-sy;}
+        else if(face=='l'){x=-1;y=sy;z=-sx;}
+        else {x=1;y=sy;z=sx;}
+        return {x*radius,y*radius,z*radius};
+    }
+
+    TileMesh makeMultiresTile(
+        char face,float u0,float v0,float u1,float v1,GLuint tex,bool detail
+    ){
+        const auto p00=facePoint(face,u0,v0);
+        const auto p10=facePoint(face,u1,v0);
+        const auto p11=facePoint(face,u1,v1);
+        const auto p01=facePoint(face,u0,v1);
+
+        const float vertices[]={
+            p00[0],p00[1],p00[2], 0,1,
+            p10[0],p10[1],p10[2], 1,1,
+            p11[0],p11[1],p11[2], 1,0,
+            p00[0],p00[1],p00[2], 0,1,
+            p11[0],p11[1],p11[2], 1,0,
+            p01[0],p01[1],p01[2], 0,0
+        };
+
+        TileMesh mesh{};
+        mesh.texture=tex;
+        mesh.detail=detail;
+        mesh.face=face;
+        glGenVertexArrays(1,&mesh.vao);
+        glBindVertexArray(mesh.vao);
+        glGenBuffers(1,&mesh.vbo);
+        glBindBuffer(GL_ARRAY_BUFFER,mesh.vbo);
+        glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices,GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,5*sizeof(float),nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,5*sizeof(float),reinterpret_cast<void*>(3*sizeof(float)));
+        glBindVertexArray(0);
+        return mesh;
+    }
+
+    void clearTileMeshes(std::vector<TileMesh>& list){
+        for(auto& tile:list){
+            if(tile.texture) glDeleteTextures(1,&tile.texture);
+            if(tile.vbo) glDeleteBuffers(1,&tile.vbo);
+            if(tile.vao) glDeleteVertexArrays(1,&tile.vao);
+        }
+        list.clear();
+    }
+
+    void clearMultires(){
+        clearTileMeshes(multiresBase);
+        clearTileMeshes(multiresDetail);
+    }
+
+    void clearMultiresDetail(){
+        clearTileMeshes(multiresDetail);
+    }
+
+    void addMultiresBase(char face,GLuint tex){
+        if(!tex) return;
+        multiresBase.push_back(makeMultiresTile(face,0,0,1,1,tex,false));
+    }
+
+    void addMultiresDetail(
+        char face,int x,int y,int levelSize,int tileResolution,int tileW,int tileH,GLuint tex
+    ){
+        if(!tex || levelSize<=0) return;
+        const float u0=(x*tileResolution)/static_cast<float>(levelSize);
+        const float v0=(y*tileResolution)/static_cast<float>(levelSize);
+        const float u1=std::min(1.0f,(x*tileResolution+tileW)/static_cast<float>(levelSize));
+        const float v1=std::min(1.0f,(y*tileResolution+tileH)/static_cast<float>(levelSize));
+        multiresDetail.push_back(makeMultiresTile(face,u0,v0,u1,v1,tex,true));
+    }
+
+    void renderMultires(const Mat4& projectionM,const Mat4& viewM){
+        Mat4 model=multiply(
+            rotationY(-sceneYaw*kDeg),
+            rotationX(-scenePitch*kDeg)
+        );
+        Mat4 mvp=multiply(projectionM,multiply(viewM,model));
+        glUseProgram(program);
+        glUniformMatrix4fv(uMvp,1,GL_FALSE,mvp.m);
+        glUniform2f(uUvScale,1,1);
+        glUniform2f(uUvOffset,0,0);
+        glUniform1f(uYawOffset,0);
+        glUniform1i(glGetUniformLocation(program,"uHalfSphere"),0);
+        glUniform1i(glGetUniformLocation(program,"uTex"),0);
+
+        auto draw=[&](const std::vector<TileMesh>& list){
+            for(const auto& tile:list){
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D,tile.texture);
+                glBindVertexArray(tile.vao);
+                glDrawArrays(GL_TRIANGLES,0,6);
+            }
+        };
+        draw(multiresBase);
+        draw(multiresDetail);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D,0);
+    }
+
     void setSceneTexture(GLuint newTexture, std::string proj, float yaw, float pitch) {
         if (texture) glDeleteTextures(1, &texture);
         texture = newTexture;
@@ -778,7 +898,9 @@ struct Renderer {
         const Mat4 projectionM = projectionFromFov(view.fov);
         const Mat4 viewM = viewFromPose(view.pose);
 
-        if (mode == "stl" && stlVao && stlVertexCount > 0) {
+        if (mode == "multires" && !multiresBase.empty()) {
+            renderMultires(projectionM,viewM);
+        } else if (mode == "stl" && stlVao && stlVertexCount > 0) {
             Mat4 model = multiply(
                 translation(0.0f,-0.1f,-2.5f),
                 multiply(
@@ -868,6 +990,7 @@ struct Renderer {
     }
 
     void destroy() {
+        clearMultires();
         if (texture) glDeleteTextures(1, &texture);
         if (stlVbo) glDeleteBuffers(1,&stlVbo);
         if (stlVao) glDeleteVertexArrays(1,&stlVao);
