@@ -18,6 +18,9 @@
 #include <QStringList>
 #include <memory>
 
+class QPainter;
+class QPaintEvent;
+
 class PanoramaViewport final
     : public QOpenGLWidget
     , protected QOpenGLFunctions_3_3_Core
