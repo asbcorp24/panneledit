@@ -53,6 +53,8 @@ QJsonObject sceneJson(const Scene& scene) {
     QJsonArray hotspots;
     for (const auto& h : scene.hotspots) hotspots.append(hotspotJson(h));
     out.insert("hotspots", hotspots);
+    out.insert("textObjects", scene.textObjects);
+    out.insert("mediaObjects", scene.mediaObjects);
 
     QJsonObject audio;
     if (!scene.musicSource.isEmpty()) {
