@@ -48,6 +48,7 @@ private:
     void exportOpenXrPackage();
     void editProjectOptions();
     void editSceneObjects();
+    void manageAssets();
     void generateCurrentMultires();
 
     void addPanorama();
