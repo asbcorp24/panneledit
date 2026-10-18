@@ -27,6 +27,8 @@ struct Hotspot {
     bool hasModelPoint = false;
     QVector3D modelPoint;
 
+    QJsonObject extra;
+
     static Hotspot fromJson(const QJsonObject& json);
     QJsonObject toJson() const;
 };
