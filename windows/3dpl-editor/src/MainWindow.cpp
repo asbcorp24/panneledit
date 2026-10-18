@@ -5,6 +5,9 @@
 #include "render/PanoramaViewport.h"
 
 #include <QCloseEvent>
+#include <QSpinBox>
+#include <QColorDialog>
+#include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
 #include <QDateTime>
@@ -415,6 +418,41 @@ QWidget* MainWindow::buildScenePage() {
     form->addRow("Файл", m_sceneSource);
     layout->addWidget(general);
 
+    m_objectOptions = new QGroupBox("Object360");
+    auto* objectForm = new QFormLayout(m_objectOptions);
+    m_objectStartSector = new QSpinBox;
+    m_objectStartSector->setRange(0, 100000);
+    m_objectStartRow = new QSpinBox;
+    m_objectStartRow->setRange(0, 10000);
+    objectForm->addRow("Стартовый сектор", m_objectStartSector);
+    objectForm->addRow("Стартовый ряд", m_objectStartRow);
+    layout->addWidget(m_objectOptions);
+
+    m_stlOptions = new QGroupBox("STL 3D");
+    auto* stlForm = new QFormLayout(m_stlOptions);
+    m_stlZoom = new QDoubleSpinBox;
+    m_stlZoom->setRange(0.35, 5.0);
+    m_stlZoom->setSingleStep(0.1);
+    m_stlZoom->setDecimals(2);
+    m_stlWireframe = new QCheckBox("Показывать сетку");
+    m_stlColorButton = smallButton("Цвет модели");
+    stlForm->addRow("Zoom", m_stlZoom);
+    stlForm->addRow("", m_stlWireframe);
+    stlForm->addRow("Цвет", m_stlColorButton);
+    layout->addWidget(m_stlOptions);
+
+    m_xrOptions = new QGroupBox("XR Media");
+    auto* xrForm = new QFormLayout(m_xrOptions);
+    m_sceneAutoplay = new QCheckBox("Автовоспроизведение / автовращение");
+    m_sceneLoop = new QCheckBox("Повторять");
+    m_xrVolume = new QSpinBox;
+    m_xrVolume->setRange(0, 100);
+    m_xrVolume->setSuffix("%");
+    xrForm->addRow("", m_sceneAutoplay);
+    xrForm->addRow("", m_sceneLoop);
+    xrForm->addRow("Громкость", m_xrVolume);
+    layout->addWidget(m_xrOptions);
+
     auto* hotspotGroup = new QGroupBox("Hotspot-ы");
     auto* hotspotLayout = new QVBoxLayout(hotspotGroup);
 
@@ -455,6 +493,73 @@ QWidget* MainWindow::buildScenePage() {
     });
     connect(m_sceneProjection, &QComboBox::currentTextChanged, this, [this](const QString& value) {
         if (!m_refreshing) setSceneProjection(value);
+    });
+
+    connect(m_objectStartSector, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene(); scene && scene->type == SceneType::Object360) {
+            scene->startSector = value;
+            markDirty();
+        }
+    });
+    connect(m_objectStartRow, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene(); scene && scene->type == SceneType::Object360) {
+            scene->startRow = value;
+            markDirty();
+        }
+    });
+
+    connect(m_stlZoom, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene(); scene && scene->type == SceneType::Stl) {
+            scene->zoom = value;
+            markDirty();
+            m_viewport->setStlStyle(QColor(scene->color), scene->wireframe, scene->zoom);
+        }
+    });
+    connect(m_stlWireframe, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene(); scene && scene->type == SceneType::Stl) {
+            scene->wireframe = checked;
+            markDirty();
+            m_viewport->setStlStyle(QColor(scene->color), scene->wireframe, scene->zoom);
+        }
+    });
+    connect(m_stlColorButton, &QPushButton::clicked, this, [this] {
+        auto* scene = currentScene();
+        if (!scene || scene->type != SceneType::Stl) return;
+        const QColor color = QColorDialog::getColor(QColor(scene->color), this, "Цвет STL");
+        if (!color.isValid()) return;
+        scene->color = color.name(QColor::HexRgb);
+        markDirty();
+        refreshSceneControls();
+        m_viewport->setStlStyle(color, scene->wireframe, scene->zoom);
+    });
+
+    connect(m_sceneAutoplay, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) {
+            scene->autoplay = checked;
+            markDirty();
+        }
+    });
+    connect(m_sceneLoop, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) {
+            scene->loop = checked;
+            markDirty();
+            if (scene->type == SceneType::Xr && scene->xrKind == "video" && m_mediaPlayer)
+                m_mediaPlayer->setLoops(checked ? QMediaPlayer::Infinite : QMediaPlayer::Once);
+        }
+    });
+    connect(m_xrVolume, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        if (m_refreshing) return;
+        if (auto* scene = currentScene()) {
+            scene->volume = value;
+            markDirty();
+            if (m_audioOutput) m_audioOutput->setVolume(value / 100.0);
+        }
     });
 
     return scroll;
@@ -884,6 +989,33 @@ void MainWindow::refreshSceneControls() {
     const bool spherical = scene->type == SceneType::Panorama || scene->type == SceneType::Xr;
     m_sceneFov->setEnabled(spherical);
     m_sceneProjection->setEnabled(scene->type == SceneType::Xr);
+
+    const bool isObject = scene->type == SceneType::Object360;
+    const bool isStl = scene->type == SceneType::Stl;
+    const bool isXr = scene->type == SceneType::Xr;
+
+    m_objectOptions->setVisible(isObject);
+    m_stlOptions->setVisible(isStl);
+    m_xrOptions->setVisible(isXr || isObject || isStl);
+
+    m_objectStartSector->setMaximum(std::max(0, scene->sectors - 1));
+    m_objectStartSector->setValue(scene->startSector);
+    m_objectStartRow->setMaximum(std::max(0, scene->rows - 1));
+    m_objectStartRow->setValue(scene->startRow);
+
+    m_stlZoom->setValue(scene->zoom);
+    m_stlWireframe->setChecked(scene->wireframe);
+    const QColor stlColor(scene->color);
+    m_stlColorButton->setStyleSheet(
+        QString("QPushButton{background:%1;color:%2;}")
+            .arg(stlColor.name(), stlColor.lightness() > 150 ? "#111111" : "#ffffff")
+    );
+
+    m_sceneAutoplay->setChecked(scene->autoplay);
+    m_sceneLoop->setChecked(scene->loop);
+    m_xrVolume->setValue(scene->volume);
+    m_sceneLoop->setVisible(isXr && scene->xrKind == "video");
+    m_xrVolume->setVisible(isXr && scene->xrKind == "video");
 }
 
 void MainWindow::refreshHotspots() {
