@@ -4,6 +4,7 @@
 #include "render/PanoramaViewport.h"
 
 #include <QCloseEvent>
+#include <QColor>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDir>
@@ -227,6 +228,13 @@ void MainWindow::buildUi() {
         );
     });
     connect(m_viewport, &PanoramaViewport::hotspotRequested, this, &MainWindow::addHotspot);
+    connect(m_viewport, &PanoramaViewport::objectHotspotRequested, this, &MainWindow::addObjectHotspot);
+    connect(m_viewport, &PanoramaViewport::objectFrameChanged, this, [this](int sector, int row) {
+        m_status->setText(QString("Object360 · сектор %1 · ряд %2").arg(sector).arg(row));
+    });
+    connect(m_viewport, &PanoramaViewport::stlLoadFailed, this, [this](const QString& message) {
+        statusBar()->showMessage("STL: " + message, 4000);
+    });
     connect(m_viewport, &PanoramaViewport::imageLoadFailed, this, [this](const QString& message) {
         statusBar()->showMessage(message, 4000);
     });
@@ -839,26 +847,53 @@ void MainWindow::loadCurrentSceneIntoViewport() {
 
     m_viewport->setView(scene->yaw, scene->pitch, scene->fov);
 
-    if ((scene->type == SceneType::Panorama || scene->type == SceneType::Xr)
-        && scene->xrKind != "video"
-        && !scene->source.isEmpty()) {
+    if (scene->type == SceneType::Panorama && !scene->source.isEmpty()) {
         const QString file = ProjectStorage::resolveAsset(m_projectDir, scene->source);
-        if (!file.isEmpty()) m_viewport->setImage(file);
+        if (!file.isEmpty()) m_viewport->setPanoramaImage(file, "360");
         else m_viewport->clearImage();
         return;
     }
 
-    if (scene->type == SceneType::Object360 && !scene->frames.isEmpty() && !scene->frames.first().isEmpty()) {
-        const auto& firstRow = scene->frames.first();
-        const int maxIndex = int(firstRow.size()) - 1;
-        const int frameIndex = std::clamp(scene->startSector, 0, maxIndex);
-        const QString relativeFrame = firstRow.at(frameIndex);
-        const QString file = ProjectStorage::resolveAsset(m_projectDir, relativeFrame);
-        if (!file.isEmpty()) m_viewport->setImage(file);
+    if (scene->type == SceneType::Xr && scene->xrKind != "video" && !scene->source.isEmpty()) {
+        const QString file = ProjectStorage::resolveAsset(m_projectDir, scene->source);
+        if (!file.isEmpty()) m_viewport->setPanoramaImage(file, scene->projection);
         else m_viewport->clearImage();
         return;
     }
 
+    if (scene->type == SceneType::Object360 && !scene->frames.isEmpty()) {
+        QVector<QVector<QString>> resolvedRows;
+        resolvedRows.reserve(scene->frames.size());
+
+        for (const auto& row : scene->frames) {
+            QVector<QString> resolved;
+            resolved.reserve(row.size());
+            for (const auto& relative : row) {
+                const QString absolute = ProjectStorage::resolveAsset(m_projectDir, relative);
+                if (!absolute.isEmpty()) resolved.push_back(absolute);
+            }
+            if (!resolved.isEmpty()) resolvedRows.push_back(resolved);
+        }
+
+        if (!resolvedRows.isEmpty()) {
+            m_viewport->setObject360(resolvedRows, scene->startSector, scene->startRow);
+        } else {
+            m_viewport->clearImage();
+        }
+        return;
+    }
+
+    if (scene->type == SceneType::Stl && !scene->source.isEmpty()) {
+        const QString file = ProjectStorage::resolveAsset(m_projectDir, scene->source);
+        if (!file.isEmpty()) {
+            m_viewport->setStl(file, QColor(scene->color), scene->wireframe, scene->zoom);
+        } else {
+            m_viewport->clearImage();
+        }
+        return;
+    }
+
+    // Video preview is handled by the native media layer added next.
     m_viewport->clearImage();
 }
 
@@ -928,6 +963,48 @@ void MainWindow::addHotspot(double yaw, double pitch) {
     const QString sceneId = scene->id;
     m_undoStack.push(new LambdaCommand(
         "Добавить hotspot",
+        [this, sceneId, hotspot] {
+            if (auto* s = m_project.findScene(sceneId)) s->hotspots.push_back(hotspot);
+            markDirty();
+            refreshHotspots();
+        },
+        [this, sceneId, hotspot] {
+            if (auto* s = m_project.findScene(sceneId)) {
+                for (int i = 0; i < s->hotspots.size(); ++i) {
+                    if (s->hotspots[i].id == hotspot.id) {
+                        s->hotspots.removeAt(i);
+                        break;
+                    }
+                }
+            }
+            markDirty();
+            refreshHotspots();
+        }
+    ));
+}
+
+void MainWindow::addObjectHotspot(
+    double xPercent,
+    double yPercent,
+    int sector,
+    int row
+) {
+    Scene* scene = currentScene();
+    if (!scene || scene->type != SceneType::Object360) return;
+
+    Hotspot hotspot;
+    hotspot.id = "hotspot_" + QString::number(QDateTime::currentMSecsSinceEpoch());
+    hotspot.type = "scene";
+    hotspot.text = "Переход";
+    hotspot.anchorMode = "object360";
+    hotspot.anchorX = xPercent;
+    hotspot.anchorY = yPercent;
+    hotspot.anchorSector = sector;
+    hotspot.anchorRow = row;
+
+    const QString sceneId = scene->id;
+    m_undoStack.push(new LambdaCommand(
+        "Добавить Object360 hotspot",
         [this, sceneId, hotspot] {
             if (auto* s = m_project.findScene(sceneId)) s->hotspots.push_back(hotspot);
             markDirty();
