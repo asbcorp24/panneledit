@@ -301,7 +301,8 @@ bool ObjectAlignmentDialog::writeAlignedFrame(
     painter.drawImage(QPointF(0, 0), source);
     painter.end();
 
-    const QString relative = relativeAlignedPath(row, sector);
+    QString relative = relativeAlignedPath(row, sector);
+    relative.replace('\\', '/');
     const QString absolute = QDir(m_projectDirectory).filePath(relative);
     QDir().mkpath(QFileInfo(absolute).absolutePath());
 
@@ -310,7 +311,7 @@ bool ObjectAlignmentDialog::writeAlignedFrame(
         return false;
     }
 
-    m_scene.frames[row][sector] = relative.replace('\\', '/');
+    m_scene.frames[row][sector] = relative;
     return true;
 }
 
