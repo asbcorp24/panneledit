@@ -19,6 +19,11 @@ Project Project::fromJson(const QJsonObject& json) {
     p.autoRotateEnabled = json.value("autoRotateEnabled").toBool(false);
     p.autoRotate = json.value("autoRotate").toDouble(-2.0);
 
+    p.startScreen = json.value("startScreen").toObject();
+    p.guide = json.value("guide").toObject();
+    p.exportSettings = json.value("exportSettings").toObject();
+    p.extraSettings = json.value("settings").toObject();
+
     const auto scenes = json.value("scenes").toArray();
     for (const auto& value : scenes) p.scenes.push_back(Scene::fromJson(value.toObject()));
 
@@ -50,6 +55,10 @@ QJsonObject Project::toJson() const {
         {"autoRotateEnabled", autoRotateEnabled},
         {"autoRotate", autoRotate},
         {"audio", audio},
+        {"startScreen", startScreen},
+        {"guide", guide},
+        {"exportSettings", exportSettings},
+        {"settings", extraSettings},
         {"scenes", sceneArray}
     };
 }
