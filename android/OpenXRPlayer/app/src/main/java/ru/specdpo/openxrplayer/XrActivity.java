@@ -4,6 +4,9 @@ import android.app.NativeActivity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -23,6 +26,10 @@ public final class XrActivity extends NativeActivity {
     private final Map<String, JSONObject> scenes = new HashMap<>();
     private String currentSceneId = "";
     private int revision = 1;
+
+    private MediaPlayer musicPlayer;
+    private MediaPlayer narrationPlayer;
+    private String musicPath = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +58,7 @@ public final class XrActivity extends NativeActivity {
             if (!scenes.containsKey(currentSceneId)) {
                 currentSceneId = scenes.keySet().iterator().next();
             }
+            runOnUiThread(this::configureAudioForCurrentScene);
         } catch (Exception e) {
             Toast.makeText(this, "OpenXR: " + e.getMessage(), Toast.LENGTH_LONG).show();
             finish();
@@ -260,6 +268,7 @@ public final class XrActivity extends NativeActivity {
                 if (scenes.containsKey(target)) {
                     currentSceneId = target;
                     revision++;
+                    runOnUiThread(this::configureAudioForCurrentScene);
                     return true;
                 }
                 return false;
@@ -286,6 +295,101 @@ public final class XrActivity extends NativeActivity {
         return false;
     }
 
+    public void nativeToggleNarration() {
+        runOnUiThread(() -> {
+            try {
+                if (narrationPlayer != null && narrationPlayer.isPlaying()) {
+                    narrationPlayer.stop();
+                    narrationPlayer.release();
+                    narrationPlayer = null;
+                    return;
+                }
+                releaseNarration();
+
+                JSONObject scene = currentScene();
+                JSONObject audio = scene != null ? scene.optJSONObject("audio") : null;
+                JSONObject narration = audio != null ? audio.optJSONObject("narration") : null;
+                String src = narration != null ? narration.optString("src", "") : "";
+                String path = safePath(src);
+                if (path.isEmpty()) {
+                    Toast.makeText(this, "У сцены нет озвучки", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                float volume = narration != null
+                    ? Math.max(0f, Math.min(1f, (float)narration.optDouble("volume", 80.0) / 100f))
+                    : 0.8f;
+                narrationPlayer = createAudioPlayer(path, volume, false);
+            } catch (Exception e) {
+                releaseNarration();
+            }
+        });
+    }
+
+    private void configureAudioForCurrentScene() {
+        try {
+            JSONObject scene = currentScene();
+            JSONObject sceneAudio = scene != null ? scene.optJSONObject("audio") : null;
+            JSONObject music = sceneAudio != null ? sceneAudio.optJSONObject("music") : null;
+
+            if (music == null || music.optString("src", "").isEmpty()) {
+                JSONObject projectAudio = manifest != null ? manifest.optJSONObject("projectAudio") : null;
+                music = projectAudio != null ? projectAudio.optJSONObject("music") : null;
+            }
+
+            String src = music != null ? music.optString("src", "") : "";
+            String path = safePath(src);
+            if (path.equals(musicPath) && musicPlayer != null) return;
+
+            releaseMusic();
+            musicPath = path;
+            if (path.isEmpty()) return;
+
+            float volume = music != null
+                ? Math.max(0f, Math.min(1f, (float)music.optDouble("volume", 35.0) / 100f))
+                : 0.35f;
+            boolean loop = music == null || music.optBoolean("loop", true);
+            musicPlayer = createAudioPlayer(path, volume, loop);
+        } catch (Exception ignored) {
+            releaseMusic();
+        }
+        releaseNarration();
+    }
+
+    private MediaPlayer createAudioPlayer(String path, float volume, boolean loop) throws Exception {
+        MediaPlayer player = new MediaPlayer();
+        AudioAttributes.Builder audioBuilder = new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC);
+        if (Build.VERSION.SDK_INT >= 32) {
+            audioBuilder.setSpatializationBehavior(AudioAttributes.SPATIALIZATION_BEHAVIOR_AUTO);
+        }
+        player.setAudioAttributes(audioBuilder.build());
+        player.setDataSource(path);
+        player.setLooping(loop);
+        player.setVolume(volume, volume);
+        player.prepare();
+        player.start();
+        return player;
+    }
+
+    private void releaseMusic() {
+        if (musicPlayer != null) {
+            try { musicPlayer.stop(); } catch (Exception ignored) {}
+            musicPlayer.release();
+            musicPlayer = null;
+        }
+        musicPath = "";
+    }
+
+    private void releaseNarration() {
+        if (narrationPlayer != null) {
+            try { narrationPlayer.stop(); } catch (Exception ignored) {}
+            narrationPlayer.release();
+            narrationPlayer = null;
+        }
+    }
+
     public void nativeToast(String message) {
         runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
     }
@@ -300,6 +404,13 @@ public final class XrActivity extends NativeActivity {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        releaseNarration();
+        releaseMusic();
+        super.onDestroy();
     }
 
     private static String readText(File file) throws Exception {
