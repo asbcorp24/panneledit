@@ -214,11 +214,22 @@ public final class XrActivity extends NativeActivity {
             String target = clean(h.optString("targetSceneId", ""));
             double yaw = h.optDouble("yaw", 0.0);
             double pitch = h.optDouble("pitch", 0.0);
+            int anchorSector = h.optInt("anchorSector", 0);
+            int anchorRow = h.optInt("anchorRow", 0);
+            JSONArray point = h.optJSONArray("modelPoint");
+            double px = point != null ? point.optDouble(0, Double.NaN) : Double.NaN;
+            double py = point != null ? point.optDouble(1, Double.NaN) : Double.NaN;
+            double pz = point != null ? point.optDouble(2, Double.NaN) : Double.NaN;
             out.append(id).append('\t')
                 .append(type).append('\t')
                 .append(target).append('\t')
                 .append(yaw).append('\t')
-                .append(pitch).append('\n');
+                .append(pitch).append('\t')
+                .append(anchorSector).append('\t')
+                .append(anchorRow).append('\t')
+                .append(px).append('\t')
+                .append(py).append('\t')
+                .append(pz).append('\n');
         }
         return out.toString();
     }
