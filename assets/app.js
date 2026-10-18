@@ -4218,7 +4218,13 @@
           projection: '360',
           yaw: Number(scene.yaw) || 0,
           pitch: Number(scene.pitch) || 0,
-          fov: Number(scene.fov) || 100
+          fov: Number(scene.fov) || 100,
+          multires: scene.multires ? {
+            basePath: scene.multires.basePath || '',
+            tileResolution: Number(scene.multires.tileResolution) || 512,
+            maxLevel: Number(scene.multires.maxLevel) || 1,
+            cubeResolution: Number(scene.multires.cubeResolution) || 2048
+          } : null
         };
       }
 
