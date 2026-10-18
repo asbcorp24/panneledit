@@ -22,6 +22,8 @@
         basePath: String(options.basePath || ''),
         tileResolution: Math.max(64, Number(options.tileResolution) || 512),
         maxLevel: Math.max(1, Number(options.maxLevel) || 1),
+        maxDetailLevel: Math.max(1, Number(options.maxDetailLevel) || Number(options.maxLevel) || 1),
+        pixelRatioCap: Math.max(0.75, Number(options.pixelRatioCap) || 1.6),
         cubeResolution: Math.max(256, Number(options.cubeResolution) || 2048),
         yaw: Number(options.yaw) || 0,
         pitch: clamp(options.pitch, -89, 89),
@@ -94,7 +96,7 @@
         alpha: false,
         powerPreference: 'high-performance'
       });
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.options.pixelRatioCap));
       this.renderer.setClearColor(0x03060d, 1);
 
       this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -225,7 +227,7 @@
       return clamp(
         1 + Math.round(zoom * (this.options.maxLevel - 1)),
         1,
-        this.options.maxLevel
+        Math.min(this.options.maxLevel, this.options.maxDetailLevel)
       );
     }
 
@@ -246,7 +248,7 @@
       if (level !== this.currentLevel || force) {
         this.currentLevel = level;
         this.clearDetailMeshes();
-        this.badge.textContent = 'MULTIRES · L' + level + '/' + this.options.maxLevel;
+        this.badge.textContent = 'MULTIRES · L' + level + '/' + Math.min(this.options.maxLevel, this.options.maxDetailLevel);
       }
       if (level <= 1) return;
       this.loadVisibleDetailTiles(level);
