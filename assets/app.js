@@ -4206,6 +4206,9 @@
           anchorY: Number(h.anchorY) || 50,
           anchorSector: Number(h.anchorSector) || 0,
           anchorRow: Number(h.anchorRow) || 0,
+          anchorYaw: Number(h.anchorYaw) || 0,
+          anchorPitch: Number(h.anchorPitch) || 0,
+          anchorMode: h.anchorMode || '',
           modelPoint: Array.isArray(h.modelPoint) ? h.modelPoint : null
         }))
       };
