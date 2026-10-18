@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "io/ProjectStorage.h"
+#include "export/PackageExporter.h"
 #include "render/PanoramaViewport.h"
 
 #include <QCloseEvent>
@@ -183,6 +184,7 @@ void MainWindow::buildUi() {
     auto* newAction = toolbar->addAction("Новый");
     auto* openAction = toolbar->addAction("Открыть");
     auto* saveAction = toolbar->addAction("Сохранить");
+    auto* exportXrAction = toolbar->addAction("OpenXR ZIP");
     toolbar->addSeparator();
     auto* addPano = toolbar->addAction("+ Панорама");
     auto* addObject = toolbar->addAction("+ Object360");
@@ -197,6 +199,7 @@ void MainWindow::buildUi() {
     connect(newAction, &QAction::triggered, this, &MainWindow::newProject);
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
+    connect(exportXrAction, &QAction::triggered, this, &MainWindow::exportOpenXrPackage);
     connect(addPano, &QAction::triggered, this, &MainWindow::addPanorama);
     connect(addObject, &QAction::triggered, this, &MainWindow::addObject360);
     connect(addStlAction, &QAction::triggered, this, &MainWindow::addStl);
@@ -271,6 +274,8 @@ void MainWindow::buildMenus() {
     fileMenu->addAction("Открыть проект", this, &MainWindow::openProject, QKeySequence::Open);
     fileMenu->addAction("Сохранить", this, &MainWindow::saveProject, QKeySequence::Save);
     fileMenu->addAction("Сохранить как…", this, &MainWindow::saveProjectAs, QKeySequence::SaveAs);
+    fileMenu->addSeparator();
+    fileMenu->addAction("Экспорт OpenXR .player.zip", this, &MainWindow::exportOpenXrPackage);
     fileMenu->addSeparator();
     fileMenu->addAction("Выход", this, &QWidget::close);
 
@@ -558,6 +563,60 @@ bool MainWindow::saveCurrent(bool showErrors) {
     setWindowTitle("3DPL Editor — " + m_project.title);
     if (showErrors) statusBar()->showMessage("Проект сохранён", 1800);
     return true;
+}
+
+void MainWindow::exportOpenXrPackage() {
+    if (m_projectDir.isEmpty()) {
+        QMessageBox::information(this, "Экспорт", "Сначала создайте или откройте проект.");
+        return;
+    }
+    if (m_project.scenes.isEmpty()) {
+        QMessageBox::information(this, "Экспорт", "В проекте пока нет сцен.");
+        return;
+    }
+
+    if (m_dirty && !saveCurrent()) return;
+
+    QString suggested = m_project.title;
+    suggested.replace(QRegularExpression("[^A-Za-z0-9А-Яа-я_-]+"), "_");
+    if (suggested.isEmpty()) suggested = "tour";
+
+    const QString output = QFileDialog::getSaveFileName(
+        this,
+        "Экспорт OpenXR Player",
+        QDir(m_projectDir).filePath(suggested + ".player.zip"),
+        "Player ZIP (*.player.zip *.zip)"
+    );
+    if (output.isEmpty()) return;
+
+    QString target = output;
+    if (!target.endsWith(".zip", Qt::CaseInsensitive)) target += ".player.zip";
+
+    statusBar()->showMessage("Сборка OpenXR пакета…");
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    QString error;
+    const bool ok = PackageExporter::exportOpenXrPackage(
+        m_projectDir,
+        m_project,
+        target,
+        &error
+    );
+
+    QApplication::restoreOverrideCursor();
+
+    if (!ok) {
+        QMessageBox::critical(this, "Ошибка экспорта", error);
+        statusBar()->showMessage("Ошибка экспорта", 3000);
+        return;
+    }
+
+    statusBar()->showMessage("OpenXR пакет создан: " + QFileInfo(target).fileName(), 5000);
+    QMessageBox::information(
+        this,
+        "OpenXR экспорт",
+        "Готово:\n" + QDir::toNativeSeparators(target)
+    );
 }
 
 void MainWindow::addPanorama() {
