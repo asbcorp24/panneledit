@@ -45,10 +45,11 @@ object Spherical360Stitcher {
                 compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
             )
         )
+        val exposure = buildExposureGains(ordered)
 
         if (shouldUse8k(ordered)) {
             onProgress("360°: режим 8K 8192×4096")
-            if (stitch8kTiled(ordered, output, onProgress)) return true
+            if (stitch8kTiled(ordered, exposure, output, onProgress)) return true
             onProgress("360°: 8K не завершён, переход на 4K")
         }
 
@@ -79,6 +80,7 @@ object Spherical360Stitcher {
 
                 val cylindrical = cylindricalWarp(image, hfov)
                 image.release()
+                applyExposureGain(cylindrical, exposure[frame.file.absolutePath] ?: 1.0)
 
                 val yaw = if (frame.yawDeg.isFinite()) {
                     normalize360(frame.yawDeg.toDouble())
@@ -160,6 +162,41 @@ object Spherical360Stitcher {
         }
     }
 
+    private fun buildExposureGains(frames: List<PanoramaFrame>): Map<String, Double> {
+        val samples = ArrayList<Pair<String, Double>>()
+
+        frames.forEach { frame ->
+            val image = load(frame.file, 420) ?: return@forEach
+            try {
+                val gray = Mat()
+                Imgproc.cvtColor(image, gray, Imgproc.COLOR_BGR2GRAY)
+                val mean = MatOfDouble()
+                val std = MatOfDouble()
+                Core.meanStdDev(gray, mean, std)
+                val value = mean.toArray().firstOrNull() ?: 0.0
+                mean.release()
+                std.release()
+                gray.release()
+                if (value > 2.0) samples += frame.file.absolutePath to value
+            } finally {
+                image.release()
+            }
+        }
+
+        if (samples.isEmpty()) return emptyMap()
+        val sorted = samples.map { it.second }.sorted()
+        val median = sorted[sorted.size / 2]
+
+        return samples.associate { (path, value) ->
+            path to (median / value).coerceIn(0.72, 1.38)
+        }
+    }
+
+    private fun applyExposureGain(image: Mat, gain: Double) {
+        if (kotlin.math.abs(gain - 1.0) < 0.015) return
+        image.convertTo(image, -1, gain, 0.0)
+    }
+
     private fun shouldUse8k(frames: List<PanoramaFrame>): Boolean {
         if (frames.size < 30) return false
         val maxMemoryMb = Runtime.getRuntime().maxMemory() / (1024L * 1024L)
@@ -188,6 +225,7 @@ object Spherical360Stitcher {
 
     private fun stitch8kTiled(
         frames: List<PanoramaFrame>,
+        exposure: Map<String, Double>,
         output: File,
         onProgress: (String) -> Unit
     ): Boolean {
@@ -215,6 +253,7 @@ object Spherical360Stitcher {
                         val (hfov, vfov) = frameFov(frame, image)
                         val cylindrical = cylindricalWarp(image, hfov)
                         image.release()
+                        applyExposureGain(cylindrical, exposure[frame.file.absolutePath] ?: 1.0)
 
                         val yaw = if (frame.yawDeg.isFinite()) {
                             normalize360(frame.yawDeg.toDouble())
