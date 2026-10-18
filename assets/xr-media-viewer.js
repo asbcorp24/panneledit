@@ -455,7 +455,6 @@
         } catch (_) {}
       }
     }
-    }
 
     async toggleCardboard() {
       return this.setCardboard(!this.cardboard);
