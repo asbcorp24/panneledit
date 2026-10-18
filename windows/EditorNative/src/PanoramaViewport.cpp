@@ -7,6 +7,7 @@
 #include <QtMath>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 namespace {
@@ -78,13 +79,13 @@ void PanoramaViewport::buildSphere() {
 
     for (int y = 0; y <= latitude; ++y) {
         const float v = float(y) / float(latitude);
-        const float phi = float(-M_PI_2 + v * M_PI);
+        const float phi = float(-(std::numbers::pi_v<double> / 2.0) + v * std::numbers::pi_v<double>);
         const float cp = std::cos(phi);
         const float sp = std::sin(phi);
 
         for (int x = 0; x <= longitude; ++x) {
             const float u = float(x) / float(longitude);
-            const float theta = float(-M_PI + u * 2.0 * M_PI);
+            const float theta = float(-std::numbers::pi_v<double> + u * 2.0 * std::numbers::pi_v<double>);
             vertices.push_back(Vertex{
                 std::sin(theta) * cp * 10.0f,
                 sp * 10.0f,
@@ -271,7 +272,7 @@ QPointF PanoramaViewport::anglesToScreen(double yaw, double pitch) const {
     const double dy = qDegreesToRadians(wrapYaw(yaw - m_yaw));
     const double dp = qDegreesToRadians(pitch - m_pitch);
 
-    if (std::abs(dy) > M_PI_2)
+    if (std::abs(dy) > (std::numbers::pi_v<double> / 2.0))
         return QPointF(-10000, -10000);
 
     const double nx = std::tan(dy) / std::tan(hf * 0.5);
