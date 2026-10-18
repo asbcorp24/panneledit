@@ -110,6 +110,30 @@ public final class XrActivity extends NativeActivity {
         JSONObject s = currentScene();
         return s != null ? (float)s.optDouble("fov", 90.0) : 90f;
     }
+    public synchronized String nativeGetMultiresBasePath() {
+        JSONObject s = currentScene();
+        JSONObject m = s != null ? s.optJSONObject("multires") : null;
+        return m != null ? safePath(m.optString("basePath", "")) : "";
+    }
+
+    public synchronized int nativeGetMultiresTileResolution() {
+        JSONObject s = currentScene();
+        JSONObject m = s != null ? s.optJSONObject("multires") : null;
+        return m != null ? Math.max(64, m.optInt("tileResolution", 512)) : 512;
+    }
+
+    public synchronized int nativeGetMultiresMaxLevel() {
+        JSONObject s = currentScene();
+        JSONObject m = s != null ? s.optJSONObject("multires") : null;
+        return m != null ? Math.max(1, m.optInt("maxLevel", 1)) : 1;
+    }
+
+    public synchronized int nativeGetMultiresCubeResolution() {
+        JSONObject s = currentScene();
+        JSONObject m = s != null ? s.optJSONObject("multires") : null;
+        return m != null ? Math.max(256, m.optInt("cubeResolution", 2048)) : 2048;
+    }
+
     public synchronized int nativeGetObjectSectors() {
         JSONObject s = currentScene();
         return s != null ? Math.max(1, s.optInt("sectors", 1)) : 1;
