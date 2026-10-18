@@ -5659,6 +5659,94 @@
     }
   }
 
+  function collectHeavyAssetValues(value, out = new Set(), seen = new WeakSet()) {
+    if (typeof value === 'string') {
+      if (/^data:/i.test(value) || isAssetRef(value)) out.add(value);
+      return out;
+    }
+    if (!value || typeof value !== 'object') return out;
+    if (seen.has(value)) return out;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectHeavyAssetValues(item, out, seen));
+    } else {
+      Object.values(value).forEach((item) => collectHeavyAssetValues(item, out, seen));
+    }
+    return out;
+  }
+
+  async function estimateProjectBinaryBytes() {
+    const values = [...collectHeavyAssetValues(project)];
+    let bytes = 0;
+    for (const value of values) {
+      if (isAssetRef(value)) {
+        try {
+          const blob = await getAssetBlob(value);
+          bytes += Number(blob?.size) || 0;
+        } catch (_) {}
+      } else if (/^data:/i.test(value)) {
+        const comma = value.indexOf(',');
+        if (comma < 0) continue;
+        const header = value.slice(0, comma);
+        const payload = value.length - comma - 1;
+        bytes += /;base64/i.test(header)
+          ? Math.floor(payload * 0.75)
+          : payload;
+      }
+    }
+    return bytes;
+  }
+
+  function formatBytes(bytes) {
+    const value = Math.max(0, Number(bytes) || 0);
+    if (value >= 1073741824) return (value / 1073741824).toFixed(2) + ' ГБ';
+    if (value >= 1048576) return (value / 1048576).toFixed(1) + ' МБ';
+    if (value >= 1024) return (value / 1024).toFixed(1) + ' КБ';
+    return Math.round(value) + ' Б';
+  }
+
+  async function exportPlayerPackageWithAnalysis() {
+    if (!project.scenes.length) {
+      showToast('Сначала добавьте хотя бы одну сцену');
+      return;
+    }
+    const button = els.btnExportPlayer;
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Анализ…';
+    try {
+      const sourceBytes = await estimateProjectBinaryBytes();
+      const panoramaCount = project.scenes.filter((s) => s.sceneType === 'panorama').length;
+      const objectCount = project.scenes.filter((s) => s.sceneType === 'object360').length;
+      const xrCount = project.scenes.filter((s) => s.sceneType === 'xr').length;
+      const stlCount = project.scenes.filter((s) => s.sceneType === 'stl').length;
+      const predicted = sourceBytes > 0 ? Math.round(sourceBytes * 0.58) : 0;
+
+      const message =
+        'Профиль Android Player:\n\n' +
+        'Сцен: ' + project.scenes.length +
+        ' · 360°: ' + panoramaCount +
+        ' · Object360: ' + objectCount +
+        ' · XR: ' + xrCount +
+        ' · STL: ' + stlCount + '\n' +
+        'Исходные тяжёлые данные: ' + formatBytes(sourceBytes) + '\n' +
+        (predicted ? 'Ориентировочный пакет после оптимизации: ~' + formatBytes(predicted) + '\n' : '') +
+        '\nБудет применено:\n' +
+        '• JPEG 80%\n' +
+        '• панорамы до 4096 px + Multires\n' +
+        '• Object360 до 960 px\n' +
+        '• без PWA / Windows / QR\n' +
+        '• быстрый ZIP для мобильного Player\n\n' +
+        'Продолжить экспорт?';
+
+      if (!window.confirm(message)) return;
+    } finally {
+      button.disabled = false;
+      button.textContent = oldText;
+    }
+    return exportTourPackage({ playerMode:true });
+  }
+
   async function exportTourPackage(options = {}) {
     const playerMode = options?.playerMode === true;
     if (!project.scenes.length) {
@@ -7568,7 +7656,7 @@
 
     els.btnExportProject.addEventListener('click', exportProject);
     els.btnExportTour.addEventListener('click', exportTourPackage);
-    els.btnExportPlayer.addEventListener('click', () => exportTourPackage({ playerMode:true }));
+    els.btnExportPlayer.addEventListener('click', exportPlayerPackageWithAnalysis);
     els.projectImport.addEventListener('change', () => importProjectFile(els.projectImport.files?.[0]));
 
     els.closeDownloadDialog.addEventListener('click', closeZipDownloadDialog);
