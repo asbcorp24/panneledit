@@ -1,0 +1,1184 @@
+#include <android/log.h>
+#include <android/bitmap.h>
+#include <android_native_app_glue.h>
+
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
+
+#define XR_USE_PLATFORM_ANDROID
+#define XR_USE_GRAPHICS_API_OPENGL_ES
+#include <openxr/openxr.h>
+#include <openxr/openxr_platform.h>
+
+#include <jni.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "OpenXRPlayer", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "OpenXRPlayer", __VA_ARGS__)
+
+namespace {
+
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kDeg = kPi / 180.0f;
+
+struct Mat4 {
+    float m[16]{};
+};
+
+Mat4 identity() {
+    Mat4 r{};
+    r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
+    return r;
+}
+
+Mat4 multiply(const Mat4& a, const Mat4& b) {
+    Mat4 r{};
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            float v = 0.0f;
+            for (int k = 0; k < 4; ++k) {
+                v += a.m[k * 4 + row] * b.m[col * 4 + k];
+            }
+            r.m[col * 4 + row] = v;
+        }
+    }
+    return r;
+}
+
+Mat4 projectionFromFov(const XrFovf& fov, float nearZ = 0.05f, float farZ = 100.0f) {
+    const float l = std::tan(fov.angleLeft);
+    const float r = std::tan(fov.angleRight);
+    const float d = std::tan(fov.angleDown);
+    const float u = std::tan(fov.angleUp);
+    const float w = r - l;
+    const float h = u - d;
+
+    Mat4 m{};
+    m.m[0] = 2.0f / w;
+    m.m[5] = 2.0f / h;
+    m.m[8] = (r + l) / w;
+    m.m[9] = (u + d) / h;
+    m.m[10] = -(farZ + nearZ) / (farZ - nearZ);
+    m.m[11] = -1.0f;
+    m.m[14] = -(2.0f * farZ * nearZ) / (farZ - nearZ);
+    return m;
+}
+
+Mat4 viewFromPose(const XrPosef& pose) {
+    const float x = pose.orientation.x;
+    const float y = pose.orientation.y;
+    const float z = pose.orientation.z;
+    const float w = pose.orientation.w;
+
+    const float r00 = 1 - 2 * y * y - 2 * z * z;
+    const float r01 = 2 * x * y - 2 * z * w;
+    const float r02 = 2 * x * z + 2 * y * w;
+    const float r10 = 2 * x * y + 2 * z * w;
+    const float r11 = 1 - 2 * x * x - 2 * z * z;
+    const float r12 = 2 * y * z - 2 * x * w;
+    const float r20 = 2 * x * z - 2 * y * w;
+    const float r21 = 2 * y * z + 2 * x * w;
+    const float r22 = 1 - 2 * x * x - 2 * y * y;
+
+    // Inverse rigid transform: R^T and -R^T t.
+    Mat4 m = identity();
+    m.m[0] = r00; m.m[4] = r10; m.m[8]  = r20;
+    m.m[1] = r01; m.m[5] = r11; m.m[9]  = r21;
+    m.m[2] = r02; m.m[6] = r12; m.m[10] = r22;
+
+    const float px = pose.position.x;
+    const float py = pose.position.y;
+    const float pz = pose.position.z;
+    m.m[12] = -(r00 * px + r10 * py + r20 * pz);
+    m.m[13] = -(r01 * px + r11 * py + r21 * pz);
+    m.m[14] = -(r02 * px + r12 * py + r22 * pz);
+    return m;
+}
+
+struct EglState {
+    EGLDisplay display = EGL_NO_DISPLAY;
+    EGLConfig config = nullptr;
+    EGLContext context = EGL_NO_CONTEXT;
+    EGLSurface surface = EGL_NO_SURFACE;
+
+    bool create() {
+        display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+        if (display == EGL_NO_DISPLAY) return false;
+
+        EGLint major = 0, minor = 0;
+        if (!eglInitialize(display, &major, &minor)) return false;
+        if (!eglBindAPI(EGL_OPENGL_ES_API)) return false;
+
+        const EGLint attrs[] = {
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+            EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+            EGL_RED_SIZE, 8,
+            EGL_GREEN_SIZE, 8,
+            EGL_BLUE_SIZE, 8,
+            EGL_ALPHA_SIZE, 8,
+            EGL_DEPTH_SIZE, 24,
+            EGL_NONE
+        };
+
+        EGLint count = 0;
+        if (!eglChooseConfig(display, attrs, &config, 1, &count) || count < 1) return false;
+
+        const EGLint ctxAttrs[] = {
+            EGL_CONTEXT_CLIENT_VERSION, 3,
+            EGL_NONE
+        };
+        context = eglCreateContext(display, config, EGL_NO_CONTEXT, ctxAttrs);
+        if (context == EGL_NO_CONTEXT) return false;
+
+        const EGLint pbufferAttrs[] = {
+            EGL_WIDTH, 16,
+            EGL_HEIGHT, 16,
+            EGL_NONE
+        };
+        surface = eglCreatePbufferSurface(display, config, pbufferAttrs);
+        if (surface == EGL_NO_SURFACE) return false;
+
+        return eglMakeCurrent(display, surface, surface, context) == EGL_TRUE;
+    }
+
+    void destroy() {
+        if (display != EGL_NO_DISPLAY) {
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
+            if (context != EGL_NO_CONTEXT) eglDestroyContext(display, context);
+            eglTerminate(display);
+        }
+        display = EGL_NO_DISPLAY;
+        surface = EGL_NO_SURFACE;
+        context = EGL_NO_CONTEXT;
+        config = nullptr;
+    }
+};
+
+struct JniBridge {
+    android_app* app = nullptr;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jclass activityClass = nullptr;
+
+    explicit JniBridge(android_app* a) : app(a) {
+        if (!app || !app->activity || !app->activity->vm) return;
+        JavaVM* vm = app->activity->vm;
+        if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+            if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) attached = true;
+        }
+        if (env && app->activity->clazz) {
+            activityClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(app->activity->clazz)));
+        }
+    }
+
+    ~JniBridge() {
+        if (env && activityClass) env->DeleteGlobalRef(activityClass);
+        if (attached && app && app->activity && app->activity->vm) {
+            app->activity->vm->DetachCurrentThread();
+        }
+    }
+
+    std::string callString(const char* name) const {
+        if (!env || !activityClass) return {};
+        jmethodID mid = env->GetMethodID(activityClass, name, "()Ljava/lang/String;");
+        if (!mid) { env->ExceptionClear(); return {}; }
+        jstring s = static_cast<jstring>(env->CallObjectMethod(app->activity->clazz, mid));
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return {}; }
+        if (!s) return {};
+        const char* chars = env->GetStringUTFChars(s, nullptr);
+        std::string out = chars ? chars : "";
+        if (chars) env->ReleaseStringUTFChars(s, chars);
+        env->DeleteLocalRef(s);
+        return out;
+    }
+
+    int callInt(const char* name) const {
+        if (!env || !activityClass) return 0;
+        jmethodID mid = env->GetMethodID(activityClass, name, "()I");
+        if (!mid) { env->ExceptionClear(); return 0; }
+        jint v = env->CallIntMethod(app->activity->clazz, mid);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return 0; }
+        return static_cast<int>(v);
+    }
+
+    float callFloat(const char* name) const {
+        if (!env || !activityClass) return 0.0f;
+        jmethodID mid = env->GetMethodID(activityClass, name, "()F");
+        if (!mid) { env->ExceptionClear(); return 0.0f; }
+        jfloat v = env->CallFloatMethod(app->activity->clazz, mid);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return 0.0f; }
+        return v;
+    }
+
+    bool activateHotspot(const std::string& id) const {
+        if (!env || !activityClass) return false;
+        jmethodID mid = env->GetMethodID(activityClass, "nativeActivateHotspot", "(Ljava/lang/String;)Z");
+        if (!mid) { env->ExceptionClear(); return false; }
+        jstring sid = env->NewStringUTF(id.c_str());
+        jboolean result = env->CallBooleanMethod(app->activity->clazz, mid, sid);
+        env->DeleteLocalRef(sid);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); return false; }
+        return result == JNI_TRUE;
+    }
+
+    void toast(const std::string& text) const {
+        if (!env || !activityClass) return;
+        jmethodID mid = env->GetMethodID(activityClass, "nativeToast", "(Ljava/lang/String;)V");
+        if (!mid) { env->ExceptionClear(); return; }
+        jstring msg = env->NewStringUTF(text.c_str());
+        env->CallVoidMethod(app->activity->clazz, mid, msg);
+        env->DeleteLocalRef(msg);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
+    GLuint loadTexture(const std::string& path, int* outW = nullptr, int* outH = nullptr) const {
+        if (!env || path.empty()) return 0;
+
+        jclass bitmapFactory = env->FindClass("android/graphics/BitmapFactory");
+        if (!bitmapFactory) { env->ExceptionClear(); return 0; }
+        jmethodID decodeFile = env->GetStaticMethodID(
+            bitmapFactory,
+            "decodeFile",
+            "(Ljava/lang/String;)Landroid/graphics/Bitmap;"
+        );
+        if (!decodeFile) {
+            env->ExceptionClear();
+            env->DeleteLocalRef(bitmapFactory);
+            return 0;
+        }
+
+        jstring jpath = env->NewStringUTF(path.c_str());
+        jobject bitmap = env->CallStaticObjectMethod(bitmapFactory, decodeFile, jpath);
+        env->DeleteLocalRef(jpath);
+        env->DeleteLocalRef(bitmapFactory);
+
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return 0;
+        }
+        if (!bitmap) return 0;
+
+        AndroidBitmapInfo info{};
+        if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+            env->DeleteLocalRef(bitmap);
+            return 0;
+        }
+
+        void* pixels = nullptr;
+        if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS || !pixels) {
+            env->DeleteLocalRef(bitmap);
+            return 0;
+        }
+
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA8,
+            static_cast<GLsizei>(info.width),
+            static_cast<GLsizei>(info.height),
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            pixels
+        );
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        AndroidBitmap_unlockPixels(env, bitmap);
+        env->DeleteLocalRef(bitmap);
+
+        if (outW) *outW = static_cast<int>(info.width);
+        if (outH) *outH = static_cast<int>(info.height);
+        return texture;
+    }
+};
+
+struct Hotspot {
+    std::string id;
+    std::string type;
+    std::string target;
+    float yaw = 0;
+    float pitch = 0;
+};
+
+std::vector<Hotspot> parseHotspots(const std::string& packed) {
+    std::vector<Hotspot> out;
+    std::istringstream lines(packed);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> fields;
+        std::stringstream ss(line);
+        std::string field;
+        while (std::getline(ss, field, '\t')) fields.push_back(field);
+        if (fields.size() < 5) continue;
+        Hotspot h;
+        h.id = fields[0];
+        h.type = fields[1];
+        h.target = fields[2];
+        try {
+            h.yaw = std::stof(fields[3]);
+            h.pitch = std::stof(fields[4]);
+        } catch (...) {
+            continue;
+        }
+        out.push_back(std::move(h));
+    }
+    return out;
+}
+
+float wrapAngle(float deg) {
+    while (deg > 180.0f) deg -= 360.0f;
+    while (deg < -180.0f) deg += 360.0f;
+    return deg;
+}
+
+void poseForwardYawPitch(const XrPosef& pose, float& yawDeg, float& pitchDeg) {
+    const float x = pose.orientation.x;
+    const float y = pose.orientation.y;
+    const float z = pose.orientation.z;
+    const float w = pose.orientation.w;
+
+    // Rotate forward vector (0,0,-1) by quaternion.
+    const float fx = -2.0f * (x * z + w * y);
+    const float fy = -2.0f * (y * z - w * x);
+    const float fz = -(1.0f - 2.0f * (x * x + y * y));
+
+    yawDeg = std::atan2(fx, -fz) / kDeg;
+    pitchDeg = std::asin(std::clamp(fy, -1.0f, 1.0f)) / kDeg;
+}
+
+GLuint compileShader(GLenum type, const char* src) {
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+    GLint ok = GL_FALSE;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[1024]{};
+        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+        LOGE("shader: %s", log);
+        glDeleteShader(shader);
+        return 0;
+    }
+    return shader;
+}
+
+GLuint linkProgram(const char* vsSrc, const char* fsSrc) {
+    GLuint vs = compileShader(GL_VERTEX_SHADER, vsSrc);
+    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fsSrc);
+    if (!vs || !fs) {
+        if (vs) glDeleteShader(vs);
+        if (fs) glDeleteShader(fs);
+        return 0;
+    }
+
+    GLuint p = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    GLint ok = GL_FALSE;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[1024]{};
+        glGetProgramInfoLog(p, sizeof(log), nullptr, log);
+        LOGE("program: %s", log);
+        glDeleteProgram(p);
+        return 0;
+    }
+    return p;
+}
+
+struct Renderer {
+    GLuint program = 0;
+    GLuint reticleProgram = 0;
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    GLuint ibo = 0;
+    GLsizei indexCount = 0;
+    GLuint texture = 0;
+    GLuint fbo = 0;
+
+    GLint uMvp = -1;
+    GLint uUvScale = -1;
+    GLint uUvOffset = -1;
+    GLint uYawOffset = -1;
+
+    std::string projection = "360";
+    float sceneYaw = 0.0f;
+    float scenePitch = 0.0f;
+
+    bool init() {
+        static const char* vs = R"(
+            #version 300 es
+            layout(location=0) in vec3 aPos;
+            layout(location=1) in vec2 aUv;
+            uniform mat4 uMvp;
+            out vec2 vUv;
+            void main() {
+                vUv = aUv;
+                gl_Position = uMvp * vec4(aPos,1.0);
+            }
+        )";
+
+        static const char* fs = R"(
+            #version 300 es
+            precision mediump float;
+            in vec2 vUv;
+            uniform sampler2D uTex;
+            uniform vec2 uUvScale;
+            uniform vec2 uUvOffset;
+            uniform float uYawOffset;
+            out vec4 fragColor;
+            void main() {
+                float wrappedU = fract(vUv.x + uYawOffset);
+                vec2 uv = vec2(wrappedU, vUv.y) * uUvScale + uUvOffset;
+                fragColor = texture(uTex, uv);
+            }
+        )";
+
+        static const char* retVs = R"(
+            #version 300 es
+            uniform mat4 uProjection;
+            void main() {
+                gl_Position = uProjection * vec4(0.0,0.0,-2.0,1.0);
+                gl_PointSize = 12.0;
+            }
+        )";
+        static const char* retFs = R"(
+            #version 300 es
+            precision mediump float;
+            uniform vec4 uColor;
+            out vec4 fragColor;
+            void main() {
+                vec2 p = gl_PointCoord - vec2(0.5);
+                float d = length(p);
+                if (d > 0.48 || d < 0.18) discard;
+                fragColor = uColor;
+            }
+        )";
+
+        program = linkProgram(vs, fs);
+        reticleProgram = linkProgram(retVs, retFs);
+        if (!program || !reticleProgram) return false;
+
+        uMvp = glGetUniformLocation(program, "uMvp");
+        uUvScale = glGetUniformLocation(program, "uUvScale");
+        uUvOffset = glGetUniformLocation(program, "uUvOffset");
+        uYawOffset = glGetUniformLocation(program, "uYawOffset");
+
+        buildSphere();
+        glGenFramebuffers(1, &fbo);
+        return vao != 0 && fbo != 0;
+    }
+
+    void buildSphere() {
+        constexpr int lon = 72;
+        constexpr int lat = 36;
+        std::vector<float> vertices;
+        std::vector<uint32_t> indices;
+
+        vertices.reserve((lon + 1) * (lat + 1) * 5);
+        for (int y = 0; y <= lat; ++y) {
+            const float v = static_cast<float>(y) / lat;
+            const float phi = -kPi * 0.5f + v * kPi;
+            const float cp = std::cos(phi);
+            const float sp = std::sin(phi);
+            for (int x = 0; x <= lon; ++x) {
+                const float u = static_cast<float>(x) / lon;
+                const float theta = -kPi + u * 2.0f * kPi;
+                const float sx = std::sin(theta) * cp;
+                const float sy = sp;
+                const float sz = -std::cos(theta) * cp;
+                const float texV = 1.0f - v;
+                vertices.insert(vertices.end(), {sx * 10.0f, sy * 10.0f, sz * 10.0f, u, texV});
+            }
+        }
+
+        for (int y = 0; y < lat; ++y) {
+            for (int x = 0; x < lon; ++x) {
+                const uint32_t a = y * (lon + 1) + x;
+                const uint32_t b = a + 1;
+                const uint32_t c = a + lon + 1;
+                const uint32_t d = c + 1;
+                indices.insert(indices.end(), {a, c, b, b, c, d});
+            }
+        }
+
+        indexCount = static_cast<GLsizei>(indices.size());
+
+        glGenVertexArrays(1, &vao);
+        glBindVertexArray(vao);
+
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+            vertices.data(),
+            GL_STATIC_DRAW
+        );
+
+        glGenBuffers(1, &ibo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+        glBufferData(
+            GL_ELEMENT_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(indices.size() * sizeof(uint32_t)),
+            indices.data(),
+            GL_STATIC_DRAW
+        );
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
+
+        glBindVertexArray(0);
+    }
+
+    void setSceneTexture(GLuint newTexture, std::string proj, float yaw, float pitch) {
+        if (texture) glDeleteTextures(1, &texture);
+        texture = newTexture;
+        projection = std::move(proj);
+        sceneYaw = yaw;
+        scenePitch = pitch;
+    }
+
+    void render(
+        GLuint colorImage,
+        int width,
+        int height,
+        const XrView& view,
+        int eye,
+        bool gazeTarget
+    ) {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorImage, 0);
+
+        glViewport(0, 0, width, height);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_DEPTH_TEST);
+        glClearColor(0.015f, 0.02f, 0.04f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        if (texture) {
+            const Mat4 projectionM = projectionFromFov(view.fov);
+            const Mat4 viewM = viewFromPose(view.pose);
+            const Mat4 mvp = multiply(projectionM, viewM);
+
+            glUseProgram(program);
+            glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.m);
+
+            float sx = 1.0f, sy = 1.0f, ox = 0.0f, oy = 0.0f;
+            if (projection.find("_LR") != std::string::npos) {
+                sx = 0.5f;
+                ox = eye == 1 ? 0.5f : 0.0f;
+            } else if (projection.find("_TB") != std::string::npos) {
+                sy = 0.5f;
+                oy = eye == 0 ? 0.5f : 0.0f;
+            }
+
+            glUniform2f(uUvScale, sx, sy);
+            glUniform2f(uUvOffset, ox, oy);
+            glUniform1f(uYawOffset, sceneYaw / 360.0f);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glUniform1i(glGetUniformLocation(program, "uTex"), 0);
+
+            glBindVertexArray(vao);
+            glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+
+        const Mat4 projectionM = projectionFromFov(view.fov);
+        glUseProgram(reticleProgram);
+        glUniformMatrix4fv(
+            glGetUniformLocation(reticleProgram, "uProjection"),
+            1,
+            GL_FALSE,
+            projectionM.m
+        );
+        if (gazeTarget) {
+            glUniform4f(glGetUniformLocation(reticleProgram, "uColor"), 0.46f, 0.91f, 0.84f, 1.0f);
+        } else {
+            glUniform4f(glGetUniformLocation(reticleProgram, "uColor"), 1.0f, 1.0f, 1.0f, 0.75f);
+        }
+        glDrawArrays(GL_POINTS, 0, 1);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    void destroy() {
+        if (texture) glDeleteTextures(1, &texture);
+        if (fbo) glDeleteFramebuffers(1, &fbo);
+        if (ibo) glDeleteBuffers(1, &ibo);
+        if (vbo) glDeleteBuffers(1, &vbo);
+        if (vao) glDeleteVertexArrays(1, &vao);
+        if (program) glDeleteProgram(program);
+        if (reticleProgram) glDeleteProgram(reticleProgram);
+        texture = fbo = ibo = vbo = vao = program = reticleProgram = 0;
+    }
+};
+
+struct Swapchain {
+    XrSwapchain handle = XR_NULL_HANDLE;
+    int32_t width = 0;
+    int32_t height = 0;
+    std::vector<XrSwapchainImageOpenGLESKHR> images;
+};
+
+class OpenXrApp {
+public:
+    explicit OpenXrApp(android_app* app)
+        : app_(app), jni_(app) {}
+
+    ~OpenXrApp() {
+        shutdown();
+    }
+
+    bool init() {
+        if (!initLoader()) return false;
+        if (!createInstance()) return false;
+        if (!createSystem()) return false;
+        if (!egl_.create()) {
+            jni_.toast("Не удалось создать OpenGL ES context");
+            return false;
+        }
+        if (!createSession()) return false;
+        if (!renderer_.init()) return false;
+        if (!createSpaces()) return false;
+        if (!createSwapchains()) return false;
+        chooseBlendMode();
+        refreshScene(true);
+        return true;
+    }
+
+    void run() {
+        bool exit = false;
+        while (!exit && app_ && !app_->destroyRequested) {
+            int events = 0;
+            android_poll_source* source = nullptr;
+            while (ALooper_pollOnce(sessionRunning_ ? 0 : 50, nullptr, &events,
+                                    reinterpret_cast<void**>(&source)) >= 0) {
+                if (source) source->process(app_, source);
+                if (app_->destroyRequested) {
+                    exit = true;
+                    break;
+                }
+                if (sessionRunning_) break;
+            }
+
+            pollXrEvents(exit);
+            if (exit || !sessionRunning_) continue;
+
+            refreshScene(false);
+            renderFrame();
+        }
+    }
+
+private:
+    android_app* app_ = nullptr;
+    JniBridge jni_;
+    EglState egl_;
+    Renderer renderer_;
+
+    XrInstance instance_ = XR_NULL_HANDLE;
+    XrSystemId systemId_ = XR_NULL_SYSTEM_ID;
+    XrSession session_ = XR_NULL_HANDLE;
+    XrSpace appSpace_ = XR_NULL_HANDLE;
+    XrSessionState sessionState_ = XR_SESSION_STATE_UNKNOWN;
+    bool sessionRunning_ = false;
+
+    XrEnvironmentBlendMode blendMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    std::vector<XrViewConfigurationView> viewConfigs_;
+    std::vector<XrView> views_;
+    std::vector<Swapchain> swapchains_;
+
+    int sceneRevision_ = -1;
+    std::string sceneId_;
+    std::string sceneType_;
+    std::string sceneSource_;
+    std::string sceneProjection_;
+    std::string sceneKind_;
+    float sceneYaw_ = 0.0f;
+    float scenePitch_ = 0.0f;
+    std::vector<Hotspot> hotspots_;
+
+    std::string gazeId_;
+    std::chrono::steady_clock::time_point gazeSince_{};
+    std::chrono::steady_clock::time_point gazeCooldownUntil_{};
+
+    bool xrOk(XrResult result, const char* where) {
+        if (XR_SUCCEEDED(result)) return true;
+        char buffer[XR_MAX_RESULT_STRING_SIZE]{};
+        if (instance_ != XR_NULL_HANDLE) xrResultToString(instance_, result, buffer);
+        LOGE("%s failed: %d %s", where, result, buffer);
+        return false;
+    }
+
+    bool initLoader() {
+        PFN_xrInitializeLoaderKHR initLoader = nullptr;
+        XrResult r = xrGetInstanceProcAddr(
+            XR_NULL_HANDLE,
+            "xrInitializeLoaderKHR",
+            reinterpret_cast<PFN_xrVoidFunction*>(&initLoader)
+        );
+        if (XR_FAILED(r) || !initLoader) {
+            jni_.toast("OpenXR loader initialization недоступна");
+            return false;
+        }
+
+        XrLoaderInitInfoAndroidKHR initInfo{XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR};
+        initInfo.applicationVM = app_->activity->vm;
+        initInfo.applicationContext = app_->activity->clazz;
+        return XR_SUCCEEDED(initLoader(
+            reinterpret_cast<const XrLoaderInitInfoBaseHeaderKHR*>(&initInfo)
+        ));
+    }
+
+    bool createInstance() {
+        std::array<const char*, 2> extensions = {
+            XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
+            XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME
+        };
+
+        XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
+        androidInfo.applicationVM = app_->activity->vm;
+        androidInfo.applicationActivity = app_->activity->clazz;
+
+        XrInstanceCreateInfo createInfo{XR_TYPE_INSTANCE_CREATE_INFO};
+        createInfo.next = &androidInfo;
+        std::strncpy(createInfo.applicationInfo.applicationName, "OpenXR Tour Player",
+                     XR_MAX_APPLICATION_NAME_SIZE - 1);
+        std::strncpy(createInfo.applicationInfo.engineName, "3DPL Native",
+                     XR_MAX_ENGINE_NAME_SIZE - 1);
+        createInfo.applicationInfo.applicationVersion = 1;
+        createInfo.applicationInfo.engineVersion = 1;
+        createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.enabledExtensionNames = extensions.data();
+
+        return xrOk(xrCreateInstance(&createInfo, &instance_), "xrCreateInstance");
+    }
+
+    bool createSystem() {
+        XrSystemGetInfo info{XR_TYPE_SYSTEM_GET_INFO};
+        info.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+        if (!xrOk(xrGetSystem(instance_, &info, &systemId_), "xrGetSystem")) {
+            jni_.toast("OpenXR HMD runtime не найден");
+            return false;
+        }
+        return true;
+    }
+
+    bool createSession() {
+        PFN_xrGetOpenGLESGraphicsRequirementsKHR getRequirements = nullptr;
+        if (!xrOk(
+                xrGetInstanceProcAddr(
+                    instance_,
+                    "xrGetOpenGLESGraphicsRequirementsKHR",
+                    reinterpret_cast<PFN_xrVoidFunction*>(&getRequirements)
+                ),
+                "xrGetOpenGLESGraphicsRequirementsKHR proc"
+            ) || !getRequirements) {
+            return false;
+        }
+
+        XrGraphicsRequirementsOpenGLESKHR requirements{
+            XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR
+        };
+        if (!xrOk(getRequirements(instance_, systemId_, &requirements), "graphics requirements")) {
+            return false;
+        }
+
+        XrGraphicsBindingOpenGLESAndroidKHR binding{
+            XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR
+        };
+        binding.display = egl_.display;
+        binding.config = egl_.config;
+        binding.context = egl_.context;
+
+        XrSessionCreateInfo createInfo{XR_TYPE_SESSION_CREATE_INFO};
+        createInfo.next = &binding;
+        createInfo.systemId = systemId_;
+        return xrOk(xrCreateSession(instance_, &createInfo, &session_), "xrCreateSession");
+    }
+
+    bool createSpaces() {
+        XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+        spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+        spaceInfo.poseInReferenceSpace.orientation.w = 1.0f;
+        return xrOk(xrCreateReferenceSpace(session_, &spaceInfo, &appSpace_), "xrCreateReferenceSpace");
+    }
+
+    bool createSwapchains() {
+        uint32_t viewCount = 0;
+        if (!xrOk(
+                xrEnumerateViewConfigurationViews(
+                    instance_,
+                    systemId_,
+                    XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                    0,
+                    &viewCount,
+                    nullptr
+                ),
+                "xrEnumerateViewConfigurationViews count"
+            ) || viewCount == 0) {
+            return false;
+        }
+
+        viewConfigs_.assign(viewCount, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
+        if (!xrOk(
+                xrEnumerateViewConfigurationViews(
+                    instance_,
+                    systemId_,
+                    XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                    viewCount,
+                    &viewCount,
+                    viewConfigs_.data()
+                ),
+                "xrEnumerateViewConfigurationViews"
+            )) {
+            return false;
+        }
+
+        views_.assign(viewCount, {XR_TYPE_VIEW});
+
+        uint32_t formatCount = 0;
+        xrEnumerateSwapchainFormats(session_, 0, &formatCount, nullptr);
+        std::vector<int64_t> formats(formatCount);
+        xrEnumerateSwapchainFormats(session_, formatCount, &formatCount, formats.data());
+
+        int64_t chosen = formats.empty() ? GL_RGBA8 : formats.front();
+        for (int64_t f : formats) {
+            if (f == GL_SRGB8_ALPHA8) { chosen = f; break; }
+            if (f == GL_RGBA8) chosen = f;
+        }
+
+        swapchains_.resize(viewCount);
+        for (uint32_t i = 0; i < viewCount; ++i) {
+            Swapchain& sc = swapchains_[i];
+            sc.width = static_cast<int32_t>(viewConfigs_[i].recommendedImageRectWidth);
+            sc.height = static_cast<int32_t>(viewConfigs_[i].recommendedImageRectHeight);
+
+            XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+            ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+            ci.format = chosen;
+            ci.sampleCount = 1;
+            ci.width = static_cast<uint32_t>(sc.width);
+            ci.height = static_cast<uint32_t>(sc.height);
+            ci.faceCount = 1;
+            ci.arraySize = 1;
+            ci.mipCount = 1;
+
+            if (!xrOk(xrCreateSwapchain(session_, &ci, &sc.handle), "xrCreateSwapchain")) {
+                return false;
+            }
+
+            uint32_t imageCount = 0;
+            xrEnumerateSwapchainImages(sc.handle, 0, &imageCount, nullptr);
+            sc.images.assign(imageCount, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+            if (!xrOk(
+                    xrEnumerateSwapchainImages(
+                        sc.handle,
+                        imageCount,
+                        &imageCount,
+                        reinterpret_cast<XrSwapchainImageBaseHeader*>(sc.images.data())
+                    ),
+                    "xrEnumerateSwapchainImages"
+                )) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    void chooseBlendMode() {
+        uint32_t count = 0;
+        if (XR_FAILED(xrEnumerateEnvironmentBlendModes(
+                instance_, systemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+                0, &count, nullptr)) || count == 0) {
+            blendMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+            return;
+        }
+        std::vector<XrEnvironmentBlendMode> modes(count);
+        xrEnumerateEnvironmentBlendModes(
+            instance_, systemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+            count, &count, modes.data());
+        blendMode_ = modes.front();
+        for (auto mode : modes) {
+            if (mode == XR_ENVIRONMENT_BLEND_MODE_OPAQUE) {
+                blendMode_ = mode;
+                break;
+            }
+        }
+    }
+
+    void pollXrEvents(bool& exit) {
+        XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
+        while (xrPollEvent(instance_, &event) == XR_SUCCESS) {
+            if (event.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
+                const auto* changed =
+                    reinterpret_cast<const XrEventDataSessionStateChanged*>(&event);
+                sessionState_ = changed->state;
+
+                if (sessionState_ == XR_SESSION_STATE_READY && !sessionRunning_) {
+                    XrSessionBeginInfo begin{XR_TYPE_SESSION_BEGIN_INFO};
+                    begin.primaryViewConfigurationType =
+                        XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+                    if (xrOk(xrBeginSession(session_, &begin), "xrBeginSession")) {
+                        sessionRunning_ = true;
+                    }
+                } else if (sessionState_ == XR_SESSION_STATE_STOPPING && sessionRunning_) {
+                    xrEndSession(session_);
+                    sessionRunning_ = false;
+                } else if (
+                    sessionState_ == XR_SESSION_STATE_EXITING ||
+                    sessionState_ == XR_SESSION_STATE_LOSS_PENDING
+                ) {
+                    exit = true;
+                }
+            } else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+                exit = true;
+            }
+
+            event = {XR_TYPE_EVENT_DATA_BUFFER};
+        }
+    }
+
+    void refreshScene(bool force) {
+        const int revision = jni_.callInt("nativeGetSceneRevision");
+        if (!force && revision == sceneRevision_) return;
+
+        sceneRevision_ = revision;
+        sceneId_ = jni_.callString("nativeGetSceneId");
+        sceneType_ = jni_.callString("nativeGetSceneType");
+        sceneSource_ = jni_.callString("nativeGetSceneSource");
+        sceneProjection_ = jni_.callString("nativeGetSceneProjection");
+        sceneKind_ = jni_.callString("nativeGetSceneKind");
+        sceneYaw_ = jni_.callFloat("nativeGetSceneYaw");
+        scenePitch_ = jni_.callFloat("nativeGetScenePitch");
+        hotspots_ = parseHotspots(jni_.callString("nativeGetHotspotsPacked"));
+
+        gazeId_.clear();
+
+        if (sceneType_ != "panorama" && sceneType_ != "xr") {
+            renderer_.setSceneTexture(0, "360", 0, 0);
+            jni_.toast("Сцена " + sceneType_ + ": нативный рендер будет добавлен следующим этапом");
+            return;
+        }
+        if (sceneKind_ == "video") {
+            renderer_.setSceneTexture(0, sceneProjection_, sceneYaw_, scenePitch_);
+            jni_.toast("OpenXR video decoder ещё не подключён. Фото/панорамы работают нативно.");
+            return;
+        }
+
+        int w = 0, h = 0;
+        GLuint tex = jni_.loadTexture(sceneSource_, &w, &h);
+        if (!tex) {
+            renderer_.setSceneTexture(0, sceneProjection_, sceneYaw_, scenePitch_);
+            jni_.toast("Не удалось открыть изображение сцены");
+            return;
+        }
+        renderer_.setSceneTexture(tex, sceneProjection_, sceneYaw_, scenePitch_);
+        LOGI("Scene %s %s %dx%d projection=%s",
+             sceneId_.c_str(), sceneSource_.c_str(), w, h, sceneProjection_.c_str());
+    }
+
+    bool updateGaze(const std::vector<XrView>& views) {
+        if (views.empty()) return false;
+
+        float headYaw = 0.0f, headPitch = 0.0f;
+        poseForwardYawPitch(views[0].pose, headYaw, headPitch);
+        const float logicalYaw = wrapAngle(headYaw + sceneYaw_);
+        const float logicalPitch = headPitch + scenePitch_;
+
+        const Hotspot* best = nullptr;
+        float bestDistance = 999.0f;
+
+        for (const auto& h : hotspots_) {
+            const float dy = wrapAngle(h.yaw - logicalYaw);
+            const float dp = h.pitch - logicalPitch;
+            const float distance = std::sqrt(dy * dy + dp * dp);
+            if (distance < bestDistance && distance <= 7.5f) {
+                bestDistance = distance;
+                best = &h;
+            }
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        if (!best) {
+            gazeId_.clear();
+            return false;
+        }
+
+        if (gazeId_ != best->id) {
+            gazeId_ = best->id;
+            gazeSince_ = now;
+            return true;
+        }
+
+        const auto dwellMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - gazeSince_).count();
+
+        if (dwellMs >= 1100 && now >= gazeCooldownUntil_) {
+            gazeCooldownUntil_ = now + std::chrono::milliseconds(1400);
+            gazeSince_ = now;
+            const std::string selected = gazeId_;
+            if (jni_.activateHotspot(selected)) {
+                refreshScene(true);
+            }
+        }
+
+        return true;
+    }
+
+    void renderFrame() {
+        XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO};
+        XrFrameState frameState{XR_TYPE_FRAME_STATE};
+        if (!xrOk(xrWaitFrame(session_, &waitInfo, &frameState), "xrWaitFrame")) return;
+
+        XrFrameBeginInfo beginInfo{XR_TYPE_FRAME_BEGIN_INFO};
+        if (!xrOk(xrBeginFrame(session_, &beginInfo), "xrBeginFrame")) return;
+
+        std::vector<XrCompositionLayerProjectionView> layerViews;
+        XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+        const XrCompositionLayerBaseHeader* layers[1]{};
+        uint32_t layerCount = 0;
+
+        if (frameState.shouldRender) {
+            XrViewState viewState{XR_TYPE_VIEW_STATE};
+            XrViewLocateInfo locateInfo{XR_TYPE_VIEW_LOCATE_INFO};
+            locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+            locateInfo.displayTime = frameState.predictedDisplayTime;
+            locateInfo.space = appSpace_;
+
+            uint32_t viewCount = 0;
+            if (XR_SUCCEEDED(xrLocateViews(
+                    session_,
+                    &locateInfo,
+                    &viewState,
+                    static_cast<uint32_t>(views_.size()),
+                    &viewCount,
+                    views_.data()
+                )) &&
+                (viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) &&
+                (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
+
+                const bool gazeTarget = updateGaze(views_);
+                layerViews.assign(viewCount, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW});
+
+                for (uint32_t i = 0; i < viewCount && i < swapchains_.size(); ++i) {
+                    Swapchain& sc = swapchains_[i];
+
+                    uint32_t imageIndex = 0;
+                    XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+                    if (XR_FAILED(xrAcquireSwapchainImage(sc.handle, &acquire, &imageIndex))) continue;
+
+                    XrSwapchainImageWaitInfo imageWait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+                    imageWait.timeout = XR_INFINITE_DURATION;
+                    if (XR_FAILED(xrWaitSwapchainImage(sc.handle, &imageWait))) continue;
+
+                    renderer_.render(
+                        sc.images[imageIndex].image,
+                        sc.width,
+                        sc.height,
+                        views_[i],
+                        static_cast<int>(i),
+                        gazeTarget
+                    );
+
+                    XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+                    xrReleaseSwapchainImage(sc.handle, &release);
+
+                    auto& pv = layerViews[i];
+                    pv.pose = views_[i].pose;
+                    pv.fov = views_[i].fov;
+                    pv.subImage.swapchain = sc.handle;
+                    pv.subImage.imageRect.offset = {0, 0};
+                    pv.subImage.imageRect.extent = {sc.width, sc.height};
+                    pv.subImage.imageArrayIndex = 0;
+                }
+
+                layer.space = appSpace_;
+                layer.viewCount = static_cast<uint32_t>(layerViews.size());
+                layer.views = layerViews.data();
+                layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer);
+                layerCount = 1;
+            }
+        }
+
+        XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
+        endInfo.displayTime = frameState.predictedDisplayTime;
+        endInfo.environmentBlendMode = blendMode_;
+        endInfo.layerCount = layerCount;
+        endInfo.layers = layerCount ? layers : nullptr;
+        xrEndFrame(session_, &endInfo);
+    }
+
+    void shutdown() {
+        renderer_.destroy();
+
+        for (auto& sc : swapchains_) {
+            if (sc.handle != XR_NULL_HANDLE) xrDestroySwapchain(sc.handle);
+            sc.handle = XR_NULL_HANDLE;
+        }
+        swapchains_.clear();
+
+        if (appSpace_ != XR_NULL_HANDLE) {
+            xrDestroySpace(appSpace_);
+            appSpace_ = XR_NULL_HANDLE;
+        }
+        if (session_ != XR_NULL_HANDLE) {
+            if (sessionRunning_) xrEndSession(session_);
+            xrDestroySession(session_);
+            session_ = XR_NULL_HANDLE;
+        }
+        egl_.destroy();
+        if (instance_ != XR_NULL_HANDLE) {
+            xrDestroyInstance(instance_);
+            instance_ = XR_NULL_HANDLE;
+        }
+    }
+};
+
+} // namespace
+
+void android_main(android_app* app) {
+    app_dummy();
+    LOGI("OpenXR Tour Player native start");
+
+    OpenXrApp xr(app);
+    if (!xr.init()) {
+        LOGE("OpenXR initialization failed");
+        ANativeActivity_finish(app->activity);
+        return;
+    }
+
+    xr.run();
+    LOGI("OpenXR Tour Player native stop");
+}
