@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.os.Build;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.app.ActivityManager;
+import android.content.Context;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -141,6 +143,11 @@ public final class XrActivity extends NativeActivity {
         JSONObject m = s != null ? s.optJSONObject("multires") : null;
         return m != null ? Math.max(256, m.optInt("cubeResolution", 2048)) : 2048;
     }
+    public int nativeGetMemoryClassMb() {
+        ActivityManager manager = (ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);
+        return manager != null ? Math.max(128, manager.getMemoryClass()) : 256;
+    }
+
 
     public synchronized int nativeGetObjectSectors() {
         JSONObject s = currentScene();
