@@ -1,6 +1,7 @@
 #include "PackageExporter.h"
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -11,6 +12,21 @@
 #include <QTemporaryDir>
 
 namespace {
+
+QString findRuntimeRoot() {
+    const QString appRuntime = QDir(QCoreApplication::applicationDirPath()).filePath("runtime");
+    if (QFileInfo::exists(QDir(appRuntime).filePath("index.html"))) return appRuntime;
+
+#ifdef THREEDPL_RUNTIME_SOURCE
+    const QString sourceRuntime = QString::fromUtf8(THREEDPL_RUNTIME_SOURCE);
+    if (QFileInfo::exists(QDir(sourceRuntime).filePath("index.html"))) return sourceRuntime;
+#endif
+
+    const QString cwdRuntime = QDir::current().filePath("windows/3dpl-editor/runtime");
+    if (QFileInfo::exists(QDir(cwdRuntime).filePath("index.html"))) return cwdRuntime;
+
+    return {};
+}
 
 QJsonObject audioSlot(const QString& src, int volume, bool loop = false) {
     if (src.isEmpty()) return {};
@@ -83,6 +99,9 @@ QJsonObject sceneJson(const Scene& scene) {
         out.insert("startSector", scene.startSector);
         out.insert("startRow", scene.startRow);
         out.insert("autoplay", scene.autoplay);
+        out.insert("backgroundMode", scene.backgroundMode);
+        out.insert("backgroundColor", scene.backgroundColor);
+        out.insert("backgroundImageSource", scene.backgroundImageSource);
 
         QJsonArray rows;
         for (const auto& row : scene.frames) {
@@ -102,6 +121,10 @@ QJsonObject sceneJson(const Scene& scene) {
         out.insert("color", scene.color);
         out.insert("wireframe", scene.wireframe);
         out.insert("autoplay", scene.autoplay);
+        out.insert("backgroundMode", scene.backgroundMode);
+        out.insert("backgroundColor", scene.backgroundColor);
+        out.insert("backgroundImageSource", scene.backgroundImageSource);
+        out.insert("backgroundSceneId", scene.backgroundSceneId);
         break;
     }
 
@@ -202,6 +225,17 @@ bool PackageExporter::exportOpenXrPackage(
     }
 
     const QString root = staging.path();
+
+    const QString runtimeRoot = findRuntimeRoot();
+    if (runtimeRoot.isEmpty()) {
+        if (error) *error = "Player runtime не найден рядом с 3dpl-editor.exe";
+        return false;
+    }
+
+    if (!copyTree(runtimeRoot, root, error)) {
+        return false;
+    }
+
     if (!copyTree(
             QDir(projectDirectory).filePath("assets"),
             QDir(root).filePath("assets"),
@@ -230,8 +264,10 @@ bool PackageExporter::exportOpenXrPackage(
         {"format", "xr-tour-player"},
         {"version", 1},
         {"title", project.title},
+        {"entry", "index.html"},
         {"openxrManifest", "openxr-manifest.json"},
-        {"nativeOnly", true}
+        {"nativeOnly", false},
+        {"generatedBy", "3DPL Editor C++"}
     };
     if (!writeJson(
             QDir(root).filePath("player-manifest.json"),
