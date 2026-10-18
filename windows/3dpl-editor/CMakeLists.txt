@@ -39,6 +39,10 @@ qt_add_executable(3dpl-editor WIN32
 
 target_include_directories(3dpl-editor PRIVATE src)
 
+target_compile_definitions(3dpl-editor PRIVATE
+    THREEDPL_RUNTIME_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+)
+
 target_link_libraries(3dpl-editor PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets
     Qt6::OpenGL Qt6::OpenGLWidgets
