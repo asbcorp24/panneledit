@@ -16,6 +16,9 @@ class QLabel;
 class QTimer;
 class QStackedWidget;
 class QPushButton;
+class QMediaPlayer;
+class QAudioOutput;
+class QVideoSink;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -53,6 +56,8 @@ private:
     void refreshHotspots();
     void selectScene(const QString& id);
     void loadCurrentSceneIntoViewport();
+    void startVideoPreview(const Scene& scene, const QString& filePath);
+    void stopVideoPreview();
 
     Scene* currentScene();
     const Scene* currentScene() const;
@@ -102,4 +107,8 @@ private:
 
     QTableWidget* m_hotspotTable = nullptr;
     QPushButton* m_deleteHotspot = nullptr;
+
+    QMediaPlayer* m_mediaPlayer = nullptr;
+    QAudioOutput* m_audioOutput = nullptr;
+    QVideoSink* m_videoSink = nullptr;
 };
