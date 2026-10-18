@@ -41,6 +41,8 @@ qt_add_executable(3dpl-editor WIN32
     src/ui/SceneObjectsDialog.h
     src/ui/AssetManagerDialog.cpp
     src/ui/AssetManagerDialog.h
+    src/ui/ObjectAlignmentDialog.cpp
+    src/ui/ObjectAlignmentDialog.h
 )
 
 target_include_directories(3dpl-editor PRIVATE src)
