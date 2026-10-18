@@ -156,6 +156,14 @@ QJsonObject buildManifest(const Project& project) {
         {"firstScene", project.firstSceneId},
         {"sceneOrder", order},
         {"projectAudio", projectAudio},
+        {"startScreen", project.startScreen},
+        {"guide", project.guide},
+        {"exportSettings", project.exportSettings},
+        {"defaultTransition", project.defaultTransition},
+        {"sceneFadeEnabled", project.fadeEnabled},
+        {"sceneFadeDuration", project.fadeDurationMs},
+        {"autoRotateEnabled", project.autoRotateEnabled},
+        {"autoRotate", project.autoRotate},
         {"scenes", scenes}
     };
 }
