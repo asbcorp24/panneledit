@@ -12,6 +12,7 @@ target_include_directories(app_glue PUBLIC
 
 add_library(openxrplayer SHARED
     openxr_player.cpp
+    stl_mesh.cpp
 )
 
 target_compile_features(openxrplayer PRIVATE cxx_std_20)
