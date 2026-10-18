@@ -14,7 +14,6 @@ public:
         QString* error = nullptr
     );
 
-private:
     static QString materializeDataUrl(
         const QString& value,
         const QString& targetProjectDirectory,
@@ -23,6 +22,7 @@ private:
         QString* error
     );
 
+private:
     static QJsonValue materializeRecursive(
         const QJsonValue& value,
         const QString& targetProjectDirectory,
