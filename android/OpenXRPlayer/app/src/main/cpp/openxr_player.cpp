@@ -23,6 +23,8 @@
 #include <vector>
 #include <unordered_map>
 #include "stl_mesh.h"
+#include "video_player.h"
+#include <GLES2/gl2ext.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "OpenXRPlayer", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "OpenXRPlayer", __VA_ARGS__)
@@ -465,6 +467,7 @@ GLuint linkProgram(const char* vsSrc, const char* fsSrc) {
 
 struct Renderer {
     GLuint program = 0;
+    GLuint videoProgram = 0;
     GLuint reticleProgram = 0;
     GLuint stlProgram = 0;
     GLuint vao = 0;
@@ -478,6 +481,7 @@ struct Renderer {
     GLuint ibo = 0;
     GLsizei indexCount = 0;
     GLuint texture = 0;
+    GLuint videoTexture = 0;
     GLuint fbo = 0;
 
     GLint uMvp = -1;
@@ -515,9 +519,38 @@ struct Renderer {
             uniform vec2 uUvScale;
             uniform vec2 uUvOffset;
             uniform float uYawOffset;
+            uniform int uHalfSphere;
             out vec4 fragColor;
             void main() {
                 float wrappedU = fract(vUv.x + uYawOffset);
+                if (uHalfSphere == 1) {
+                    float d = wrappedU - 0.5;
+                    if (abs(d) > 0.25) discard;
+                    wrappedU = (wrappedU - 0.25) * 2.0;
+                }
+                vec2 uv = vec2(wrappedU, vUv.y) * uUvScale + uUvOffset;
+                fragColor = texture(uTex, uv);
+            }
+        )";
+
+        static const char* videoFs = R"(
+            #version 300 es
+            #extension GL_OES_EGL_image_external_essl3 : require
+            precision mediump float;
+            in vec2 vUv;
+            uniform samplerExternalOES uTex;
+            uniform vec2 uUvScale;
+            uniform vec2 uUvOffset;
+            uniform float uYawOffset;
+            uniform int uHalfSphere;
+            out vec4 fragColor;
+            void main() {
+                float wrappedU = fract(vUv.x + uYawOffset);
+                if (uHalfSphere == 1) {
+                    float d = wrappedU - 0.5;
+                    if (abs(d) > 0.25) discard;
+                    wrappedU = (wrappedU - 0.25) * 2.0;
+                }
                 vec2 uv = vec2(wrappedU, vUv.y) * uUvScale + uUvOffset;
                 fragColor = texture(uTex, uv);
             }
@@ -570,9 +603,10 @@ struct Renderer {
         )";
 
         program = linkProgram(vs, fs);
+        videoProgram = linkProgram(vs, videoFs);
         reticleProgram = linkProgram(retVs, retFs);
         stlProgram = linkProgram(stlVs, stlFs);
-        if (!program || !reticleProgram || !stlProgram) return false;
+        if (!program || !videoProgram || !reticleProgram || !stlProgram) return false;
 
         uMvp = glGetUniformLocation(program, "uMvp");
         uUvScale = glGetUniformLocation(program, "uUvScale");
@@ -706,9 +740,22 @@ struct Renderer {
     void setSceneTexture(GLuint newTexture, std::string proj, float yaw, float pitch) {
         if (texture) glDeleteTextures(1, &texture);
         texture = newTexture;
+        videoTexture = 0;
         projection = std::move(proj);
         sceneYaw = yaw;
         scenePitch = pitch;
+    }
+
+    void setVideoTexture(GLuint tex, std::string proj, float yaw, float pitch) {
+        if (texture) {
+            glDeleteTextures(1,&texture);
+            texture=0;
+        }
+        videoTexture=tex;
+        projection=std::move(proj);
+        sceneYaw=yaw;
+        scenePitch=pitch;
+        mode="panorama";
     }
 
     void render(
@@ -749,7 +796,7 @@ struct Renderer {
             glDrawArrays(stlWireframe ? GL_LINES : GL_TRIANGLES,0,stlVertexCount);
             glBindVertexArray(0);
             glDisable(GL_DEPTH_TEST);
-        } else if (texture) {
+        } else if (texture || videoTexture) {
             Mat4 model = identity();
             GLuint drawVao = vao;
             GLenum indexType = GL_UNSIGNED_INT;
@@ -765,8 +812,10 @@ struct Renderer {
             }
 
             const Mat4 mvp = multiply(projectionM,multiply(viewM,model));
-            glUseProgram(program);
-            glUniformMatrix4fv(uMvp, 1, GL_FALSE, mvp.m);
+            const bool video = videoTexture != 0;
+            const GLuint activeProgram = video ? videoProgram : program;
+            glUseProgram(activeProgram);
+            glUniformMatrix4fv(glGetUniformLocation(activeProgram,"uMvp"), 1, GL_FALSE, mvp.m);
 
             float sx = 1.0f, sy = 1.0f, ox = 0.0f, oy = 0.0f;
             if (projection.find("_LR") != std::string::npos) {
@@ -777,18 +826,27 @@ struct Renderer {
                 oy = eye == 0 ? 0.5f : 0.0f;
             }
 
-            glUniform2f(uUvScale, sx, sy);
-            glUniform2f(uUvOffset, ox, oy);
-            glUniform1f(uYawOffset, mode=="panorama" ? sceneYaw/360.0f : 0.0f);
+            glUniform2f(glGetUniformLocation(activeProgram,"uUvScale"), sx, sy);
+            glUniform2f(glGetUniformLocation(activeProgram,"uUvOffset"), ox, oy);
+            glUniform1f(
+                glGetUniformLocation(activeProgram,"uYawOffset"),
+                mode=="panorama" ? sceneYaw/360.0f : 0.0f
+            );
+            glUniform1i(
+                glGetUniformLocation(activeProgram,"uHalfSphere"),
+                projection.rfind("180",0)==0 ? 1 : 0
+            );
 
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, texture);
-            glUniform1i(glGetUniformLocation(program, "uTex"), 0);
+            if (video) glBindTexture(GL_TEXTURE_EXTERNAL_OES, videoTexture);
+            else glBindTexture(GL_TEXTURE_2D, texture);
+            glUniform1i(glGetUniformLocation(activeProgram, "uTex"), 0);
 
             glBindVertexArray(drawVao);
             glDrawElements(GL_TRIANGLES, drawCount, indexType, nullptr);
             glBindVertexArray(0);
-            glBindTexture(GL_TEXTURE_2D, 0);
+            if (video) glBindTexture(GL_TEXTURE_EXTERNAL_OES,0);
+            else glBindTexture(GL_TEXTURE_2D, 0);
         }
 
         const Mat4 projectionM = projectionFromFov(view.fov);
@@ -821,9 +879,11 @@ struct Renderer {
         if (vbo) glDeleteBuffers(1, &vbo);
         if (vao) glDeleteVertexArrays(1, &vao);
         if (program) glDeleteProgram(program);
+        if (videoProgram) glDeleteProgram(videoProgram);
         if (reticleProgram) glDeleteProgram(reticleProgram);
         if (stlProgram) glDeleteProgram(stlProgram);
-        texture = fbo = ibo = vbo = vao = program = reticleProgram = stlProgram = 0;
+        texture = fbo = ibo = vbo = vao = program = videoProgram = reticleProgram = stlProgram = 0;
+        videoTexture=0;
         quadVao=quadVbo=quadIbo=stlVao=stlVbo=0;
         stlVertexCount=0;
     }
