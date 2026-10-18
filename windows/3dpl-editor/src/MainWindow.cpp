@@ -849,10 +849,11 @@ void MainWindow::loadCurrentSceneIntoViewport() {
     }
 
     if (scene->type == SceneType::Object360 && !scene->frames.isEmpty() && !scene->frames.first().isEmpty()) {
-        const QString file = ProjectStorage::resolveAsset(
-            m_projectDir,
-            scene->frames.first().at(std::clamp(scene->startSector, 0, scene->frames.first().size() - 1))
-        );
+        const auto& firstRow = scene->frames.first();
+        const int maxIndex = int(firstRow.size()) - 1;
+        const int frameIndex = std::clamp(scene->startSector, 0, maxIndex);
+        const QString relativeFrame = firstRow.at(frameIndex);
+        const QString file = ProjectStorage::resolveAsset(m_projectDir, relativeFrame);
         if (!file.isEmpty()) m_viewport->setImage(file);
         else m_viewport->clearImage();
         return;
