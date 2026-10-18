@@ -1157,6 +1157,7 @@ private:
     int objectStartRow_ = 0;
     int objectCurrentSector_ = -1;
     int objectCurrentRow_ = -1;
+    float objectAspect_ = 1.5f;
 
     std::string multiresBasePath_;
     int multiresTileResolution_ = 512;
@@ -1622,7 +1623,8 @@ private:
             GLuint tex=jni_.loadTexture(frame.path,&w,&h);
             if(!tex) return false;
             renderer_.setMode("object360");
-            renderer_.setObjectAspect(h>0 ? static_cast<float>(w)/static_cast<float>(h) : 1.5f);
+            objectAspect_ = h>0 ? static_cast<float>(w)/static_cast<float>(h) : 1.5f;
+            renderer_.setObjectAspect(objectAspect_);
             renderer_.setSceneTexture(tex,"flat",0,0);
             objectCurrentRow_=row;
             objectCurrentSector_=sector;
@@ -1785,11 +1787,72 @@ private:
         const Hotspot* best = nullptr;
         float bestDistance = 999.0f;
 
+        const auto forward = poseForwardVector(views[0].pose);
+        const float ox = views[0].pose.position.x;
+        const float oy = views[0].pose.position.y;
+        const float oz = views[0].pose.position.z;
+
         for (const auto& h : hotspots_) {
-            const float dy = wrapAngle(h.yaw - logicalYaw);
-            const float dp = h.pitch - logicalPitch;
-            const float distance = std::sqrt(dy * dy + dp * dp);
-            if (distance < bestDistance && distance <= 7.5f) {
+            float distance = 999.0f;
+
+            if (sceneType_ == "object360") {
+                const int sectorDistance = std::min(
+                    std::abs(objectCurrentSector_ - h.anchorSector),
+                    std::max(1, objectSectors_) - std::abs(objectCurrentSector_ - h.anchorSector)
+                );
+                if (sectorDistance > 0 || objectCurrentRow_ != h.anchorRow) continue;
+
+                if (forward[2] < -0.05f) {
+                    const float t = (-2.4f - oz) / forward[2];
+                    if (t > 0.0f) {
+                        const float hitX = ox + forward[0] * t;
+                        const float hitY = oy + forward[1] * t;
+                        const float sx = 0.95f * objectAspect_;
+                        const float sy = 0.95f;
+                        const float screenX = 50.0f + (hitX / std::max(0.01f, sx)) * 50.0f;
+                        const float screenY = 50.0f - (hitY / sy) * 50.0f;
+                        const float dx = screenX - h.anchorX;
+                        const float dy = screenY - h.anchorY;
+                        distance = std::sqrt(dx*dx + dy*dy);
+                        if (distance > 12.0f) continue;
+                    }
+                }
+            } else if (sceneType_ == "stl" && h.anchorMode == "stl-3d" &&
+                       std::isfinite(h.px) && std::isfinite(h.py) && std::isfinite(h.pz)) {
+                // Model points created by the editor are already in model-local coordinates.
+                Mat4 model = multiply(
+                    translation(0.0f,-0.1f,-2.5f),
+                    multiply(
+                        rotationY(sceneYaw_ * kDeg),
+                        multiply(rotationX(scenePitch_ * kDeg),
+                                 scaleMatrix(std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f),
+                                             std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f),
+                                             std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f)))
+                    )
+                );
+                const float wx = model.m[0]*h.px + model.m[4]*h.py + model.m[8]*h.pz + model.m[12];
+                const float wy = model.m[1]*h.px + model.m[5]*h.py + model.m[9]*h.pz + model.m[13];
+                const float wz = model.m[2]*h.px + model.m[6]*h.py + model.m[10]*h.pz + model.m[14];
+                float dx = wx-ox, dy = wy-oy, dz = wz-oz;
+                const float len = std::sqrt(dx*dx+dy*dy+dz*dz);
+                if (len > 1e-4f) {
+                    dx/=len; dy/=len; dz/=len;
+                    const float dot = std::clamp(dx*forward[0]+dy*forward[1]+dz*forward[2],-1.0f,1.0f);
+                    distance = std::acos(dot)/kDeg;
+                    if (distance > 8.0f) continue;
+                }
+            } else {
+                const float targetYaw = (h.anchorMode=="stl-screen" || h.anchorMode=="xr-screen")
+                    ? h.anchorYaw : h.yaw;
+                const float targetPitch = (h.anchorMode=="stl-screen" || h.anchorMode=="xr-screen")
+                    ? h.anchorPitch : h.pitch;
+                const float dy = wrapAngle(targetYaw - logicalYaw);
+                const float dp = targetPitch - logicalPitch;
+                distance = std::sqrt(dy * dy + dp * dp);
+                if (distance > 7.5f) continue;
+            }
+
+            if (distance < bestDistance) {
                 bestDistance = distance;
                 best = &h;
             }
