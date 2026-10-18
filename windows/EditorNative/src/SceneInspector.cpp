@@ -1,5 +1,6 @@
 #include "SceneInspector.h"
 
+#include <algorithm>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
