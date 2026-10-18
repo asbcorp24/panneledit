@@ -434,9 +434,9 @@
       return true;
     }
 
-    async toggleCardboard() {
+    async setCardboard(enabled, options = {}) {
       if (this.xrSession) return;
-      this.cardboard = !this.cardboard;
+      this.cardboard=Boolean(enabled);
       this.root.classList.toggle('cardboard-active', this.cardboard);
       this.cardboardButton.classList.toggle('active', this.cardboard);
       this.cardboardButton.textContent = this.cardboard ? 'ВЫХОД' : 'CARDBOARD';
@@ -444,16 +444,21 @@
       if (this.cardboard) {
         await this.requestMotionPermission();
         try {
-          if (this.root.requestFullscreen && !document.fullscreenElement) {
+          if (options.fullscreen !== false && this.root.requestFullscreen && !document.fullscreenElement) {
             await this.root.requestFullscreen();
           }
         } catch (_) {}
       } else {
         this.deviceQuaternion = null;
         try {
-          if (document.fullscreenElement === this.root) await document.exitFullscreen();
+          if (options.fullscreen !== false && document.fullscreenElement === this.root) await document.exitFullscreen();
         } catch (_) {}
       }
+    }
+    }
+
+    async toggleCardboard() {
+      return this.setCardboard(!this.cardboard);
     }
 
     async updateXrAvailability() {
