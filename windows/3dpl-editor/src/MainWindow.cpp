@@ -33,6 +33,11 @@
 #include <QToolBar>
 #include <QUndoCommand>
 #include <QVBoxLayout>
+#include <QUrl>
+#include <QVideoSink>
+#include <QVideoFrame>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 
 #include <functional>
 
@@ -127,6 +132,19 @@ MainWindow::MainWindow(QWidget* parent)
 
     buildUi();
     buildMenus();
+
+    m_audioOutput = new QAudioOutput(this);
+    m_mediaPlayer = new QMediaPlayer(this);
+    m_videoSink = new QVideoSink(this);
+    m_mediaPlayer->setAudioOutput(m_audioOutput);
+    m_mediaPlayer->setVideoOutput(m_videoSink);
+
+    connect(m_videoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame& frame) {
+        const Scene* scene = currentScene();
+        if (!scene || scene->type != SceneType::Xr || scene->xrKind != "video") return;
+        const QImage image = frame.toImage();
+        if (!image.isNull()) m_viewport->setVideoFrame(image, scene->projection);
+    });
 
     m_autosaveTimer = new QTimer(this);
     m_autosaveTimer->setSingleShot(true);
@@ -839,6 +857,7 @@ void MainWindow::selectScene(const QString& id) {
 }
 
 void MainWindow::loadCurrentSceneIntoViewport() {
+    stopVideoPreview();
     const Scene* scene = currentScene();
     if (!scene) {
         m_viewport->clearImage();
@@ -854,10 +873,18 @@ void MainWindow::loadCurrentSceneIntoViewport() {
         return;
     }
 
-    if (scene->type == SceneType::Xr && scene->xrKind != "video" && !scene->source.isEmpty()) {
+    if (scene->type == SceneType::Xr && !scene->source.isEmpty()) {
         const QString file = ProjectStorage::resolveAsset(m_projectDir, scene->source);
-        if (!file.isEmpty()) m_viewport->setPanoramaImage(file, scene->projection);
-        else m_viewport->clearImage();
+        if (file.isEmpty()) {
+            m_viewport->clearImage();
+            return;
+        }
+
+        if (scene->xrKind == "video") {
+            startVideoPreview(*scene, file);
+        } else {
+            m_viewport->setPanoramaImage(file, scene->projection);
+        }
         return;
     }
 
@@ -895,6 +922,28 @@ void MainWindow::loadCurrentSceneIntoViewport() {
 
     // Video preview is handled by the native media layer added next.
     m_viewport->clearImage();
+}
+
+void MainWindow::startVideoPreview(const Scene& scene, const QString& filePath) {
+    if (!m_mediaPlayer || !m_audioOutput) return;
+
+    m_audioOutput->setVolume(std::clamp(scene.volume / 100.0, 0.0, 1.0));
+    m_mediaPlayer->setLoops(scene.loop ? QMediaPlayer::Infinite : QMediaPlayer::Once);
+    m_mediaPlayer->setSource(QUrl::fromLocalFile(filePath));
+    m_mediaPlayer->play();
+
+    statusBar()->showMessage(
+        QString("XR video · %1 · %2")
+            .arg(scene.projection, QFileInfo(filePath).fileName()),
+        2500
+    );
+}
+
+void MainWindow::stopVideoPreview() {
+    if (!m_mediaPlayer) return;
+    if (m_mediaPlayer->playbackState() != QMediaPlayer::StoppedState)
+        m_mediaPlayer->stop();
+    m_mediaPlayer->setSource({});
 }
 
 Scene* MainWindow::currentScene() {
