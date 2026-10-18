@@ -4,6 +4,7 @@
 #include "ProjectDocument.h"
 #include "SceneInspector.h"
 
+#include <algorithm>
 #include <QAction>
 #include <QCloseEvent>
 #include <QDir>
