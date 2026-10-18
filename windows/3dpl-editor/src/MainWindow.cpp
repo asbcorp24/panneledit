@@ -3,6 +3,7 @@
 #include "io/ProjectStorage.h"
 #include "export/PackageExporter.h"
 #include "render/PanoramaViewport.h"
+#include "render/MultiresGenerator.h"
 
 #include <QCloseEvent>
 #include <QSpinBox>
@@ -26,6 +27,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QProgressDialog>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QSettings>
@@ -419,6 +421,32 @@ QWidget* MainWindow::buildScenePage() {
     form->addRow("Файл", m_sceneSource);
     layout->addWidget(general);
 
+    m_panoramaOptions = new QGroupBox("Панорама / Multires");
+    auto* panoForm = new QFormLayout(m_panoramaOptions);
+    m_multiresTileSize = new QComboBox;
+    m_multiresTileSize->addItem("256 px", 256);
+    m_multiresTileSize->addItem("512 px", 512);
+    m_multiresTileSize->addItem("1024 px", 1024);
+    m_multiresTileSize->setCurrentIndex(1);
+
+    m_multiresQuality = new QSpinBox;
+    m_multiresQuality->setRange(45, 100);
+    m_multiresQuality->setValue(82);
+    m_multiresQuality->setSuffix("%");
+
+    m_multiresMaxCube = new QComboBox;
+    m_multiresMaxCube->addItem("2048", 2048);
+    m_multiresMaxCube->addItem("4096", 4096);
+    m_multiresMaxCube->addItem("8192", 8192);
+    m_multiresMaxCube->setCurrentIndex(1);
+
+    m_generateMultires = smallButton("Создать / обновить Multires");
+    panoForm->addRow("Тайл", m_multiresTileSize);
+    panoForm->addRow("JPEG", m_multiresQuality);
+    panoForm->addRow("Макс. грань", m_multiresMaxCube);
+    panoForm->addRow("", m_generateMultires);
+    layout->addWidget(m_panoramaOptions);
+
     m_objectOptions = new QGroupBox("Object360");
     auto* objectForm = new QFormLayout(m_objectOptions);
     m_objectStartSector = new QSpinBox;
@@ -495,6 +523,8 @@ QWidget* MainWindow::buildScenePage() {
     connect(m_sceneProjection, &QComboBox::currentTextChanged, this, [this](const QString& value) {
         if (!m_refreshing) setSceneProjection(value);
     });
+
+    connect(m_generateMultires, &QPushButton::clicked, this, &MainWindow::generateCurrentMultires);
 
     connect(m_objectStartSector, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
         if (m_refreshing) return;
@@ -669,6 +699,74 @@ bool MainWindow::saveCurrent(bool showErrors) {
     setWindowTitle("3DPL Editor — " + m_project.title);
     if (showErrors) statusBar()->showMessage("Проект сохранён", 1800);
     return true;
+}
+
+void MainWindow::generateCurrentMultires() {
+    Scene* scene = currentScene();
+    if (!scene || scene->type != SceneType::Panorama) return;
+    if (m_projectDir.isEmpty() || scene->source.isEmpty()) return;
+
+    const QString source = ProjectStorage::resolveAsset(m_projectDir, scene->source);
+    if (source.isEmpty()) {
+        QMessageBox::critical(this, "Multires", "Исходная панорама не найдена.");
+        return;
+    }
+
+    MultiresGenerator::Options options;
+    options.tileSize = m_multiresTileSize->currentData().toInt();
+    options.jpegQuality = m_multiresQuality->value();
+    options.maxCubeSize = m_multiresMaxCube->currentData().toInt();
+
+    QProgressDialog progress("Подготовка cubemap…", QString(), 0, 100, this);
+    progress.setWindowTitle("Multires");
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setCancelButton(nullptr);
+    progress.setMinimumDuration(0);
+    progress.show();
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    MultiresResult result;
+    QString error;
+    const bool ok = MultiresGenerator::generate(
+        source,
+        m_projectDir,
+        scene->id,
+        options,
+        result,
+        &error,
+        [&progress](int percent, const QString& text) {
+            progress.setValue(percent);
+            progress.setLabelText(text);
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
+    );
+
+    QApplication::restoreOverrideCursor();
+    progress.setValue(100);
+
+    if (!ok) {
+        QMessageBox::critical(this, "Multires", error);
+        return;
+    }
+
+    scene = currentScene();
+    if (!scene) return;
+    scene->multiresBasePath = result.basePath;
+    scene->multiresTileResolution = result.tileResolution;
+    scene->multiresMaxLevel = result.maxLevel;
+    scene->multiresCubeResolution = result.cubeResolution;
+    markDirty();
+    saveCurrent(false);
+    refreshSceneControls();
+
+    QMessageBox::information(
+        this,
+        "Multires",
+        QString("Готово. Cubemap %1 px, уровней: %2")
+            .arg(result.cubeResolution)
+            .arg(result.maxLevel)
+    );
 }
 
 void MainWindow::exportOpenXrPackage() {
@@ -991,9 +1089,20 @@ void MainWindow::refreshSceneControls() {
     m_sceneFov->setEnabled(spherical);
     m_sceneProjection->setEnabled(scene->type == SceneType::Xr);
 
+    const bool isPanorama = scene->type == SceneType::Panorama;
     const bool isObject = scene->type == SceneType::Object360;
     const bool isStl = scene->type == SceneType::Stl;
     const bool isXr = scene->type == SceneType::Xr;
+
+    m_panoramaOptions->setVisible(isPanorama);
+    if (isPanorama) {
+        const QString suffix = scene->multiresBasePath.isEmpty()
+            ? QString()
+            : QString("  [L%1 · %2px]")
+                .arg(scene->multiresMaxLevel)
+                .arg(scene->multiresCubeResolution);
+        m_generateMultires->setText("Создать / обновить Multires" + suffix);
+    }
 
     m_objectOptions->setVisible(isObject);
     m_stlOptions->setVisible(isStl);
