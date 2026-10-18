@@ -195,7 +195,7 @@ void MainWindow::buildUi() {
     auto* newAction = toolbar->addAction("Новый");
     auto* openAction = toolbar->addAction("Открыть");
     auto* saveAction = toolbar->addAction("Сохранить");
-    auto* exportXrAction = toolbar->addAction("OpenXR ZIP");
+    auto* exportXrAction = toolbar->addAction("Player ZIP");
     toolbar->addSeparator();
     auto* addPano = toolbar->addAction("+ Панорама");
     auto* addObject = toolbar->addAction("+ Object360");
@@ -287,7 +287,7 @@ void MainWindow::buildMenus() {
     fileMenu->addAction("Сохранить", this, &MainWindow::saveProject, QKeySequence::Save);
     fileMenu->addAction("Сохранить как…", this, &MainWindow::saveProjectAs, QKeySequence::SaveAs);
     fileMenu->addSeparator();
-    fileMenu->addAction("Экспорт OpenXR .player.zip", this, &MainWindow::exportOpenXrPackage);
+    fileMenu->addAction("Экспорт Player ZIP (Android + OpenXR)", this, &MainWindow::exportOpenXrPackage);
     fileMenu->addSeparator();
     fileMenu->addAction("Выход", this, &QWidget::close);
 
@@ -977,7 +977,7 @@ void MainWindow::exportOpenXrPackage() {
 
     const QString output = QFileDialog::getSaveFileName(
         this,
-        "Экспорт OpenXR Player",
+        "Экспорт Player ZIP",
         QDir(m_projectDir).filePath(suggested + ".player.zip"),
         "Player ZIP (*.player.zip *.zip)"
     );
@@ -986,7 +986,7 @@ void MainWindow::exportOpenXrPackage() {
     QString target = output;
     if (!target.endsWith(".zip", Qt::CaseInsensitive)) target += ".player.zip";
 
-    statusBar()->showMessage("Сборка OpenXR пакета…");
+    statusBar()->showMessage("Сборка универсального Player ZIP…");
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
     QString error;
@@ -1005,10 +1005,10 @@ void MainWindow::exportOpenXrPackage() {
         return;
     }
 
-    statusBar()->showMessage("OpenXR пакет создан: " + QFileInfo(target).fileName(), 5000);
+    statusBar()->showMessage("Player ZIP создан: " + QFileInfo(target).fileName(), 5000);
     QMessageBox::information(
         this,
-        "OpenXR экспорт",
+        "Player ZIP",
         "Готово:\n" + QDir::toNativeSeparators(target)
     );
 }
