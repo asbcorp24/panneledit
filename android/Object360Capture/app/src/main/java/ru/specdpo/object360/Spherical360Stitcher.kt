@@ -6,11 +6,13 @@ import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfDouble
 import org.opencv.core.Point
 import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.photo.Photo
 import org.opencv.imgproc.Imgproc
+import org.opencv.calib3d.Calib3d
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.PI
@@ -44,11 +46,22 @@ object Spherical360Stitcher {
                 onProgress("360°: кадр " + (idx + 1) + "/" + ordered.size)
 
                 var image = load(frame.file) ?: return@forEachIndexed
+                image = undistort(image, frame.calibration)
                 image = levelRoll(image, frame.rollDeg)
 
                 val landscape = image.cols() >= image.rows()
-                val hfov = if (landscape) 68.0 else 52.0
-                val vfov = if (landscape) 52.0 else 68.0
+                val calibratedHfov = frame.calibration.horizontalFovDeg
+                val calibratedVfov = frame.calibration.verticalFovDeg
+                val hfov = if (calibratedHfov.isFinite() && calibratedHfov in 25f..130f) {
+                    if (landscape) calibratedHfov.toDouble() else calibratedVfov.toDouble()
+                } else {
+                    if (landscape) 68.0 else 52.0
+                }
+                val vfov = if (calibratedVfov.isFinite() && calibratedVfov in 20f..130f) {
+                    if (landscape) calibratedVfov.toDouble() else calibratedHfov.toDouble()
+                } else {
+                    if (landscape) 52.0 else 68.0
+                }
 
                 val cylindrical = cylindricalWarp(image, hfov)
                 image.release()
@@ -145,6 +158,71 @@ object Spherical360Stitcher {
         rgba.release()
 
         return bgr
+    }
+
+    private fun undistort(source: Mat, calibration: CameraCalibration): Mat {
+        if (!calibration.hasIntrinsics || !calibration.hasDistortion) return source
+
+        try {
+            val sourceLandscape = source.cols() >= source.rows()
+            val sensorLandscape = calibration.sensorPixelWidth >= calibration.sensorPixelHeight
+
+            var fx = calibration.fx.toDouble()
+            var fy = calibration.fy.toDouble()
+            var cx = calibration.cx.toDouble()
+            var cy = calibration.cy.toDouble()
+            var refW = calibration.sensorPixelWidth.toDouble()
+            var refH = calibration.sensorPixelHeight.toDouble()
+
+            if (refW <= 0.0 || refH <= 0.0) return source
+
+            if (sourceLandscape != sensorLandscape) {
+                val oldFx = fx
+                val oldCx = cx
+                fx = fy
+                fy = oldFx
+                cx = cy
+                cy = oldCx
+
+                val oldW = refW
+                refW = refH
+                refH = oldW
+            }
+
+            val sx = source.cols().toDouble() / refW
+            val sy = source.rows().toDouble() / refH
+
+            fx *= sx
+            fy *= sy
+            cx *= sx
+            cy *= sy
+
+            val cameraMatrix = Mat.eye(3, 3, CvType.CV_64F)
+            cameraMatrix.put(0, 0, fx)
+            cameraMatrix.put(1, 1, fy)
+            cameraMatrix.put(0, 2, cx)
+            cameraMatrix.put(1, 2, cy)
+
+            // Android exposes radial k1..k5. OpenCV's common 5-value model is
+            // k1,k2,p1,p2,k3, so use radial k1/k2/k3 and zero tangential terms.
+            val distortion = MatOfDouble(
+                calibration.k1.toDouble(),
+                calibration.k2.toDouble(),
+                0.0,
+                0.0,
+                calibration.k3.toDouble()
+            )
+
+            val out = Mat()
+            Calib3d.undistort(source, out, cameraMatrix, distortion)
+
+            cameraMatrix.release()
+            distortion.release()
+            source.release()
+            return out
+        } catch (_: Throwable) {
+            return source
+        }
     }
 
     private fun levelRoll(source: Mat, rollDeg: Float): Mat {
