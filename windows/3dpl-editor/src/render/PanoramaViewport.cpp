@@ -94,6 +94,15 @@ void PanoramaViewport::setPanoramaImage(const QString& filePath, const QString& 
     loadImage(filePath);
 }
 
+void PanoramaViewport::setVideoFrame(const QImage& frame, const QString& projection) {
+    if (frame.isNull()) return;
+    m_mode = Mode::Panorama;
+    m_projection = projection.toUpper();
+    m_pendingImage = frame.convertToFormat(QImage::Format_RGBA8888);
+    m_hasPendingImage = true;
+    update();
+}
+
 void PanoramaViewport::setObject360(
     const QVector<QVector<QString>>& framePaths,
     int startSector,
