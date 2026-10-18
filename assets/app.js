@@ -4745,6 +4745,7 @@
   const setTourCardboard = async (enabled) => {
     cardboardMode = Boolean(enabled);
     document.body.classList.toggle('cardboard-tour',cardboardMode);
+    try { window.TourPlayerNative?.setCardboard?.(cardboardMode); } catch (_) {}
     if (cardboardOverlay) cardboardOverlay.hidden = !cardboardMode;
     if (cardboardButton) {
       cardboardButton.classList.toggle('active',cardboardMode);
@@ -5295,6 +5296,16 @@
     guideButton.hidden = !(config.guide?.enabled && config.guide?.steps?.length);
     guideButton?.addEventListener('click',toggleGuide);
     cardboardButton?.addEventListener('click',()=>setTourCardboard(!cardboardMode));
+    document.addEventListener('pointerup',(event)=>{
+      if (!cardboardMode) return;
+      if (event.target?.closest?.('#tourBottomDock,#tourNavBar,#tourInfoPanel,#tourStartScreen')) return;
+      const hotspot = gazeCandidate();
+      if (hotspot) {
+        gazeCooldownUntil = performance.now() + 900;
+        gazeStartedAt = performance.now();
+        runHotspotAction(hotspot);
+      }
+    });
     startSound?.addEventListener('click',()=>enterTour(true));
     startSilent?.addEventListener('click',()=>enterTour(false));
 
