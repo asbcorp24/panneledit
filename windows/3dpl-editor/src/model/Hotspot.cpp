@@ -4,6 +4,7 @@
 
 Hotspot Hotspot::fromJson(const QJsonObject& json) {
     Hotspot h;
+    h.extra = json;
     h.id = json.value("id").toString();
     h.type = json.value("type").toString("scene");
     h.text = json.value("text").toString();
@@ -33,23 +34,22 @@ Hotspot Hotspot::fromJson(const QJsonObject& json) {
 }
 
 QJsonObject Hotspot::toJson() const {
-    QJsonObject json{
-        {"id", id},
-        {"type", type},
-        {"text", text},
-        {"targetSceneId", targetSceneId},
-        {"url", url},
-        {"info", info},
-        {"yaw", yaw},
-        {"pitch", pitch},
-        {"anchorX", anchorX},
-        {"anchorY", anchorY},
-        {"anchorSector", anchorSector},
-        {"anchorRow", anchorRow},
-        {"anchorMode", anchorMode},
-        {"anchorYaw", anchorYaw},
-        {"anchorPitch", anchorPitch}
-    };
+    QJsonObject json = extra;
+    json.insert("id", id);
+    json.insert("type", type);
+    json.insert("text", text);
+    json.insert("targetSceneId", targetSceneId);
+    json.insert("url", url);
+    json.insert("info", info);
+    json.insert("yaw", yaw);
+    json.insert("pitch", pitch);
+    json.insert("anchorX", anchorX);
+    json.insert("anchorY", anchorY);
+    json.insert("anchorSector", anchorSector);
+    json.insert("anchorRow", anchorRow);
+    json.insert("anchorMode", anchorMode);
+    json.insert("anchorYaw", anchorYaw);
+    json.insert("anchorPitch", anchorPitch);
     if (hasModelPoint) {
         json.insert("modelPoint", QJsonArray{
             modelPoint.x(), modelPoint.y(), modelPoint.z()
