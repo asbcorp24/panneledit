@@ -18,7 +18,8 @@ data class PanoramaFrame(
     val index: Int,
     val yawDeg: Float = Float.NaN,
     val pitchDeg: Float = Float.NaN,
-    val rollDeg: Float = 0f
+    val rollDeg: Float = 0f,
+    val calibration: CameraCalibration = CameraCalibration()
 )
 
 object PanoramaStitcher {
