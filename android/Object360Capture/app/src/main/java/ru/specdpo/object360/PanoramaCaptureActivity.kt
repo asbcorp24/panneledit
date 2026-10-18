@@ -54,6 +54,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private var yaw = 0f
     private var pitchNow = 0f
     private var rollNow = 0f
+    private var cameraCalibration = CameraCalibration()
     private var calibrated = false
     private var busy = false
     private var rectangularIndex = 0
@@ -328,7 +329,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 .build()
             try {
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture)
+                val camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture)
+                cameraCalibration = CameraCalibrationReader.read(this, camera.cameraInfo)
             } catch (e: Exception) {
                 Toast.makeText(this, "Ошибка камеры: " + e.message, Toast.LENGTH_LONG).show()
             }
@@ -366,7 +368,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                             index = index,
                             yawDeg = frameYaw,
                             pitchDeg = pitchNow,
-                            rollDeg = rollNow
+                            rollDeg = rollNow,
+                            calibration = cameraCalibration
                         )
                     )
                     if (kind == PanoramaKind.RECTANGULAR) rectangularIndex++
