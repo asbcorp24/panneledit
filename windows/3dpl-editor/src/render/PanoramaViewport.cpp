@@ -452,7 +452,18 @@ void PanoramaViewport::buildQuad() {
     m_quadVbo.release();
 }
 
-void PanoramaViewport::resizeGL(int, int) {}
+void PanoramaViewport::resizeGL(int width, int height) {
+    // QOpenGLWidget renders into a device-pixel backing FBO.  Using logical
+    // widget pixels here leaves part of that FBO untouched when Windows DPI
+    // scaling is above 100%, which shows up as grey/empty strips.
+    const qreal dpr = devicePixelRatioF();
+    glViewport(
+        0,
+        0,
+        std::max(1, qRound(width * dpr)),
+        std::max(1, qRound(height * dpr))
+    );
+}
 
 QMatrix4x4 PanoramaViewport::projectionMatrix() const {
     QMatrix4x4 p;
@@ -509,7 +520,13 @@ void PanoramaViewport::paintGL() {
     uploadPendingTexture();
     uploadPendingStl();
 
-    glViewport(0, 0, width(), height());
+    const qreal dpr = devicePixelRatioF();
+    glViewport(
+        0,
+        0,
+        std::max(1, qRound(width() * dpr)),
+        std::max(1, qRound(height() * dpr))
+    );
     glClearColor(0.025f, 0.035f, 0.055f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
