@@ -52,6 +52,14 @@ Scene Scene::fromJson(const QJsonObject& json) {
     s.wireframe = json.value("wireframe").toBool();
     s.color = json.value("color").toString("#7c8cff");
 
+    s.backgroundMode = json.value("backgroundMode").toString("hitech");
+    s.backgroundColor = json.value("backgroundColor").toString("#ffffff");
+    s.backgroundImageSource = json.value("backgroundImageSource").toString();
+    s.backgroundSceneId = json.value("backgroundSceneId").toString();
+
+    s.textObjects = json.value("textObjects").toArray();
+    s.mediaObjects = json.value("mediaObjects").toArray();
+
     const auto audio = json.value("audio").toObject();
     const auto music = audio.value("music").toObject();
     const auto narration = audio.value("narration").toObject();
@@ -105,6 +113,12 @@ QJsonObject Scene::toJson() const {
         {"zoom", zoom},
         {"wireframe", wireframe},
         {"color", color},
+        {"backgroundMode", backgroundMode},
+        {"backgroundColor", backgroundColor},
+        {"backgroundImageSource", backgroundImageSource},
+        {"backgroundSceneId", backgroundSceneId},
+        {"textObjects", textObjects},
+        {"mediaObjects", mediaObjects},
         {"hotspots", hotspotArray}
     };
 
