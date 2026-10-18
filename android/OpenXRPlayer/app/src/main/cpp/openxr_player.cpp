@@ -1023,7 +1023,6 @@ struct Renderer {
             else glBindTexture(GL_TEXTURE_2D, 0);
         }
 
-        const Mat4 projectionM = projectionFromFov(view.fov);
         glUseProgram(reticleProgram);
         glUniformMatrix4fv(
             glGetUniformLocation(reticleProgram, "uProjection"),
