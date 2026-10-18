@@ -61,6 +61,12 @@ Scene Scene::fromJson(const QJsonObject& json) {
     s.narrationSource = narration.value("src").toString();
     s.narrationVolume = narration.value("volume").toInt(80);
 
+    const auto multires = json.value("multires").toObject();
+    s.multiresBasePath = multires.value("basePath").toString();
+    s.multiresTileResolution = multires.value("tileResolution").toInt(512);
+    s.multiresMaxLevel = multires.value("maxLevel").toInt(1);
+    s.multiresCubeResolution = multires.value("cubeResolution").toInt(0);
+
     const auto hotspots = json.value("hotspots").toArray();
     for (const auto& value : hotspots) s.hotspots.push_back(Hotspot::fromJson(value.toObject()));
     return s;
@@ -117,5 +123,15 @@ QJsonObject Scene::toJson() const {
         });
     }
     json.insert("audio", audio);
+
+    if (!multiresBasePath.isEmpty()) {
+        json.insert("multires", QJsonObject{
+            {"basePath", multiresBasePath},
+            {"tileResolution", multiresTileResolution},
+            {"maxLevel", multiresMaxLevel},
+            {"cubeResolution", multiresCubeResolution}
+        });
+    }
+
     return json;
 }
