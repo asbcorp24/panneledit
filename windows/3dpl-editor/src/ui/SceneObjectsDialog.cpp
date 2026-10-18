@@ -78,14 +78,14 @@ void SceneObjectsDialog::buildUi() {
     textLayout->addWidget(m_textTable,1);
     auto* textButtons = new QHBoxLayout;
     auto* addText = new QPushButton(QString::fromUtf8("Добавить текст"));
-    auto* editText = new QPushButton(QString::fromUtf8("Изменить"));
+    auto* editTextButton = new QPushButton(QString::fromUtf8("Изменить"));
     auto* delText = new QPushButton(QString::fromUtf8("Удалить"));
-    textButtons->addWidget(addText); textButtons->addWidget(editText); textButtons->addWidget(delText); textButtons->addStretch();
+    textButtons->addWidget(addText); textButtons->addWidget(editTextButton); textButtons->addWidget(delText); textButtons->addStretch();
     textLayout->addLayout(textButtons);
     connect(addText,&QPushButton::clicked,this,&SceneObjectsDialog::addText);
-    connect(editText,&QPushButton::clicked,this,&SceneObjectsDialog::editText);
+    connect(editTextButton,&QPushButton::clicked,this,&SceneObjectsDialog::editText);
     connect(delText,&QPushButton::clicked,this,&SceneObjectsDialog::deleteText);
-    connect(m_textTable,&QTableWidget::cellDoubleClicked,this,[this](int,int){ editText(); });
+    connect(m_textTable,&QTableWidget::cellDoubleClicked,this,[this](int,int){ this->editText(); });
 
     auto* mediaPage = new QWidget;
     auto* mediaLayout = new QVBoxLayout(mediaPage);
@@ -102,14 +102,14 @@ void SceneObjectsDialog::buildUi() {
     mediaLayout->addWidget(m_mediaTable,1);
     auto* mediaButtons = new QHBoxLayout;
     auto* addMedia = new QPushButton(QString::fromUtf8("Добавить медиа"));
-    auto* editMedia = new QPushButton(QString::fromUtf8("Изменить"));
+    auto* editMediaButton = new QPushButton(QString::fromUtf8("Изменить"));
     auto* delMedia = new QPushButton(QString::fromUtf8("Удалить"));
-    mediaButtons->addWidget(addMedia); mediaButtons->addWidget(editMedia); mediaButtons->addWidget(delMedia); mediaButtons->addStretch();
+    mediaButtons->addWidget(addMedia); mediaButtons->addWidget(editMediaButton); mediaButtons->addWidget(delMedia); mediaButtons->addStretch();
     mediaLayout->addLayout(mediaButtons);
     connect(addMedia,&QPushButton::clicked,this,&SceneObjectsDialog::addMedia);
-    connect(editMedia,&QPushButton::clicked,this,&SceneObjectsDialog::editMedia);
+    connect(editMediaButton,&QPushButton::clicked,this,&SceneObjectsDialog::editMedia);
     connect(delMedia,&QPushButton::clicked,this,&SceneObjectsDialog::deleteMedia);
-    connect(m_mediaTable,&QTableWidget::cellDoubleClicked,this,[this](int,int){ editMedia(); });
+    connect(m_mediaTable,&QTableWidget::cellDoubleClicked,this,[this](int,int){ this->editMedia(); });
 
     tabs->addTab(textPage,QString::fromUtf8("Текст"));
     tabs->addTab(mediaPage,QString::fromUtf8("Медиа"));
