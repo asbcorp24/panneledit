@@ -5083,7 +5083,10 @@
         const data = config.object360Scenes?.[id];
         if (!data || !window.Object360XRViewer) { host.innerHTML='<div class="viewer-error">Object360 сцена недоступна</div>'; return; }
         objectViewer = new Object360XRViewer(host,{...data,domOverlayRoot:overlay,threeModuleUrl:'assets/three.module.min.js',onFrameChange:(state)=>renderDynamicHotspots(id,state)});
-        objectViewer.ready?.catch?.(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки Object360</div>';});
+        objectViewer.ready?.then?.(()=>{
+          if (cardboardMode) applyCardboardToViewer();
+          renderDynamicHotspots(id,objectViewer.getState());
+        }).catch?.(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки Object360</div>';});
         renderDynamicHotspots(id,objectViewer.getState());
         return;
       }
@@ -5098,7 +5101,10 @@
           onChange:(state)=>renderDynamicHotspots(id,state,stlViewer)
         });
         renderDynamicHotspots(id,stlViewer.getState(),stlViewer);
-        stlViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
+        stlViewer.ready.then(()=>{
+          if (cardboardMode) applyCardboardToViewer();
+          renderDynamicHotspots(id,stlViewer.getState(),stlViewer);
+        }).catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки STL</div>';});
         return;
       }
       if (meta.sceneType === 'xr') {
@@ -5120,7 +5126,10 @@
           onChange:(state)=>renderDynamicHotspots(id,state)
         });
         renderDynamicHotspots(id,xrViewer.getState());
-        xrViewer.ready.catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки XR Media</div>';});
+        xrViewer.ready.then(()=>{
+          if (cardboardMode) applyCardboardToViewer();
+          renderDynamicHotspots(id,xrViewer.getState(),xrViewer);
+        }).catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки XR Media</div>';});
         return;
       }
       const data = config.scenes?.[id];
@@ -5142,6 +5151,7 @@
           onChange:(state)=>renderDynamicHotspots(id,state,panoViewer)
         });
         panoViewer.ready.then(()=>{
+          if (cardboardMode) applyCardboardToViewer();
           renderDynamicHotspots(id,panoViewer.getState(),panoViewer);
         }).catch(()=>{
           host.innerHTML='<div class="viewer-error">Ошибка загрузки Multires панорамы</div>';
@@ -5164,6 +5174,7 @@
         onChange:(state)=>renderDynamicHotspots(id,state,panoViewer)
       });
       panoViewer.ready.then(()=>{
+        if (cardboardMode) applyCardboardToViewer();
         const state=panoViewer.getState();
         renderDynamicHotspots(id,state,panoViewer);
       }).catch(()=>{host.innerHTML='<div class="viewer-error">Ошибка загрузки панорамы</div>';});
@@ -5283,6 +5294,7 @@
     narrationButton?.addEventListener('click',async()=>{userInteracted=true;await playNarration();});
     guideButton.hidden = !(config.guide?.enabled && config.guide?.steps?.length);
     guideButton?.addEventListener('click',toggleGuide);
+    cardboardButton?.addEventListener('click',()=>setTourCardboard(!cardboardMode));
     startSound?.addEventListener('click',()=>enterTour(true));
     startSilent?.addEventListener('click',()=>enterTour(false));
 
