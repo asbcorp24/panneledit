@@ -1,9 +1,13 @@
 #include "PanoramaViewport.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QImageReader>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QVector4D>
+#include <QJsonObject>
 #include <QWheelEvent>
 #include <QtMath>
 
@@ -154,6 +158,48 @@ void PanoramaViewport::setStlStyle(const QColor& color, bool wireframe, double z
     m_stlColor = color;
     m_stlWireframe = wireframe;
     m_stlZoom = std::clamp(zoom, 0.35, 5.0);
+    update();
+}
+
+void PanoramaViewport::setSceneOverlays(
+    const QJsonArray& textObjects,
+    const QJsonArray& mediaObjects,
+    const QVector<Hotspot>& hotspots,
+    const QString& projectDirectory
+) {
+    m_textObjects = textObjects;
+    m_mediaObjects = mediaObjects;
+    m_hotspots = hotspots;
+    m_overlayProjectDirectory = projectDirectory;
+    m_overlayImages.clear();
+
+    auto cacheImage = [this](const QString& value) {
+        if (value.isEmpty() || m_overlayImages.contains(value)) return;
+        QString path = value;
+        if (!QFileInfo(path).isAbsolute() && !m_overlayProjectDirectory.isEmpty())
+            path = QDir(m_overlayProjectDirectory).filePath(path);
+        if (!QFileInfo::exists(path)) return;
+
+        QImageReader reader(path);
+        reader.setAutoTransform(true);
+        const QSize size = reader.size();
+        if (size.isValid() && (size.width() > 800 || size.height() > 600))
+            reader.setScaledSize(size.scaled(800, 600, Qt::KeepAspectRatio));
+        const QImage image = reader.read();
+        if (!image.isNull()) m_overlayImages.insert(value, image);
+    };
+
+    for (const auto& value : m_mediaObjects) {
+        const QJsonObject object = value.toObject();
+        const QString type = object.value("type").toString();
+        if (type == "image" || type == "stereo-photo") {
+            cacheImage(object.value("data").toString());
+        } else if (type == "gallery") {
+            const QJsonArray gallery = object.value("gallery").toArray();
+            if (!gallery.isEmpty()) cacheImage(gallery.first().toObject().value("data").toString());
+        }
+    }
+
     update();
 }
 
@@ -436,6 +482,187 @@ void PanoramaViewport::paintGL() {
     case Mode::Empty:
     default:
         break;
+    }
+}
+
+void PanoramaViewport::paintEvent(QPaintEvent* event) {
+    QOpenGLWidget::paintEvent(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    drawSceneOverlays(painter);
+}
+
+QRectF PanoramaViewport::objectImageRect() const {
+    if (m_mode != Mode::Object360) return {};
+
+    QMatrix4x4 model;
+    model.translate(0.0f, 0.0f, -2.55f);
+
+    const double viewAspect = height() > 0 ? double(width()) / double(height()) : 1.0;
+    double sx = 1.05 * m_objectAspect;
+    double sy = 1.05;
+    if (sx / sy > viewAspect * 0.94)
+        sy = sx / std::max(0.2, viewAspect * 0.94);
+    model.scale(float(sx), float(sy), 1.0f);
+
+    const QMatrix4x4 mvp = projectionMatrix() * model;
+    const QPointF topLeft = projectPoint(mvp, QVector3D(-1, 1, 0), width(), height());
+    const QPointF bottomRight = projectPoint(mvp, QVector3D(1, -1, 0), width(), height());
+    return QRectF(topLeft, bottomRight).normalized();
+}
+
+QPointF PanoramaViewport::panoramaPointToScreen(double yaw, double pitch, bool* visible) const {
+    const double yr = qDegreesToRadians(yaw);
+    const double pr = qDegreesToRadians(pitch);
+    const QVector3D point(
+        float(std::sin(yr) * std::cos(pr) * 10.0),
+        float(std::sin(pr) * 10.0),
+        float(-std::cos(yr) * std::cos(pr) * 10.0)
+    );
+
+    QVector4D clip = projectionMatrix() * viewMatrix() * QVector4D(point, 1.0f);
+    const bool inFront = clip.w() > 0.0001f;
+    if (visible) *visible = inFront;
+    if (!inFront) return {-10000, -10000};
+    clip /= clip.w();
+    if (visible) *visible = std::abs(clip.x()) <= 1.15f && std::abs(clip.y()) <= 1.15f;
+    return {
+        (clip.x() * 0.5 + 0.5) * width(),
+        (1.0 - (clip.y() * 0.5 + 0.5)) * height()
+    };
+}
+
+void PanoramaViewport::drawSceneOverlays(QPainter& painter) {
+    const auto percentRect = [this](const QJsonObject& object, double defaultW, double defaultH) {
+        const double x = object.value("x").toDouble(10.0) / 100.0 * width();
+        const double y = object.value("y").toDouble(20.0) / 100.0 * height();
+        const double w = object.value("width").toDouble(defaultW) / 100.0 * width();
+        const double h = object.value("height").toDouble(defaultH) / 100.0 * height();
+        return QRectF(x, y, w, h);
+    };
+
+    struct Layer {
+        int z = 0;
+        bool text = false;
+        QJsonObject object;
+    };
+    QVector<Layer> layers;
+    layers.reserve(m_textObjects.size() + m_mediaObjects.size());
+
+    for (const auto& value : m_textObjects) {
+        const QJsonObject object = value.toObject();
+        if (object.value("visible").toBool(true))
+            layers.push_back({object.value("zIndex").toInt(10), true, object});
+    }
+    for (const auto& value : m_mediaObjects) {
+        const QJsonObject object = value.toObject();
+        if (object.value("visible").toBool(true))
+            layers.push_back({object.value("zIndex").toInt(20), false, object});
+    }
+    std::sort(layers.begin(), layers.end(), [](const Layer& a, const Layer& b){ return a.z < b.z; });
+
+    for (const Layer& layer : layers) {
+        const QJsonObject object = layer.object;
+        if (layer.text) {
+            QRectF rect = percentRect(object, object.value("type").toString() == "title" ? 55.0 : 42.0, 18.0);
+            const QString background = object.value("background").toString("none");
+            if (background != "none") {
+                painter.setPen(QPen(QColor(255,255,255,35), 1));
+                painter.setBrush(background == "light"
+                    ? QColor(245,248,255,220)
+                    : QColor(5,10,18,190));
+                painter.drawRoundedRect(rect, 8, 8);
+            }
+
+            QColor color(object.value("color").toString("#ffffff"));
+            painter.setPen(color.isValid() ? color : Qt::white);
+            QFont font = painter.font();
+            font.setPixelSize(std::clamp(object.value("fontSize").toInt(20), 12, 96));
+            font.setBold(object.value("type").toString() == "title");
+            painter.setFont(font);
+
+            Qt::Alignment alignment = Qt::AlignTop | Qt::AlignLeft;
+            const QString align = object.value("align").toString("left");
+            if (align == "center") alignment = Qt::AlignTop | Qt::AlignHCenter;
+            else if (align == "right") alignment = Qt::AlignTop | Qt::AlignRight;
+            painter.drawText(rect.adjusted(8,6,-8,-6), alignment | Qt::TextWordWrap, object.value("text").toString());
+        } else {
+            const QString type = object.value("type").toString("image");
+            QRectF rect = percentRect(object, type == "button" ? 22.0 : 36.0, type == "button" ? 10.0 : 32.0);
+            painter.setPen(QPen(QColor(117,231,214,150), 1));
+            painter.setBrush(QColor(7,13,23,175));
+            painter.drawRoundedRect(rect, 8, 8);
+
+            QString imageKey = object.value("data").toString();
+            if (type == "gallery") {
+                const QJsonArray gallery = object.value("gallery").toArray();
+                if (!gallery.isEmpty()) imageKey = gallery.first().toObject().value("data").toString();
+            }
+            const auto imageIt = m_overlayImages.constFind(imageKey);
+            if (imageIt != m_overlayImages.constEnd() && !imageIt.value().isNull()) {
+                const QImage image = imageIt.value();
+                const QSizeF scaled = image.size().scaled(rect.size().toSize(), Qt::KeepAspectRatio);
+                const QRectF target(
+                    rect.center().x() - scaled.width()/2.0,
+                    rect.center().y() - scaled.height()/2.0,
+                    scaled.width(),
+                    scaled.height()
+                );
+                painter.drawImage(target, image);
+            } else {
+                painter.setPen(QColor("#dce8f7"));
+                QFont font = painter.font();
+                font.setBold(true);
+                font.setPixelSize(14);
+                painter.setFont(font);
+                QString label = object.value("title").toString();
+                if (label.isEmpty()) label = type.toUpper();
+                painter.drawText(rect.adjusted(8,8,-8,-8), Qt::AlignCenter | Qt::TextWordWrap, label);
+            }
+
+            if (object.value("locked").toBool(false)) {
+                painter.setPen(QColor("#ffcc66"));
+                painter.drawText(rect.adjusted(4,4,-4,-4), Qt::AlignTop | Qt::AlignRight, QString::fromUtf8("🔒"));
+            }
+        }
+    }
+
+    for (int i = 0; i < m_hotspots.size(); ++i) {
+        const Hotspot& hotspot = m_hotspots.at(i);
+        QPointF point;
+        bool visible = true;
+
+        if (m_mode == Mode::Object360 || hotspot.anchorMode == "object360") {
+            if (hotspot.anchorSector != m_objectSector || hotspot.anchorRow != m_objectRow) continue;
+            const QRectF objectRect = objectImageRect();
+            if (objectRect.isEmpty()) continue;
+            point = {
+                objectRect.left() + hotspot.anchorX / 100.0 * objectRect.width(),
+                objectRect.top() + hotspot.anchorY / 100.0 * objectRect.height()
+            };
+        } else {
+            point = panoramaPointToScreen(
+                hotspot.anchorMode.isEmpty() ? hotspot.yaw : hotspot.anchorYaw,
+                hotspot.anchorMode.isEmpty() ? hotspot.pitch : hotspot.anchorPitch,
+                &visible
+            );
+            if (!visible) continue;
+        }
+
+        QColor accent = hotspot.type == "scene" ? QColor("#75e7d6")
+            : hotspot.type == "url" ? QColor("#ffb86c")
+            : QColor("#8fb5ff");
+        painter.setPen(QPen(QColor(255,255,255,130), 1));
+        painter.setBrush(QColor(4,8,16,220));
+        painter.drawEllipse(point, 15, 15);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(accent);
+        painter.drawEllipse(point, 8, 8);
+        painter.setPen(Qt::white);
+        const QString label = hotspot.text.isEmpty() ? hotspot.type : hotspot.text;
+        painter.drawText(QRectF(point.x()-80, point.y()+18, 160, 24), Qt::AlignHCenter | Qt::AlignTop, label);
     }
 }
 
