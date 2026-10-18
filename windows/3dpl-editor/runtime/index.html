@@ -18,6 +18,7 @@
         <strong id="tourTitle">3DPL</strong>
         <span id="sceneTitle"></span>
       </div>
+      <button id="guideButton" title="Экскурсия с гидом" hidden>▶ Гид</button>
       <button id="vrButton" title="Cardboard">VR</button>
       <button id="fullscreenButton" title="Полный экран">⛶</button>
     </header>
@@ -27,6 +28,17 @@
       <div class="gaze-eye"><div class="gaze"><i></i><span></span></div></div>
     </div>
     <div id="message" hidden></div>
+    <section id="startScreen" hidden>
+      <div class="start-card">
+        <img id="startCover" alt="" hidden>
+        <h1 id="startTitle">Виртуальная экскурсия</h1>
+        <p id="startSubtitle"></p>
+        <div class="start-actions">
+          <button id="startSound">Начать со звуком</button>
+          <button id="startSilent">Без звука</button>
+        </div>
+      </div>
+    </section>
     <div id="loading">Загрузка тура…</div>
   </main>
 
