@@ -7,11 +7,13 @@ import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfDouble
+import org.opencv.core.MatOfInt
 import org.opencv.core.Point
 import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.photo.Photo
 import org.opencv.imgproc.Imgproc
+import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.calib3d.Calib3d
 import java.io.File
 import java.io.FileOutputStream
@@ -26,6 +28,10 @@ object Spherical360Stitcher {
     private const val OUT_W = 4096
     private const val OUT_H = 2048
     private const val INPUT_MAX = 1800
+    private const val OUT_8K_W = 8192
+    private const val OUT_8K_H = 4096
+    private const val INPUT_8K_MAX = 3000
+    private const val BAND_8K_H = 512
 
     fun stitch(
         frames: List<PanoramaFrame>,
@@ -34,16 +40,22 @@ object Spherical360Stitcher {
     ): Boolean {
         if (frames.size < 6 || !OpenCVLoader.initLocal()) return false
 
+        val ordered = optimizeOrientations(
+            frames.sortedWith(
+                compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
+            )
+        )
+
+        if (shouldUse8k(ordered)) {
+            onProgress("360°: режим 8K 8192×4096")
+            if (stitch8kTiled(ordered, output, onProgress)) return true
+            onProgress("360°: 8K не завершён, переход на 4K")
+        }
+
         val accum = Mat.zeros(OUT_H, OUT_W, CvType.CV_32FC3)
         val weights = Mat.zeros(OUT_H, OUT_W, CvType.CV_32FC1)
 
         try {
-            val ordered = optimizeOrientations(
-                frames.sortedWith(
-                    compareBy<PanoramaFrame> { it.row }.thenBy { it.index }
-                )
-            )
-
             ordered.forEachIndexed { idx, frame ->
                 onProgress("360°: кадр " + (idx + 1) + "/" + ordered.size)
 
@@ -148,8 +160,226 @@ object Spherical360Stitcher {
         }
     }
 
-    private fun load(file: File): Mat? {
-        val bitmap = GhostFrameDecoder.decodeMaxDimension(file, INPUT_MAX) ?: return null
+    private fun shouldUse8k(frames: List<PanoramaFrame>): Boolean {
+        if (frames.size < 30) return false
+        val maxMemoryMb = Runtime.getRuntime().maxMemory() / (1024L * 1024L)
+        return maxMemoryMb >= 320L
+    }
+
+    private fun frameFov(frame: PanoramaFrame, image: Mat): Pair<Double, Double> {
+        val landscape = image.cols() >= image.rows()
+        val h = frame.calibration.horizontalFovDeg
+        val v = frame.calibration.verticalFovDeg
+
+        val hfov = if (h.isFinite() && h in 25f..130f && v.isFinite()) {
+            if (landscape) h.toDouble() else v.toDouble()
+        } else {
+            if (landscape) 68.0 else 52.0
+        }
+
+        val vfov = if (v.isFinite() && v in 20f..130f && h.isFinite()) {
+            if (landscape) v.toDouble() else h.toDouble()
+        } else {
+            if (landscape) 52.0 else 68.0
+        }
+
+        return hfov to vfov
+    }
+
+    private fun stitch8kTiled(
+        frames: List<PanoramaFrame>,
+        output: File,
+        onProgress: (String) -> Unit
+    ): Boolean {
+        val finalOut = Mat.zeros(OUT_8K_H, OUT_8K_W, CvType.CV_8UC3)
+
+        try {
+            var bandY = 0
+            var bandIndex = 0
+            val bandCount = (OUT_8K_H + BAND_8K_H - 1) / BAND_8K_H
+
+            while (bandY < OUT_8K_H) {
+                val bandHeight = min(BAND_8K_H, OUT_8K_H - bandY)
+                bandIndex++
+                onProgress("360° 8K: полоса " + bandIndex + "/" + bandCount)
+
+                val accum = Mat.zeros(bandHeight, OUT_8K_W, CvType.CV_32FC3)
+                val weights = Mat.zeros(bandHeight, OUT_8K_W, CvType.CV_32FC1)
+
+                try {
+                    frames.forEach { frame ->
+                        var image = load(frame.file, INPUT_8K_MAX) ?: return@forEach
+                        image = undistort(image, frame.calibration)
+                        image = levelRoll(image, frame.rollDeg)
+
+                        val (hfov, vfov) = frameFov(frame, image)
+                        val cylindrical = cylindricalWarp(image, hfov)
+                        image.release()
+
+                        val yaw = if (frame.yawDeg.isFinite()) {
+                            normalize360(frame.yawDeg.toDouble())
+                        } else {
+                            normalize360(frame.index * (360.0 / 12.0))
+                        }
+                        val pitch = if (frame.pitchDeg.isFinite()) {
+                            frame.pitchDeg.toDouble()
+                        } else {
+                            when (frame.row) {
+                                0 -> 28.0
+                                1 -> 0.0
+                                else -> -28.0
+                            }
+                        }
+
+                        val targetW = max(64, (OUT_8K_W * hfov / 360.0).toInt())
+                        val targetH = max(64, (OUT_8K_H * vfov / 180.0).toInt())
+
+                        val resized = Mat()
+                        Imgproc.resize(
+                            cylindrical,
+                            resized,
+                            Size(targetW.toDouble(), targetH.toDouble()),
+                            0.0,
+                            0.0,
+                            Imgproc.INTER_AREA
+                        )
+                        cylindrical.release()
+
+                        val mask = createFeatherMask(targetW, targetH)
+                        val cx = (yaw / 360.0 * OUT_8K_W).toInt()
+                        val cy = (OUT_8K_H / 2.0 + pitch / 180.0 * OUT_8K_H).toInt()
+
+                        blendWrappedBand(
+                            accum,
+                            weights,
+                            resized,
+                            mask,
+                            cx - targetW / 2,
+                            cy - targetH / 2,
+                            bandY,
+                            bandHeight
+                        )
+
+                        resized.release()
+                        mask.release()
+                    }
+
+                    val safe = Mat()
+                    Core.max(weights, Scalar(1e-5), safe)
+                    val safe3 = Mat()
+                    Core.merge(listOf(safe, safe, safe), safe3)
+
+                    val bandFloat = Mat()
+                    Core.divide(accum, safe3, bandFloat)
+
+                    val band8 = Mat()
+                    bandFloat.convertTo(band8, CvType.CV_8UC3)
+
+                    val dst = Mat(
+                        finalOut,
+                        org.opencv.core.Rect(0, bandY, OUT_8K_W, bandHeight)
+                    )
+                    band8.copyTo(dst)
+
+                    dst.release()
+                    band8.release()
+                    bandFloat.release()
+                    safe3.release()
+                    safe.release()
+                } finally {
+                    accum.release()
+                    weights.release()
+                }
+
+                bandY += bandHeight
+            }
+
+            onProgress("360° 8K: финальная коррекция")
+            fillSmallHoles(finalOut)
+
+            output.parentFile?.mkdirs()
+            val params = MatOfInt(
+                Imgcodecs.IMWRITE_JPEG_QUALITY,
+                95
+            )
+            val ok = Imgcodecs.imwrite(output.absolutePath, finalOut, params)
+            params.release()
+            return ok
+        } catch (_: Throwable) {
+            return false
+        } finally {
+            finalOut.release()
+        }
+    }
+
+    private fun blendWrappedBand(
+        accum: Mat,
+        weights: Mat,
+        image: Mat,
+        mask: Mat,
+        x: Int,
+        y: Int,
+        bandY: Int,
+        bandHeight: Int
+    ) {
+        blendAtBand(accum, weights, image, mask, x, y, bandY, bandHeight)
+        blendAtBand(accum, weights, image, mask, x - OUT_8K_W, y, bandY, bandHeight)
+        blendAtBand(accum, weights, image, mask, x + OUT_8K_W, y, bandY, bandHeight)
+    }
+
+    private fun blendAtBand(
+        accum: Mat,
+        weights: Mat,
+        image: Mat,
+        mask: Mat,
+        x: Int,
+        y: Int,
+        bandY: Int,
+        bandHeight: Int
+    ) {
+        val dstX0 = max(0, x)
+        val dstX1 = min(OUT_8K_W, x + image.cols())
+        val globalY0 = max(bandY, y)
+        val globalY1 = min(bandY + bandHeight, y + image.rows())
+
+        if (dstX1 <= dstX0 || globalY1 <= globalY0) return
+
+        val srcX0 = dstX0 - x
+        val srcY0 = globalY0 - y
+        val width = dstX1 - dstX0
+        val height = globalY1 - globalY0
+        val localY = globalY0 - bandY
+
+        val srcRect = org.opencv.core.Rect(srcX0, srcY0, width, height)
+        val dstRect = org.opencv.core.Rect(dstX0, localY, width, height)
+
+        val imageRoi = Mat(image, srcRect)
+        val maskRoi = Mat(mask, srcRect)
+        val accumRoi = Mat(accum, dstRect)
+        val weightRoi = Mat(weights, dstRect)
+
+        val imageFloat = Mat()
+        imageRoi.convertTo(imageFloat, CvType.CV_32FC3)
+
+        val mask3 = Mat()
+        Core.merge(listOf(maskRoi, maskRoi, maskRoi), mask3)
+
+        val weighted = Mat()
+        Core.multiply(imageFloat, mask3, weighted)
+        Core.add(accumRoi, weighted, accumRoi)
+        Core.add(weightRoi, maskRoi, weightRoi)
+
+        weighted.release()
+        mask3.release()
+        imageFloat.release()
+        imageRoi.release()
+        maskRoi.release()
+        accumRoi.release()
+        weightRoi.release()
+    }
+
+    private fun load(file: File, maxDimension: Int = INPUT_MAX): Mat? {
+        val bitmap = GhostFrameDecoder.decodeMaxDimension(file, maxDimension) ?: return null
 
         val rgba = Mat()
         Utils.bitmapToMat(bitmap, rgba)
