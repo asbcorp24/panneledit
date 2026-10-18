@@ -1115,6 +1115,13 @@ private:
     int objectCurrentSector_ = -1;
     int objectCurrentRow_ = -1;
 
+    std::string multiresBasePath_;
+    int multiresTileResolution_ = 512;
+    int multiresMaxLevel_ = 1;
+    int multiresCubeResolution_ = 2048;
+    int multiresTargetLevel_ = 1;
+    char multiresCurrentFace_ = '\0';
+
     std::string gazeId_;
     std::chrono::steady_clock::time_point gazeSince_{};
     std::chrono::steady_clock::time_point gazeCooldownUntil_{};
@@ -1470,6 +1477,75 @@ private:
         }
     }
 
+    int multiresLevelSize(int level) const {
+        int divisor=1;
+        for(int i=level;i<multiresMaxLevel_;++i) divisor*=2;
+        return std::max(1,multiresCubeResolution_/std::max(1,divisor));
+    }
+
+    bool loadMultiresBase() {
+        renderer_.clearMultires();
+        static const char faces[]={'f','b','u','d','l','r'};
+        bool any=false;
+        for(char face:faces){
+            std::string path=multiresBasePath_+"/fallback/"+std::string(1,face)+".jpg";
+            int w=0,h=0;
+            GLuint tex=jni_.loadTexture(path,&w,&h);
+            if(tex){
+                renderer_.addMultiresBase(face,tex);
+                any=true;
+            }
+        }
+        return any;
+    }
+
+    bool loadMultiresFace(char face) {
+        if(multiresTargetLevel_<=1 || multiresBasePath_.empty()) return false;
+        renderer_.clearMultiresDetail();
+
+        const int size=multiresLevelSize(multiresTargetLevel_);
+        const int tiles=(size+multiresTileResolution_-1)/multiresTileResolution_;
+        bool any=false;
+
+        for(int y=0;y<tiles;++y){
+            for(int x=0;x<tiles;++x){
+                const int expectedW=std::min(multiresTileResolution_,size-x*multiresTileResolution_);
+                const int expectedH=std::min(multiresTileResolution_,size-y*multiresTileResolution_);
+                std::string path=multiresBasePath_+"/"+std::to_string(multiresTargetLevel_)+"/"+
+                    std::string(1,face)+std::to_string(y)+"_"+std::to_string(x)+".jpg";
+                int w=0,h=0;
+                GLuint tex=jni_.loadTexture(path,&w,&h);
+                if(!tex) continue;
+                renderer_.addMultiresDetail(
+                    face,x,y,size,multiresTileResolution_,
+                    w>0?w:expectedW,h>0?h:expectedH,tex
+                );
+                any=true;
+            }
+        }
+        if(any) multiresCurrentFace_=face;
+        return any;
+    }
+
+    char viewFace(const XrPosef& pose) const {
+        float yaw=0,pitch=0;
+        poseForwardYawPitch(pose,yaw,pitch);
+        yaw=wrapAngle(yaw-recenterYaw_);
+
+        if(pitch>50.0f) return 'u';
+        if(pitch<-50.0f) return 'd';
+        if(yaw>=-45.0f && yaw<45.0f) return 'f';
+        if(yaw>=45.0f && yaw<135.0f) return 'r';
+        if(yaw<=-45.0f && yaw>-135.0f) return 'l';
+        return 'b';
+    }
+
+    void updateMultires(const std::vector<XrView>& views) {
+        if(sceneType_!="panorama" || multiresBasePath_.empty() || views.empty()) return;
+        const char face=viewFace(views[0].pose);
+        if(face!=multiresCurrentFace_) loadMultiresFace(face);
+    }
+
     bool loadObjectFrame(int row,int sector) {
         if(objectFrames_.empty()) return false;
         sector=((sector%objectSectors_)+objectSectors_)%objectSectors_;
@@ -1529,6 +1605,9 @@ private:
 
         gazeId_.clear();
         if(video_.valid()) video_.close(jni_.env);
+        renderer_.clearMultires();
+        multiresBasePath_.clear();
+        multiresCurrentFace_='\0';
         objectFrames_.clear();
         objectCurrentRow_=-1;
         objectCurrentSector_=-1;
@@ -1570,6 +1649,35 @@ private:
         }
 
         renderer_.setMode("panorama");
+
+        if(sceneType_=="panorama"){
+            multiresBasePath_=jni_.callString("nativeGetMultiresBasePath");
+            if(!multiresBasePath_.empty()){
+                multiresTileResolution_=std::max(64,jni_.callInt("nativeGetMultiresTileResolution"));
+                multiresMaxLevel_=std::max(1,jni_.callInt("nativeGetMultiresMaxLevel"));
+                multiresCubeResolution_=std::max(256,jni_.callInt("nativeGetMultiresCubeResolution"));
+
+                GLint maxTexture=2048;
+                glGetIntegerv(GL_MAX_TEXTURE_SIZE,&maxTexture);
+                const int detailCap=std::min<int>(maxTexture,2048);
+                multiresTargetLevel_=multiresMaxLevel_;
+                while(multiresTargetLevel_>1 && multiresLevelSize(multiresTargetLevel_)>detailCap){
+                    --multiresTargetLevel_;
+                }
+
+                renderer_.setSceneTexture(0,"360",sceneYaw_,scenePitch_);
+                renderer_.setMode("multires");
+                if(loadMultiresBase()){
+                    loadMultiresFace('f');
+                    LOGI("Multires base=%s level=%d size=%d",
+                         multiresBasePath_.c_str(),multiresTargetLevel_,
+                         multiresLevelSize(multiresTargetLevel_));
+                    return;
+                }
+                multiresBasePath_.clear();
+                renderer_.setMode("panorama");
+            }
+        }
 
         if (sceneType_ != "panorama" && sceneType_ != "xr") {
             renderer_.setSceneTexture(0, "360", 0, 0);
@@ -1681,6 +1789,7 @@ private:
                 (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
 
                 if(video_.valid()) video_.update(jni_.env);
+                updateMultires(views_);
                 updateObjectFrame(views_);
                 syncActions();
                 const bool gazeTarget = updateGaze(views_);
