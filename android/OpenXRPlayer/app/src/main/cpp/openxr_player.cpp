@@ -1756,7 +1756,9 @@ private:
 
                 GLint maxTexture=2048;
                 glGetIntegerv(GL_MAX_TEXTURE_SIZE,&maxTexture);
-                const int detailCap=std::min<int>(maxTexture,2048);
+                const int memoryClassMb=std::max(128,jni_.callInt("nativeGetMemoryClassMb"));
+                const int wantedCap=memoryClassMb>=384 ? 4096 : 2048;
+                const int detailCap=std::min<int>(maxTexture,wantedCap);
                 multiresTargetLevel_=multiresMaxLevel_;
                 while(multiresTargetLevel_>1 && multiresLevelSize(multiresTargetLevel_)>detailCap){
                     --multiresTargetLevel_;
