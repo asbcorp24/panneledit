@@ -951,6 +951,7 @@ private:
     JniBridge jni_;
     EglState egl_;
     Renderer renderer_;
+    AndroidVideoPlayer video_;
 
     XrInstance instance_ = XR_NULL_HANDLE;
     XrSystemId systemId_ = XR_NULL_SYSTEM_ID;
@@ -1404,6 +1405,7 @@ private:
         hotspots_ = parseHotspots(jni_.callString("nativeGetHotspotsPacked"));
 
         gazeId_.clear();
+        if(video_.valid()) video_.close(jni_.env);
         objectFrames_.clear();
         objectCurrentRow_=-1;
         objectCurrentSector_=-1;
@@ -1452,8 +1454,14 @@ private:
             return;
         }
         if (sceneKind_ == "video") {
+            renderer_.setMode("panorama");
             renderer_.setSceneTexture(0, sceneProjection_, sceneYaw_, scenePitch_);
-            jni_.toast("OpenXR video: подготовка декодера");
+            if(video_.open(jni_.env,sceneSource_,true)){
+                renderer_.setVideoTexture(video_.texture(),sceneProjection_,sceneYaw_,scenePitch_);
+                LOGI("Video scene %s projection=%s",sceneSource_.c_str(),sceneProjection_.c_str());
+            }else{
+                jni_.toast("OpenXR video: MediaPlayer не смог открыть файл");
+            }
             return;
         }
 
@@ -1549,6 +1557,7 @@ private:
                 (viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT) &&
                 (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
 
+                if(video_.valid()) video_.update(jni_.env);
                 updateObjectFrame(views_);
                 syncActions();
                 const bool gazeTarget = updateGaze(views_);
@@ -1603,6 +1612,7 @@ private:
     }
 
     void shutdown() {
+        if(video_.valid()) video_.close(jni_.env);
         renderer_.destroy();
 
         for (auto& sc : swapchains_) {
