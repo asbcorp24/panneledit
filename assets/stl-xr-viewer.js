@@ -341,7 +341,6 @@
         try{if(options.fullscreen!==false && document.fullscreenElement===this.root) await document.exitFullscreen();}catch(_){}
       }
     }
-    }
 
     async toggleCardboard() {
       return this.setCardboard(!this.cardboard);
