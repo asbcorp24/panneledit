@@ -5,7 +5,6 @@
 QString Scene::typeToString(SceneType type) {
     switch (type) {
     case SceneType::Object360: return "object360";
-    case SceneType::Stl: return "stl";
     case SceneType::Xr: return "xr";
     case SceneType::Panorama:
     default: return "panorama";
@@ -14,7 +13,6 @@ QString Scene::typeToString(SceneType type) {
 
 SceneType Scene::typeFromString(const QString& value) {
     if (value == "object360") return SceneType::Object360;
-    if (value == "stl") return SceneType::Stl;
     if (value == "xr") return SceneType::Xr;
     return SceneType::Panorama;
 }
@@ -47,10 +45,6 @@ Scene Scene::fromJson(const QJsonObject& json) {
         for (const auto& frameValue : rowValue.toArray()) row.push_back(frameValue.toString());
         s.frames.push_back(row);
     }
-
-    s.zoom = json.value("zoom").toDouble(1.0);
-    s.wireframe = json.value("wireframe").toBool();
-    s.color = json.value("color").toString("#7c8cff");
 
     s.backgroundMode = json.value("backgroundMode").toString("hitech");
     s.backgroundColor = json.value("backgroundColor").toString("#ffffff");
@@ -110,9 +104,6 @@ QJsonObject Scene::toJson() const {
         {"startSector", startSector},
         {"startRow", startRow},
         {"frames", frameRows},
-        {"zoom", zoom},
-        {"wireframe", wireframe},
-        {"color", color},
         {"backgroundMode", backgroundMode},
         {"backgroundColor", backgroundColor},
         {"backgroundImageSource", backgroundImageSource},

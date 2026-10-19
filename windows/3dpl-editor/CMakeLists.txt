@@ -31,8 +31,6 @@ qt_add_executable(3dpl-editor WIN32
     src/export/PackageExporter.h
     src/render/PanoramaViewport.cpp
     src/render/PanoramaViewport.h
-    src/render/StlMesh.cpp
-    src/render/StlMesh.h
     src/render/MultiresGenerator.cpp
     src/render/MultiresGenerator.h
     src/ui/ProjectOptionsDialog.cpp

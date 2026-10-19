@@ -25,7 +25,13 @@ Project Project::fromJson(const QJsonObject& json) {
     p.extraSettings = json.value("settings").toObject();
 
     const auto scenes = json.value("scenes").toArray();
-    for (const auto& value : scenes) p.scenes.push_back(Scene::fromJson(value.toObject()));
+    for (const auto& value : scenes) {
+        const QJsonObject sceneJson = value.toObject();
+        const QString type = sceneJson.value("sceneType").toString(sceneJson.value("type").toString());
+        if (type.compare("stl", Qt::CaseInsensitive) == 0) continue;
+        p.scenes.push_back(Scene::fromJson(sceneJson));
+    }
+    if (!p.firstSceneId.isEmpty() && !p.findScene(p.firstSceneId)) p.firstSceneId.clear();
 
     if (p.firstSceneId.isEmpty() && !p.scenes.isEmpty()) p.firstSceneId = p.scenes.first().id;
     return p;

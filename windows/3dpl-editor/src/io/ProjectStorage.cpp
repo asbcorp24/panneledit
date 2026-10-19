@@ -27,7 +27,6 @@ bool ProjectStorage::ensureLayout(const QString& directory, QString* error) {
         "assets",
         "assets/panoramas",
         "assets/object360",
-        "assets/stl",
         "assets/xr",
         "assets/audio",
         "assets/media",

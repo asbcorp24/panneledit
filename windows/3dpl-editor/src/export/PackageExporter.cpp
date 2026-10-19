@@ -114,20 +114,6 @@ QJsonObject sceneJson(const Scene& scene) {
         out.insert("frames", rows);
         break;
     }
-
-    case SceneType::Stl:
-        out.insert("source", scene.source);
-        out.insert("yaw", scene.yaw);
-        out.insert("pitch", scene.pitch);
-        out.insert("zoom", scene.zoom);
-        out.insert("color", scene.color);
-        out.insert("wireframe", scene.wireframe);
-        out.insert("autoplay", scene.autoplay);
-        out.insert("backgroundMode", scene.backgroundMode);
-        out.insert("backgroundColor", scene.backgroundColor);
-        out.insert("backgroundImageSource", scene.backgroundImageSource);
-        out.insert("backgroundSceneId", scene.backgroundSceneId);
-        break;
     }
 
     return out;

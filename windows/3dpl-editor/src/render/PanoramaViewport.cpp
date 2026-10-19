@@ -75,8 +75,6 @@ PanoramaViewport::PanoramaViewport(QWidget* parent)
 PanoramaViewport::~PanoramaViewport() {
     makeCurrent();
     m_texture.reset();
-    m_stlVbo.destroy();
-    m_stlVao.destroy();
     m_quadIbo.destroy();
     m_quadVbo.destroy();
     m_quadVao.destroy();
@@ -166,37 +164,6 @@ void PanoramaViewport::setObject360(
     loadObjectFrame(m_objectSector, m_objectRow);
 }
 
-void PanoramaViewport::setStl(
-    const QString& filePath,
-    const QColor& color,
-    bool wireframe,
-    double zoom
-) {
-    QVector<StlVertex> vertices;
-    QString error;
-    if (!StlMesh::load(filePath, vertices, &error)) {
-        emit stlLoadFailed(error);
-        m_mode = Mode::Empty;
-        update();
-        return;
-    }
-
-    m_mode = Mode::Stl;
-    m_stlColor = color;
-    m_stlWireframe = wireframe;
-    m_stlZoom = std::clamp(zoom, 0.35, 5.0);
-    m_pendingStl = std::move(vertices);
-    m_hasPendingStl = true;
-    m_texture.reset();
-    update();
-}
-
-void PanoramaViewport::setStlStyle(const QColor& color, bool wireframe, double zoom) {
-    m_stlColor = color;
-    m_stlWireframe = wireframe;
-    m_stlZoom = std::clamp(zoom, 0.35, 5.0);
-    update();
-}
 
 void PanoramaViewport::setSceneOverlays(
     const QJsonArray& textObjects,
@@ -243,20 +210,12 @@ void PanoramaViewport::setSceneOverlays(
 void PanoramaViewport::clearImage() {
     makeCurrent();
     m_texture.reset();
-    if (m_stlVbo.isCreated()) {
-        m_stlVbo.bind();
-        m_stlVbo.allocate(nullptr, 0);
-        m_stlVbo.release();
-    }
     doneCurrent();
 
     m_mode = Mode::Empty;
     m_pendingImage = {};
     m_hasPendingImage = false;
-    m_pendingStl.clear();
-    m_hasPendingStl = false;
     m_objectFrames.clear();
-    m_stlVertexCount = 0;
     update();
 }
 
@@ -312,51 +271,12 @@ void PanoramaViewport::initializeGL() {
         }
     )";
 
-    const char* stlVertexShader = R"(
-        #version 330 core
-        layout(location=0) in vec3 aPos;
-        layout(location=1) in vec3 aNormal;
-        uniform mat4 uMvp;
-        uniform mat4 uModel;
-        out vec3 vNormal;
-        out vec3 vWorld;
-        void main() {
-            vec4 world = uModel * vec4(aPos, 1.0);
-            vWorld = world.xyz;
-            vNormal = mat3(transpose(inverse(uModel))) * aNormal;
-            gl_Position = uMvp * vec4(aPos, 1.0);
-        }
-    )";
-
-    const char* stlFragmentShader = R"(
-        #version 330 core
-        in vec3 vNormal;
-        in vec3 vWorld;
-        uniform vec3 uColor;
-        out vec4 fragColor;
-        void main() {
-            vec3 n = normalize(vNormal);
-            vec3 lightDir = normalize(vec3(0.35, 0.75, 0.55));
-            float diffuse = max(dot(n, lightDir), 0.0);
-            float rim = pow(1.0 - max(abs(n.z), 0.0), 2.0);
-            float light = 0.26 + diffuse * 0.68 + rim * 0.12;
-            fragColor = vec4(uColor * light, 1.0);
-        }
-    )";
-
     m_textureProgram.addShaderFromSourceCode(QOpenGLShader::Vertex, textureVertexShader);
     m_textureProgram.addShaderFromSourceCode(QOpenGLShader::Fragment, textureFragmentShader);
     m_textureProgram.link();
 
-    m_stlProgram.addShaderFromSourceCode(QOpenGLShader::Vertex, stlVertexShader);
-    m_stlProgram.addShaderFromSourceCode(QOpenGLShader::Fragment, stlFragmentShader);
-    m_stlProgram.link();
-
     buildSphere();
     buildQuad();
-
-    m_stlVao.create();
-    m_stlVbo.create();
 }
 
 void PanoramaViewport::buildSphere() {
@@ -493,32 +413,9 @@ void PanoramaViewport::uploadPendingTexture() {
     m_hasPendingImage = false;
 }
 
-void PanoramaViewport::uploadPendingStl() {
-    if (!m_hasPendingStl) return;
-
-    QOpenGLVertexArrayObject::Binder vaoBinder(&m_stlVao);
-    m_stlVbo.bind();
-    m_stlVbo.allocate(
-        m_pendingStl.constData(),
-        int(m_pendingStl.size() * qsizetype(sizeof(StlVertex)))
-    );
-
-    m_stlProgram.bind();
-    m_stlProgram.enableAttributeArray(0);
-    m_stlProgram.setAttributeBuffer(0, GL_FLOAT, offsetof(StlVertex, px), 3, sizeof(StlVertex));
-    m_stlProgram.enableAttributeArray(1);
-    m_stlProgram.setAttributeBuffer(1, GL_FLOAT, offsetof(StlVertex, nx), 3, sizeof(StlVertex));
-    m_stlProgram.release();
-    m_stlVbo.release();
-
-    m_stlVertexCount = int(m_pendingStl.size());
-    m_pendingStl.clear();
-    m_hasPendingStl = false;
-}
 
 void PanoramaViewport::paintGL() {
     uploadPendingTexture();
-    uploadPendingStl();
 
     const qreal dpr = devicePixelRatioF();
     glViewport(
@@ -536,9 +433,6 @@ void PanoramaViewport::paintGL() {
         break;
     case Mode::Object360:
         renderObject();
-        break;
-    case Mode::Stl:
-        renderStl();
         break;
     case Mode::Empty:
     default:
@@ -792,35 +686,6 @@ void PanoramaViewport::renderObject() {
     m_textureProgram.release();
 }
 
-void PanoramaViewport::renderStl() {
-    if (m_stlVertexCount <= 0 || !m_stlProgram.isLinked()) return;
-
-    QMatrix4x4 model;
-    model.translate(0.0f, -0.05f, -2.65f);
-    model.rotate(float(m_yaw), 0, 1, 0);
-    model.rotate(float(m_pitch), 1, 0, 0);
-    model.scale(float(m_stlZoom));
-
-    m_stlProgram.bind();
-    m_stlProgram.setUniformValue("uModel", model);
-    m_stlProgram.setUniformValue("uMvp", projectionMatrix() * model);
-    m_stlProgram.setUniformValue(
-        "uColor",
-        QVector3D(
-            m_stlColor.redF(),
-            m_stlColor.greenF(),
-            m_stlColor.blueF()
-        )
-    );
-
-    QOpenGLVertexArrayObject::Binder vaoBinder(&m_stlVao);
-    glPolygonMode(GL_FRONT_AND_BACK, m_stlWireframe ? GL_LINE : GL_FILL);
-    glDrawArrays(GL_TRIANGLES, 0, m_stlVertexCount);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    m_stlProgram.release();
-}
-
 void PanoramaViewport::loadObjectFrame(int sector, int row) {
     if (m_objectFrames.isEmpty()) return;
 
@@ -927,11 +792,7 @@ void PanoramaViewport::mouseMoveEvent(QMouseEvent* event) {
         }
         return;
     }
-
-    if (m_mode == Mode::Stl) {
-        m_yaw = std::remainder(m_yaw + delta.x() * 0.45, 360.0);
-        m_pitch = std::clamp(m_pitch + delta.y() * 0.35, -89.0, 89.0);
-    } else {
+    {
         const double scale = m_fov / std::max(200, width());
         m_yaw = std::remainder(m_yaw + delta.x() * scale * 1.3, 360.0);
         m_pitch = std::clamp(m_pitch + delta.y() * scale * 1.3, -89.0, 89.0);
@@ -964,12 +825,7 @@ void PanoramaViewport::mouseReleaseEvent(QMouseEvent* event) {
 
 void PanoramaViewport::wheelEvent(QWheelEvent* event) {
     const double steps = event->angleDelta().y() / 120.0;
-
-    if (m_mode == Mode::Stl) {
-        m_stlZoom = std::clamp(m_stlZoom * std::pow(1.08, steps), 0.35, 5.0);
-    } else {
-        m_fov = std::clamp(m_fov - steps * 5.0, 30.0, 120.0);
-    }
+    m_fov = std::clamp(m_fov - steps * 5.0, 30.0, 120.0);
 
     emitViewChanged();
     update();

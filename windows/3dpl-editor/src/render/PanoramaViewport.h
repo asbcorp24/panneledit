@@ -1,6 +1,5 @@
 #pragma once
 
-#include "StlMesh.h"
 #include "model/Hotspot.h"
 
 #include <QColor>
@@ -31,8 +30,7 @@ public:
     enum class Mode {
         Empty,
         Panorama,
-        Object360,
-        Stl
+        Object360
     };
 
     explicit PanoramaViewport(QWidget* parent = nullptr);
@@ -46,16 +44,9 @@ public:
         int startSector = 0,
         int startRow = 0
     );
-    void setStl(
-        const QString& filePath,
-        const QColor& color,
-        bool wireframe,
-        double zoom
-    );
     void clearImage();
 
     void setView(double yaw, double pitch, double fov);
-    void setStlStyle(const QColor& color, bool wireframe, double zoom);
     void setSceneOverlays(
         const QJsonArray& textObjects,
         const QJsonArray& mediaObjects,
@@ -77,7 +68,6 @@ signals:
     void objectHotspotRequested(double xPercent, double yPercent, int sector, int row);
     void objectFrameChanged(int sector, int row);
     void imageLoadFailed(const QString& message);
-    void stlLoadFailed(const QString& message);
     void hotspotSelected(int index);
     void hotspotMoveFinished(
         const QString& hotspotId,
@@ -111,7 +101,6 @@ private:
     void buildSphere();
     void buildQuad();
     void uploadPendingTexture();
-    void uploadPendingStl();
     void emitViewChanged();
 
     bool loadImage(const QString& filePath);
@@ -119,7 +108,6 @@ private:
 
     void renderSphere();
     void renderObject();
-    void renderStl();
     void drawSceneOverlays(QPainter& painter);
     QPointF panoramaPointToScreen(double yaw, double pitch, bool* visible = nullptr) const;
     QRectF objectImageRect() const;
@@ -132,7 +120,6 @@ private:
     Mode m_mode = Mode::Empty;
 
     QOpenGLShaderProgram m_textureProgram;
-    QOpenGLShaderProgram m_stlProgram;
 
     QOpenGLVertexArrayObject m_sphereVao;
     QOpenGLBuffer m_sphereVbo{QOpenGLBuffer::VertexBuffer};
@@ -143,19 +130,12 @@ private:
     QOpenGLBuffer m_quadVbo{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_quadIbo{QOpenGLBuffer::IndexBuffer};
 
-    QOpenGLVertexArrayObject m_stlVao;
-    QOpenGLBuffer m_stlVbo{QOpenGLBuffer::VertexBuffer};
-    int m_stlVertexCount = 0;
-
     std::unique_ptr<QOpenGLTexture> m_texture;
     QImage m_pendingImage;
     bool m_hasPendingImage = false;
     int m_glMaxTextureSize = 8192;
     int m_previewMaxWidth = 8192;
     int m_previewMaxHeight = 4096;
-
-    QVector<StlVertex> m_pendingStl;
-    bool m_hasPendingStl = false;
 
     QString m_projection = "360";
 
@@ -165,10 +145,6 @@ private:
     double m_objectDragX = 0.0;
     double m_objectDragY = 0.0;
     double m_objectAspect = 1.5;
-
-    QColor m_stlColor{"#7c8cff"};
-    bool m_stlWireframe = false;
-    double m_stlZoom = 1.0;
 
     double m_yaw = 0.0;
     double m_pitch = 0.0;

@@ -12,7 +12,6 @@
 
 #include <QCloseEvent>
 #include <QSpinBox>
-#include <QColorDialog>
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
@@ -203,7 +202,6 @@ void MainWindow::buildUi() {
     toolbar->addSeparator();
     auto* addPano = toolbar->addAction("+ Панорама");
     auto* addObject = toolbar->addAction("+ Object360");
-    auto* addStlAction = toolbar->addAction("+ STL");
     auto* addXrAction = toolbar->addAction("+ XR");
     toolbar->addSeparator();
     auto* undoAction = m_undoStack.createUndoAction(this, "Отмена");
@@ -217,7 +215,6 @@ void MainWindow::buildUi() {
     connect(exportXrAction, &QAction::triggered, this, &MainWindow::exportOpenXrPackage);
     connect(addPano, &QAction::triggered, this, &MainWindow::addPanorama);
     connect(addObject, &QAction::triggered, this, &MainWindow::addObject360);
-    connect(addStlAction, &QAction::triggered, this, &MainWindow::addStl);
     connect(addXrAction, &QAction::triggered, this, &MainWindow::addXr);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
@@ -268,9 +265,6 @@ void MainWindow::buildUi() {
     connect(m_viewport, &PanoramaViewport::objectFrameChanged, this, [this](int sector, int row) {
         m_status->setText(QString("Object360 · сектор %1 · ряд %2").arg(sector).arg(row));
     });
-    connect(m_viewport, &PanoramaViewport::stlLoadFailed, this, [this](const QString& message) {
-        statusBar()->showMessage("STL: " + message, 4000);
-    });
     connect(m_viewport, &PanoramaViewport::hotspotSelected, this, [this](int index) {
         if (!m_hotspotTable || index < 0 || index >= m_hotspotTable->rowCount()) return;
         m_hotspotTable->selectRow(index);
@@ -317,7 +311,6 @@ void MainWindow::buildMenus() {
     auto* sceneMenu = menuBar()->addMenu("Сцена");
     sceneMenu->addAction("Добавить панораму", this, &MainWindow::addPanorama);
     sceneMenu->addAction("Добавить Object360", this, &MainWindow::addObject360);
-    sceneMenu->addAction("Добавить STL", this, &MainWindow::addStl);
     sceneMenu->addAction("Добавить XR", this, &MainWindow::addXr);
     sceneMenu->addSeparator();
     sceneMenu->addAction("Текст и медиа сцены…", this, &MainWindow::editSceneObjects);
@@ -334,16 +327,13 @@ QWidget* MainWindow::buildLeftPanel() {
     auto* addRow = new QHBoxLayout;
     auto* addPano = smallButton("+ 360");
     auto* addObject = smallButton("+ Obj");
-    auto* addStlButton = smallButton("+ STL");
     auto* addXrButton = smallButton("+ XR");
     addRow->addWidget(addPano);
     addRow->addWidget(addObject);
-    addRow->addWidget(addStlButton);
     addRow->addWidget(addXrButton);
 
     connect(addPano, &QPushButton::clicked, this, &MainWindow::addPanorama);
     connect(addObject, &QPushButton::clicked, this, &MainWindow::addObject360);
-    connect(addStlButton, &QPushButton::clicked, this, &MainWindow::addStl);
     connect(addXrButton, &QPushButton::clicked, this, &MainWindow::addXr);
 
     layout->addLayout(addRow);
@@ -522,19 +512,6 @@ QWidget* MainWindow::buildScenePage() {
     objectForm->addRow("Стартовый ряд", m_objectStartRow);
     layout->addWidget(m_objectOptions);
 
-    m_stlOptions = new QGroupBox("STL 3D");
-    auto* stlForm = new QFormLayout(m_stlOptions);
-    m_stlZoom = new QDoubleSpinBox;
-    m_stlZoom->setRange(0.35, 5.0);
-    m_stlZoom->setSingleStep(0.1);
-    m_stlZoom->setDecimals(2);
-    m_stlWireframe = new QCheckBox("Показывать сетку");
-    m_stlColorButton = smallButton("Цвет модели");
-    stlForm->addRow("Zoom", m_stlZoom);
-    stlForm->addRow("", m_stlWireframe);
-    stlForm->addRow("Цвет", m_stlColorButton);
-    layout->addWidget(m_stlOptions);
-
     m_xrOptions = new QGroupBox("XR Media");
     auto* xrForm = new QFormLayout(m_xrOptions);
     m_sceneAutoplay = new QCheckBox("Автовоспроизведение / автовращение");
@@ -674,33 +651,6 @@ QWidget* MainWindow::buildScenePage() {
         }
     });
 
-    connect(m_stlZoom, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
-        if (m_refreshing) return;
-        if (auto* scene = currentScene(); scene && scene->type == SceneType::Stl) {
-            scene->zoom = value;
-            markDirty();
-            m_viewport->setStlStyle(QColor(scene->color), scene->wireframe, scene->zoom);
-        }
-    });
-    connect(m_stlWireframe, &QCheckBox::toggled, this, [this](bool checked) {
-        if (m_refreshing) return;
-        if (auto* scene = currentScene(); scene && scene->type == SceneType::Stl) {
-            scene->wireframe = checked;
-            markDirty();
-            m_viewport->setStlStyle(QColor(scene->color), scene->wireframe, scene->zoom);
-        }
-    });
-    connect(m_stlColorButton, &QPushButton::clicked, this, [this] {
-        auto* scene = currentScene();
-        if (!scene || scene->type != SceneType::Stl) return;
-        const QColor color = QColorDialog::getColor(QColor(scene->color), this, "Цвет STL");
-        if (!color.isValid()) return;
-        scene->color = color.name(QColor::HexRgb);
-        markDirty();
-        refreshSceneControls();
-        m_viewport->setStlStyle(color, scene->wireframe, scene->zoom);
-    });
-
     connect(m_sceneAutoplay, &QCheckBox::toggled, this, [this](bool checked) {
         if (m_refreshing) return;
         if (auto* scene = currentScene()) {
@@ -818,7 +768,7 @@ void MainWindow::importLegacyProject() {
     }
 
     QProgressDialog progress(
-        "Перенос изображений, Object360, STL, XR и аудио…",
+        "Перенос изображений, Object360, XR и аудио…",
         QString(),
         0,
         0,
@@ -1217,38 +1167,6 @@ void MainWindow::addXr() {
     refreshAll();
 }
 
-void MainWindow::addStl() {
-    if (m_projectDir.isEmpty()) {
-        QMessageBox::information(this, "Проект", "Сначала создайте или откройте проект.");
-        return;
-    }
-
-    const QString file = QFileDialog::getOpenFileName(this, "STL модель", {}, "STL (*.stl)");
-    if (file.isEmpty()) return;
-
-    QString error;
-    const QString asset = ProjectStorage::importAsset(m_projectDir, file, "stl", &error);
-    if (asset.isEmpty()) {
-        QMessageBox::critical(this, "Ошибка", error);
-        return;
-    }
-
-    Scene scene;
-    scene.id = uniqueSceneId("stl");
-    scene.title = QFileInfo(file).completeBaseName();
-    scene.type = SceneType::Stl;
-    scene.source = asset;
-    scene.filename = QFileInfo(file).fileName();
-    scene.pitch = -15;
-    scene.zoom = 1;
-
-    m_project.scenes.push_back(scene);
-    if (m_project.firstSceneId.isEmpty()) m_project.firstSceneId = scene.id;
-    m_currentSceneId = scene.id;
-    markDirty();
-    refreshAll();
-}
-
 void MainWindow::addObject360() {
     if (m_projectDir.isEmpty()) {
         QMessageBox::information(this, "Проект", "Сначала создайте или откройте проект.");
@@ -1422,7 +1340,6 @@ void MainWindow::refreshSceneControls() {
 
     const bool isPanorama = scene->type == SceneType::Panorama;
     const bool isObject = scene->type == SceneType::Object360;
-    const bool isStl = scene->type == SceneType::Stl;
     const bool isXr = scene->type == SceneType::Xr;
 
     m_panoramaOptions->setVisible(isPanorama);
@@ -1436,21 +1353,12 @@ void MainWindow::refreshSceneControls() {
     }
 
     m_objectOptions->setVisible(isObject);
-    m_stlOptions->setVisible(isStl);
-    m_xrOptions->setVisible(isXr || isObject || isStl);
+    m_xrOptions->setVisible(isXr || isObject);
 
     m_objectStartSector->setMaximum(std::max(0, scene->sectors - 1));
     m_objectStartSector->setValue(scene->startSector);
     m_objectStartRow->setMaximum(std::max(0, scene->rows - 1));
     m_objectStartRow->setValue(scene->startRow);
-
-    m_stlZoom->setValue(scene->zoom);
-    m_stlWireframe->setChecked(scene->wireframe);
-    const QColor stlColor(scene->color);
-    m_stlColorButton->setStyleSheet(
-        QString("QPushButton{background:%1;color:%2;}")
-            .arg(stlColor.name(), stlColor.lightness() > 150 ? "#111111" : "#ffffff")
-    );
 
     m_sceneAutoplay->setChecked(scene->autoplay);
     m_sceneLoop->setChecked(scene->loop);
@@ -1568,16 +1476,6 @@ void MainWindow::loadCurrentSceneIntoViewport() {
         return;
     }
 
-    if (scene->type == SceneType::Stl && !scene->source.isEmpty()) {
-        const QString file = ProjectStorage::resolveAsset(m_projectDir, scene->source);
-        if (!file.isEmpty()) {
-            m_viewport->setStl(file, QColor(scene->color), scene->wireframe, scene->zoom);
-        } else {
-            m_viewport->clearImage();
-        }
-        return;
-    }
-
     // Video preview is handled by the native media layer added next.
     m_viewport->clearImage();
 }
@@ -1627,7 +1525,6 @@ QString MainWindow::uniqueSceneId(const QString& prefix) const {
 QString MainWindow::sceneTypeLabel(SceneType type) const {
     switch (type) {
     case SceneType::Object360: return "Object360";
-    case SceneType::Stl: return "STL 3D";
     case SceneType::Xr: return "XR Media";
     case SceneType::Panorama:
     default: return "Панорама 360°";
@@ -1637,7 +1534,6 @@ QString MainWindow::sceneTypeLabel(SceneType type) const {
 QString MainWindow::categoryForScene(SceneType type) const {
     switch (type) {
     case SceneType::Object360: return "object360";
-    case SceneType::Stl: return "stl";
     case SceneType::Xr: return "xr";
     case SceneType::Panorama:
     default: return "panoramas";

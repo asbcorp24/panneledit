@@ -37,7 +37,6 @@ QString extensionForMime(QString mime) {
     if (mime.contains("wav")) return "wav";
     if (mime.contains("flac")) return "flac";
     if (mime.contains("pdf")) return "pdf";
-    if (mime.contains("stl") || mime.contains("sla")) return "stl";
     return "bin";
 }
 
@@ -302,6 +301,7 @@ bool LegacyProjectImporter::importJson(
         scene.fov = legacy.value("hfov").toDouble(100.0);
 
         const QString sceneType = legacy.value("sceneType").toString("panorama");
+        if (sceneType.compare("stl", Qt::CaseInsensitive) == 0) continue;
         scene.type = Scene::typeFromString(sceneType);
 
         legacyAudioToNative(
@@ -379,31 +379,6 @@ bool LegacyProjectImporter::importJson(
                 }
                 scene.frames.push_back(row);
             }
-        } else if (scene.type == SceneType::Stl) {
-            const auto stl = legacy.value("stl").toObject();
-            scene.source = materializeMaybe(
-                stl.value("data").toString(),
-                targetProjectDirectory,
-                "stl",
-                stl.value("filename").toString(scene.id + ".stl"),
-                error
-            );
-            scene.filename = stl.value("filename").toString(scene.filename);
-            scene.yaw = stl.value("yaw").toDouble();
-            scene.pitch = stl.value("pitch").toDouble(-15.0);
-            scene.zoom = stl.value("zoom").toDouble(1.0);
-            scene.wireframe = stl.value("wireframe").toBool();
-            scene.autoplay = stl.value("autoplay").toBool();
-            scene.color = stl.value("color").toString("#7c8cff");
-            scene.backgroundMode = stl.value("backgroundMode").toString("hitech");
-            scene.backgroundSceneId = stl.value("backgroundSceneId").toString();
-            scene.backgroundImageSource = materializeMaybe(
-                stl.value("backgroundImageData").toString(),
-                targetProjectDirectory,
-                "media",
-                stl.value("backgroundImageName").toString("stl_background.jpg"),
-                error
-            );
         } else if (scene.type == SceneType::Xr) {
             const auto xr = legacy.value("xr").toObject();
             scene.source = materializeMaybe(

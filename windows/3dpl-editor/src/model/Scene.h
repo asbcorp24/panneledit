@@ -10,7 +10,6 @@
 enum class SceneType {
     Panorama,
     Object360,
-    Stl,
     Xr
 };
 
@@ -37,10 +36,6 @@ struct Scene {
     int startSector = 0;
     int startRow = 0;
     QVector<QVector<QString>> frames;
-
-    double zoom = 1.0;
-    bool wireframe = false;
-    QString color = "#7c8cff";
 
     QString backgroundMode = "hitech";
     QString backgroundColor = "#ffffff";

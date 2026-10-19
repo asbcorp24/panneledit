@@ -54,7 +54,6 @@ private:
 
     void addPanorama();
     void addXr();
-    void addStl();
     void addObject360();
     void deleteCurrentScene();
 
@@ -153,11 +152,6 @@ private:
     QGroupBox* m_objectOptions = nullptr;
     QSpinBox* m_objectStartSector = nullptr;
     QSpinBox* m_objectStartRow = nullptr;
-
-    QGroupBox* m_stlOptions = nullptr;
-    QDoubleSpinBox* m_stlZoom = nullptr;
-    QCheckBox* m_stlWireframe = nullptr;
-    QPushButton* m_stlColorButton = nullptr;
 
     QGroupBox* m_xrOptions = nullptr;
     QCheckBox* m_sceneAutoplay = nullptr;

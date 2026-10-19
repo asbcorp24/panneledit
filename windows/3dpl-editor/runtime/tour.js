@@ -410,15 +410,6 @@ async function makeViewer(scene) {
       onFrameChange:renderHotspots
     });
   }
-  if(scene.type==='stl') {
-    return new window.StlXRViewer(viewerHost,{
-      ...common,source:scene.source,yaw:scene.yaw,pitch:scene.pitch,zoom:scene.zoom,
-      wireframe:!!scene.wireframe,autoRotate:!!scene.autoplay,color:scene.color||'#7c8cff',
-      backgroundMode:scene.backgroundMode||'hitech',
-      backgroundImage:scene.backgroundImageSource||'',
-      onChange:renderHotspots
-    });
-  }
   if(scene.type==='panorama' && scene.multires?.basePath) {
     return new window.MultiresPanoramaViewer(viewerHost,{
       ...common,
