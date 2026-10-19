@@ -190,6 +190,25 @@ public final class XrActivity extends NativeActivity {
         }
         return out.toString();
     }
+
+    public synchronized float nativeGetStlZoom() {
+        JSONObject s = currentScene();
+        return s != null ? (float)s.optDouble("zoom", 1.0) : 1f;
+    }
+
+    public synchronized boolean nativeGetStlWireframe() {
+        JSONObject s = currentScene();
+        return s != null && s.optBoolean("wireframe", false);
+    }
+
+    public synchronized int nativeGetStlColorRgb() {
+        JSONObject s = currentScene();
+        String color = s != null ? s.optString("color", "#7c8cff") : "#7c8cff";
+        try {
+            return android.graphics.Color.parseColor(color) & 0x00ffffff;
+        } catch (Exception ignored) {
+            return 0x7c8cff;
+        }
     }
 
 
