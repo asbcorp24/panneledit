@@ -905,7 +905,7 @@ void PanoramaViewport::mouseMoveEvent(QMouseEvent* event) {
         m_pitch = std::clamp(m_pitch + delta.y() * 0.35, -89.0, 89.0);
     } else {
         const double scale = m_fov / std::max(200, width());
-        m_yaw = std::remainder(m_yaw - delta.x() * scale * 1.3, 360.0);
+        m_yaw = std::remainder(m_yaw + delta.x() * scale * 1.3, 360.0);
         m_pitch = std::clamp(m_pitch + delta.y() * scale * 1.3, -89.0, 89.0);
     }
 

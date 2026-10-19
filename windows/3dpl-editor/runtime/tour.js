@@ -436,6 +436,7 @@ async function makeViewer(scene) {
     kind:scene.type==='xr'?(scene.kind||'auto'):'image',
     projection:scene.type==='xr'?(scene.projection||'360'):'360',
     yaw:scene.yaw,pitch:scene.pitch,fov:scene.fov,
+    yawDirection:'right-positive',
     autoplay:!!scene.autoplay,loop:!!scene.loop,muted:false,volume:scene.volume??80,
     onChange:renderHotspots
   });
