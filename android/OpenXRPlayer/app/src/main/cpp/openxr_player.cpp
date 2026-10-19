@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "stl_mesh.h"
 #include "video_player.h"
 #include <GLES2/gl2ext.h>
 
@@ -521,14 +520,10 @@ struct Renderer {
     GLuint program = 0;
     GLuint videoProgram = 0;
     GLuint reticleProgram = 0;
-    GLuint stlProgram = 0;
     GLuint vao = 0;
     GLuint quadVao = 0;
     GLuint quadVbo = 0;
     GLuint quadIbo = 0;
-    GLuint stlVao = 0;
-    GLuint stlVbo = 0;
-    GLsizei stlVertexCount = 0;
 
     struct TileMesh {
         GLuint texture=0;
@@ -557,9 +552,6 @@ struct Renderer {
     float sceneYaw = 0.0f;
     float scenePitch = 0.0f;
     float objectAspect = 1.5f;
-    float stlZoom = 1.0f;
-    bool stlWireframe = false;
-    float stlColor[3]{0.49f,0.55f,1.0f};
 
     bool init() {
         static const char* vs = R"(
@@ -640,36 +632,10 @@ struct Renderer {
             }
         )";
 
-        static const char* stlVs = R"(
-            #version 300 es
-            layout(location=0) in vec3 aPos;
-            layout(location=1) in vec3 aNormal;
-            uniform mat4 uMvp;
-            uniform mat4 uModel;
-            out vec3 vNormal;
-            void main() {
-                vNormal = mat3(uModel) * aNormal;
-                gl_Position = uMvp * vec4(aPos,1.0);
-            }
-        )";
-        static const char* stlFs = R"(
-            #version 300 es
-            precision mediump float;
-            in vec3 vNormal;
-            uniform vec3 uColor;
-            out vec4 fragColor;
-            void main() {
-                vec3 n = normalize(vNormal);
-                float light = 0.28 + 0.72 * max(dot(n,normalize(vec3(0.35,0.7,0.6))),0.0);
-                fragColor = vec4(uColor * light,1.0);
-            }
-        )";
-
         program = linkProgram(vs, fs);
         videoProgram = linkProgram(vs, videoFs);
         reticleProgram = linkProgram(retVs, retFs);
-        stlProgram = linkProgram(stlVs, stlFs);
-        if (!program || !videoProgram || !reticleProgram || !stlProgram) return false;
+        if (!program || !videoProgram || !reticleProgram) return false;
 
         uMvp = glGetUniformLocation(program, "uMvp");
         uUvScale = glGetUniformLocation(program, "uUvScale");
@@ -770,31 +736,6 @@ struct Renderer {
     }
 
     void setMode(const std::string& value) { mode=value; }
-
-    bool setStlMesh(const std::vector<StlVertex>& vertices,float zoom,bool wireframe,int rgb) {
-        if (stlVbo) glDeleteBuffers(1,&stlVbo);
-        if (stlVao) glDeleteVertexArrays(1,&stlVao);
-        stlVao=stlVbo=0;
-        stlVertexCount=0;
-        if(vertices.empty()) return false;
-        glGenVertexArrays(1,&stlVao);
-        glBindVertexArray(stlVao);
-        glGenBuffers(1,&stlVbo);
-        glBindBuffer(GL_ARRAY_BUFFER,stlVbo);
-        glBufferData(GL_ARRAY_BUFFER,vertices.size()*sizeof(StlVertex),vertices.data(),GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(StlVertex),nullptr);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(StlVertex),reinterpret_cast<void*>(3*sizeof(float)));
-        glBindVertexArray(0);
-        stlVertexCount=static_cast<GLsizei>(vertices.size());
-        stlZoom=std::clamp(zoom,0.35f,5.0f);
-        stlWireframe=wireframe;
-        stlColor[0]=((rgb>>16)&255)/255.0f;
-        stlColor[1]=((rgb>>8)&255)/255.0f;
-        stlColor[2]=(rgb&255)/255.0f;
-        return true;
-    }
 
     void setObjectAspect(float aspect) {
         objectAspect=std::clamp(aspect,0.4f,3.0f);
@@ -952,24 +893,6 @@ struct Renderer {
 
         if (mode == "multires" && !multiresBase.empty()) {
             renderMultires(projectionM,viewM);
-        } else if (mode == "stl" && stlVao && stlVertexCount > 0) {
-            Mat4 model = multiply(
-                translation(0.0f,-0.1f,-2.5f),
-                multiply(
-                    rotationY(sceneYaw * kDeg),
-                    multiply(rotationX(scenePitch * kDeg),scaleMatrix(stlZoom,stlZoom,stlZoom))
-                )
-            );
-            Mat4 mvp = multiply(projectionM,multiply(viewM,model));
-            glEnable(GL_DEPTH_TEST);
-            glUseProgram(stlProgram);
-            glUniformMatrix4fv(glGetUniformLocation(stlProgram,"uMvp"),1,GL_FALSE,mvp.m);
-            glUniformMatrix4fv(glGetUniformLocation(stlProgram,"uModel"),1,GL_FALSE,model.m);
-            glUniform3fv(glGetUniformLocation(stlProgram,"uColor"),1,stlColor);
-            glBindVertexArray(stlVao);
-            glDrawArrays(stlWireframe ? GL_LINES : GL_TRIANGLES,0,stlVertexCount);
-            glBindVertexArray(0);
-            glDisable(GL_DEPTH_TEST);
         } else if (texture || videoTexture) {
             Mat4 model = identity();
             GLuint drawVao = vao;
@@ -1043,8 +966,6 @@ struct Renderer {
     void destroy() {
         clearMultires();
         if (texture) glDeleteTextures(1, &texture);
-        if (stlVbo) glDeleteBuffers(1,&stlVbo);
-        if (stlVao) glDeleteVertexArrays(1,&stlVao);
         if (quadIbo) glDeleteBuffers(1,&quadIbo);
         if (quadVbo) glDeleteBuffers(1,&quadVbo);
         if (quadVao) glDeleteVertexArrays(1,&quadVao);
@@ -1055,11 +976,9 @@ struct Renderer {
         if (program) glDeleteProgram(program);
         if (videoProgram) glDeleteProgram(videoProgram);
         if (reticleProgram) glDeleteProgram(reticleProgram);
-        if (stlProgram) glDeleteProgram(stlProgram);
-        texture = fbo = ibo = vbo = vao = program = videoProgram = reticleProgram = stlProgram = 0;
+        texture = fbo = ibo = vbo = vao = program = videoProgram = reticleProgram = 0;
         videoTexture=0;
-        quadVao=quadVbo=quadIbo=stlVao=stlVbo=0;
-        stlVertexCount=0;
+        quadVao=quadVbo=quadIbo=0;
     }
 };
 
@@ -1723,15 +1642,6 @@ private:
             }
             return;
         }
-
-        if(sceneType_=="stl"){
-            std::vector<StlVertex> vertices;
-            if(!loadStlMesh(sceneSource_,vertices)){
-                renderer_.setMode("stl");
-                renderer_.setSceneTexture(0,"360",0,0);
-                jni_.toast("STL: не удалось прочитать модель");
-                return;
-            }
             normalizeStlMesh(vertices);
             renderer_.setMode("stl");
             renderer_.setSceneTexture(0,"360",sceneYaw_,scenePitch_);
@@ -1849,34 +1759,10 @@ private:
                         if (distance > 12.0f) continue;
                     }
                 }
-            } else if (sceneType_ == "stl" && h.anchorMode == "stl-3d" &&
-                       std::isfinite(h.px) && std::isfinite(h.py) && std::isfinite(h.pz)) {
-                // Model points created by the editor are already in model-local coordinates.
-                Mat4 model = multiply(
-                    translation(0.0f,-0.1f,-2.5f),
-                    multiply(
-                        rotationY(sceneYaw_ * kDeg),
-                        multiply(rotationX(scenePitch_ * kDeg),
-                                 scaleMatrix(std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f),
-                                             std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f),
-                                             std::clamp(jni_.callFloat("nativeGetStlZoom"),0.35f,5.0f)))
-                    )
-                );
-                const float wx = model.m[0]*h.px + model.m[4]*h.py + model.m[8]*h.pz + model.m[12];
-                const float wy = model.m[1]*h.px + model.m[5]*h.py + model.m[9]*h.pz + model.m[13];
-                const float wz = model.m[2]*h.px + model.m[6]*h.py + model.m[10]*h.pz + model.m[14];
-                float dx = wx-ox, dy = wy-oy, dz = wz-oz;
-                const float len = std::sqrt(dx*dx+dy*dy+dz*dz);
-                if (len > 1e-4f) {
-                    dx/=len; dy/=len; dz/=len;
-                    const float dot = std::clamp(dx*forward[0]+dy*forward[1]+dz*forward[2],-1.0f,1.0f);
-                    distance = std::acos(dot)/kDeg;
-                    if (distance > 8.0f) continue;
-                }
             } else {
-                const float targetYaw = (h.anchorMode=="stl-screen" || h.anchorMode=="xr-screen")
+                const float targetYaw = (h.anchorMode=="xr-screen")
                     ? h.anchorYaw : h.yaw;
-                const float targetPitch = (h.anchorMode=="stl-screen" || h.anchorMode=="xr-screen")
+                const float targetPitch = (h.anchorMode=="xr-screen")
                     ? h.anchorPitch : h.pitch;
                 const float dy = wrapAngle(targetYaw - logicalYaw);
                 const float dp = targetPitch - logicalPitch;
