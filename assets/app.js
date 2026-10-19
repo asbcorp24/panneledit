@@ -4159,7 +4159,7 @@
       scene.id,
       {
         title: scene.title,
-        sceneType: ['object360', 'xr'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
+        sceneType: ['object360', 'stl', 'xr'].includes(scene.sceneType) ? scene.sceneType : 'panorama',
         textObjects: Array.isArray(scene.textObjects) ? scene.textObjects.map(normalizeTextObject) : [],
         mediaObjects: mediaConfig[scene.id] || [],
         screenHotspots: (scene.hotspots || []).filter((hotspot) => hotspot.visible !== false),
@@ -5874,8 +5874,8 @@
 
   function exportedServiceWorker(config) {
     const assets = new Set([
-      './','index.html','assets/tour.css','assets/tour.js',
-      'assets/xr-spatial-overlay.js','assets/object360-xr-viewer.js','assets/xr-media-viewer.js',
+      './','index.html','assets/tour.css','assets/tour.js','assets/stl-viewer.js',
+      'assets/xr-spatial-overlay.js','assets/object360-xr-viewer.js','assets/stl-xr-viewer.js','assets/xr-media-viewer.js',
       'assets/multires-panorama-viewer.js','assets/three.module.min.js','assets/three.core.min.js',
       'manifest.webmanifest','icons/app-icon.svg'
     ]);
@@ -6323,10 +6323,14 @@
       root.file('index.html', exportedViewerHtml());
       root.file('assets/tour.css', exportedViewerCss(customIconFiles));
       root.file('assets/tour.js', exportedViewerJs(config));
+      const stlParserAsset = await fetchRequiredAsset('assets/stl-viewer.js');
+      root.file('assets/stl-viewer.js', await stlParserAsset.text());
       const spatialOverlayAsset = await fetchRequiredAsset('assets/xr-spatial-overlay.js');
       root.file('assets/xr-spatial-overlay.js', await spatialOverlayAsset.text());
       const objectXrViewerAsset = await fetchRequiredAsset('assets/object360-xr-viewer.js');
       root.file('assets/object360-xr-viewer.js', await objectXrViewerAsset.text());
+      const stlXrViewerAsset = await fetchRequiredAsset('assets/stl-xr-viewer.js');
+      root.file('assets/stl-xr-viewer.js', await stlXrViewerAsset.text());
       const xrViewerAsset = await fetchRequiredAsset('assets/xr-media-viewer.js');
       root.file('assets/xr-media-viewer.js', await xrViewerAsset.text());
       const multiresViewerAsset = await fetchRequiredAsset('assets/multires-panorama-viewer.js');
@@ -8049,7 +8053,10 @@
         if (/\.zip$/i.test(file.name || '')) {
           await createObject360SceneFromZip(file, file.name.replace(/\.object360\.zip$|\.zip$/i, ''));
           showToast('Объект 360° добавлен');
-        } else if (/\.stl$/i.test(file.name || '')) { showToast('STL больше не поддерживается'); } else if (file.type.startsWith('video/')) {
+        } else if (/\.stl$/i.test(file.name || '')) {
+          await createStlSceneFromFile(file, file.name.replace(/\.stl$/i, ''));
+          showToast('STL-модель добавлена');
+        } else if (file.type.startsWith('video/')) {
           await createXrSceneFromFile(file, file.name.replace(/\.[^.]+$/, ''), '360');
           showToast('XR-видео добавлено');
         } else {
