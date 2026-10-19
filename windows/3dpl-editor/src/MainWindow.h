@@ -79,6 +79,16 @@ private:
     void scheduleAutosave();
     void addHotspot(double yaw, double pitch);
     void addObjectHotspot(double xPercent, double yPercent, int sector, int row);
+    void moveHotspot(
+        const QString& hotspotId,
+        double yaw,
+        double pitch,
+        double xPercent,
+        double yPercent,
+        int sector,
+        int row,
+        bool objectMode
+    );
     void deleteSelectedHotspot();
     void editSelectedHotspot();
     void chooseProjectMusic();

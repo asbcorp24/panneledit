@@ -276,6 +276,12 @@ void MainWindow::buildUi() {
         m_hotspotTable->selectRow(index);
         m_hotspotTable->scrollToItem(m_hotspotTable->item(index, 0));
     });
+    connect(
+        m_viewport,
+        &PanoramaViewport::hotspotMoveFinished,
+        this,
+        &MainWindow::moveHotspot
+    );
     connect(m_viewport, &PanoramaViewport::imageLoadFailed, this, [this](const QString& message) {
         statusBar()->showMessage(message, 4000);
     });
@@ -1468,6 +1474,15 @@ void MainWindow::refreshHotspots() {
     m_hotspotTable->setRowCount(0);
     if (!scene) return;
 
+    if (m_viewport) {
+        m_viewport->setSceneOverlays(
+            scene->textObjects,
+            scene->mediaObjects,
+            scene->hotspots,
+            m_projectDir
+        );
+    }
+
     for (const auto& hotspot : scene->hotspots) {
         const int row = m_hotspotTable->rowCount();
         m_hotspotTable->insertRow(row);
@@ -1707,6 +1722,75 @@ void MainWindow::addObjectHotspot(
                 for (int i = 0; i < s->hotspots.size(); ++i) {
                     if (s->hotspots[i].id == hotspot.id) {
                         s->hotspots.removeAt(i);
+                        break;
+                    }
+                }
+            }
+            markDirty();
+            refreshHotspots();
+        }
+    ));
+}
+
+void MainWindow::moveHotspot(
+    const QString& hotspotId,
+    double yaw,
+    double pitch,
+    double xPercent,
+    double yPercent,
+    int sector,
+    int row,
+    bool objectMode
+) {
+    Scene* scene = currentScene();
+    if (!scene || hotspotId.isEmpty()) return;
+
+    int index = -1;
+    for (int i = 0; i < scene->hotspots.size(); ++i) {
+        if (scene->hotspots.at(i).id == hotspotId) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return;
+
+    const Hotspot before = scene->hotspots.at(index);
+    Hotspot after = before;
+
+    if (objectMode) {
+        after.anchorMode = "object360";
+        after.anchorX = std::clamp(xPercent, 0.0, 100.0);
+        after.anchorY = std::clamp(yPercent, 0.0, 100.0);
+        after.anchorSector = sector;
+        after.anchorRow = row;
+    } else {
+        after.anchorMode.clear();
+        after.yaw = yaw;
+        after.pitch = pitch;
+        after.anchorYaw = yaw;
+        after.anchorPitch = pitch;
+    }
+
+    const QString sceneId = scene->id;
+    m_undoStack.push(new LambdaCommand(
+        "Переместить hotspot",
+        [this, sceneId, hotspotId, after] {
+            if (auto* s = m_project.findScene(sceneId)) {
+                for (auto& h : s->hotspots) {
+                    if (h.id == hotspotId) {
+                        h = after;
+                        break;
+                    }
+                }
+            }
+            markDirty();
+            refreshHotspots();
+        },
+        [this, sceneId, hotspotId, before] {
+            if (auto* s = m_project.findScene(sceneId)) {
+                for (auto& h : s->hotspots) {
+                    if (h.id == hotspotId) {
+                        h = before;
                         break;
                     }
                 }

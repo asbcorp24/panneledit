@@ -861,7 +861,9 @@ void PanoramaViewport::mousePressEvent(QMouseEvent* event) {
             }
 
             if (QLineF(point, event->position()).length() <= 18.0) {
+                m_dragHotspotIndex = i;
                 emit hotspotSelected(i);
+                setCursor(Qt::SizeAllCursor);
                 event->accept();
                 return;
             }
@@ -874,6 +876,32 @@ void PanoramaViewport::mousePressEvent(QMouseEvent* event) {
 }
 
 void PanoramaViewport::mouseMoveEvent(QMouseEvent* event) {
+    if (m_dragHotspotIndex >= 0 && m_dragHotspotIndex < m_hotspots.size()) {
+        Hotspot& hotspot = m_hotspots[m_dragHotspotIndex];
+
+        if (m_mode == Mode::Object360 || hotspot.anchorMode == "object360") {
+            const QRectF rect = objectImageRect();
+            if (!rect.isEmpty()) {
+                hotspot.anchorMode = "object360";
+                hotspot.anchorX = std::clamp((event->position().x() - rect.left()) / rect.width() * 100.0, 0.0, 100.0);
+                hotspot.anchorY = std::clamp((event->position().y() - rect.top()) / rect.height() * 100.0, 0.0, 100.0);
+                hotspot.anchorSector = m_objectSector;
+                hotspot.anchorRow = m_objectRow;
+                update();
+            }
+        } else if (m_mode == Mode::Panorama) {
+            const auto [yaw, pitch] = rayToYawPitch(screenRay(event->position()));
+            hotspot.yaw = yaw;
+            hotspot.pitch = pitch;
+            hotspot.anchorYaw = yaw;
+            hotspot.anchorPitch = pitch;
+            update();
+        }
+
+        event->accept();
+        return;
+    }
+
     if (!m_dragging) return;
 
     const QPoint current = event->position().toPoint();
@@ -915,6 +943,20 @@ void PanoramaViewport::mouseMoveEvent(QMouseEvent* event) {
 
 void PanoramaViewport::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
+        if (m_dragHotspotIndex >= 0 && m_dragHotspotIndex < m_hotspots.size()) {
+            const Hotspot hotspot = m_hotspots.at(m_dragHotspotIndex);
+            emit hotspotMoveFinished(
+                hotspot.id,
+                hotspot.anchorMode == "object360" ? hotspot.yaw : hotspot.anchorYaw,
+                hotspot.anchorMode == "object360" ? hotspot.pitch : hotspot.anchorPitch,
+                hotspot.anchorX,
+                hotspot.anchorY,
+                hotspot.anchorSector,
+                hotspot.anchorRow,
+                hotspot.anchorMode == "object360"
+            );
+            m_dragHotspotIndex = -1;
+        }
         m_dragging = false;
         unsetCursor();
     }

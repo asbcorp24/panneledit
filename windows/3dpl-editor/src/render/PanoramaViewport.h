@@ -79,6 +79,16 @@ signals:
     void imageLoadFailed(const QString& message);
     void stlLoadFailed(const QString& message);
     void hotspotSelected(int index);
+    void hotspotMoveFinished(
+        const QString& hotspotId,
+        double yaw,
+        double pitch,
+        double xPercent,
+        double yPercent,
+        int sector,
+        int row,
+        bool objectMode
+    );
 
 protected:
     void initializeGL() override;
@@ -171,5 +181,6 @@ private:
     QHash<QString, QImage> m_overlayImages;
 
     bool m_dragging = false;
+    int m_dragHotspotIndex = -1;
     QPoint m_lastMouse;
 };
