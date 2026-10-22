@@ -358,7 +358,7 @@ object GlobalPanoramaStitcher {
         val luminance = images.map { image ->
             val gray = Mat()
             Imgproc.cvtColor(image, gray, Imgproc.COLOR_BGR2GRAY)
-            val value = Core.mean(gray).val[0]
+            val value = Core.mean(gray).`val`[0]
             gray.release()
             value
         }
