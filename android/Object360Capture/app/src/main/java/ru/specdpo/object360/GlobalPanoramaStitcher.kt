@@ -26,11 +26,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 object GlobalPanoramaStitcher {
-    private const val ANALYSIS_MAX = 1500
-    private const val RENDER_MAX = 2600
-    private const val MIN_MATCHES = 18
+    private const val ANALYSIS_MAX = 2000
+    private const val RENDER_MAX = 3600
+    private const val MIN_MATCHES = 22
     private const val MIN_INLIERS = 12
-    private const val MIN_INLIER_RATIO = 0.28
+    private const val MIN_INLIER_RATIO = 0.32
     private const val MAX_W = 14000
     private const val MAX_H = 9000
 
@@ -78,7 +78,7 @@ object GlobalPanoramaStitcher {
                 throw IllegalStateException("Некорректный размер холста")
             }
 
-            onProgress("OpenCV: глобальная склейка")
+            onProgress("OpenCV: компенсация экспозиции и глобальная склейка")
             var result = featherBlend(render, transformsR, bounds)
 
             onProgress("OpenCV: обрезка")
@@ -131,7 +131,7 @@ object GlobalPanoramaStitcher {
         g0.release()
         g1.release()
 
-        val orb = ORB.create(5500)
+        val orb = ORB.create(8000)
         val kp0 = MatOfKeyPoint()
         val kp1 = MatOfKeyPoint()
         val d0 = Mat()
@@ -161,7 +161,7 @@ object GlobalPanoramaStitcher {
 
         for (pair in rev) {
             val m = pair.toArray()
-            if (m.size >= 2 && m[0].distance < m[1].distance * 0.74f) {
+            if (m.size >= 2 && m[0].distance < m[1].distance * 0.78f) {
                 reverseBest[m[0].queryIdx] = m[0].trainIdx
             }
             pair.release()
@@ -172,7 +172,7 @@ object GlobalPanoramaStitcher {
 
         for (pair in fwd) {
             val m = pair.toArray()
-            if (m.size >= 2 && m[0].distance < m[1].distance * 0.74f) {
+            if (m.size >= 2 && m[0].distance < m[1].distance * 0.78f) {
                 val best = m[0]
                 if (
                     reverseBest[best.trainIdx] == best.queryIdx &&
@@ -200,7 +200,7 @@ object GlobalPanoramaStitcher {
             src,
             dst,
             Calib3d.RANSAC,
-            3.5,
+            3.0,
             mask,
             3000,
             0.995
