@@ -418,7 +418,18 @@ object GlobalPanoramaStitcher {
             Imgproc.distanceTransform(mask, dist, Imgproc.DIST_L2, 3)
             val maxVal = Core.minMaxLoc(dist).maxVal
             if (maxVal > 0.0) Core.divide(dist, Scalar(maxVal), dist)
-            Core.max(dist, Scalar(0.08), dist)
+            Core.max(dist, Scalar(0.03), dist)
+
+            // Широкая многомасштабная маска заметно уменьшает видимые стыки:
+            // мелкий уровень сохраняет детали, крупный сглаживает переход экспозиции.
+            val fine = Mat()
+            val coarse = Mat()
+            Imgproc.GaussianBlur(dist, fine, Size(0.0, 0.0), 3.0)
+            Imgproc.GaussianBlur(dist, coarse, Size(0.0, 0.0), 11.0)
+            Core.addWeighted(dist, 0.55, fine, 0.30, 0.0, dist)
+            Core.addWeighted(dist, 1.0, coarse, 0.15, 0.0, dist)
+            fine.release()
+            coarse.release()
 
             val warpedF = Mat()
             warped.convertTo(warpedF, CvType.CV_32FC3)
