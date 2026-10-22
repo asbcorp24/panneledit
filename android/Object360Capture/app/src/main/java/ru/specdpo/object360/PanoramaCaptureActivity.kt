@@ -420,7 +420,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 Toast.makeText(this, "Сначала нажмите СТАРТ / 0°", Toast.LENGTH_SHORT).show()
                 return
             }
-            currentSector()
+            val rel = normalize(yaw - baseYaw)
+            val guided = next360Target(rel)
+            if (guided != null) {
+                row = guided.first
+                guided.second
+            } else {
+                currentSector()
+            }
         } else rectangularIndex
 
         frames.firstOrNull { it.row == row && it.index == index }?.file?.delete()
