@@ -51,6 +51,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var ghost: ImageView
     private lateinit var btnOrientation: Button
     private lateinit var cameraGuideOverlay: PanoramaGuideOverlay
+    private lateinit var liveMatchOverlay: LiveMatchOverlay
     private var rectangularDirection = 1
     private var rectangularStartYaw = Float.NaN
     private var rectangularLastShotYaw = Float.NaN
@@ -163,6 +164,9 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
         cameraGuideOverlay = PanoramaGuideOverlay(this)
         root.addView(cameraGuideOverlay, FrameLayout.LayoutParams(-1, -1))
+
+        liveMatchOverlay = LiveMatchOverlay(this)
+        root.addView(liveMatchOverlay, FrameLayout.LayoutParams(-1, -1))
 
         guide = TextView(this).apply {
             gravity = Gravity.CENTER
@@ -384,7 +388,15 @@ class PanoramaCaptureActivity : AppCompatActivity() {
             }
             val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
             val previous = frames.lastOrNull()?.file
-            if (previous != null) liveOverlap = LiveOverlapMatcher.compare(previous, bitmap)
+            if (previous != null) {
+                liveOverlap = LiveOverlapMatcher.compare(previous, bitmap)
+                val snapshot = liveOverlap
+                runOnUiThread {
+                    if (::liveMatchOverlay.isInitialized) {
+                        liveMatchOverlay.update(snapshot, snapshot.frameWidth, snapshot.frameHeight)
+                    }
+                }
+            }
             bitmap.recycle()
         } catch (_: Throwable) {
             liveOverlap = LiveOverlapResult(0, 0, 0f, false)
@@ -436,7 +448,10 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                         rectangularTargetYaw = normalizeSigned(
                             frameYaw + rectangularDirection * rectangularTargetStepDeg
                         )
-                        liveOverlap = LiveOverlapResult(0, 0, 0f, false)
+                        liveOverlap = LiveOverlapResult()
+                        runOnUiThread {
+                            if (::liveMatchOverlay.isInitialized) liveMatchOverlay.clear()
+                        }
                         rectangularIndex++
                     }
                     runOnUiThread {
