@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.Gravity
 import android.view.Surface
@@ -19,6 +20,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -33,6 +36,9 @@ import kotlin.math.floor
 class PanoramaCaptureActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var imageCapture: ImageCapture? = null
+    @Volatile private var liveOverlap = LiveOverlapResult(0, 0, 0f, false)
+    @Volatile private var overlapBusy = false
+    private var lastOverlapAt = 0L
     private lateinit var preview: PreviewView
     private lateinit var status: TextView
     private lateinit var hint: TextView
@@ -45,7 +51,13 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var ghost: ImageView
     private lateinit var btnOrientation: Button
     private lateinit var cameraGuideOverlay: PanoramaGuideOverlay
+    private lateinit var liveMatchOverlay: LiveMatchOverlay
+    private lateinit var targetOverlay: PanoramaTargetOverlay
     private var rectangularDirection = 1
+    private var rectangularStartYaw = Float.NaN
+    private var rectangularLastShotYaw = Float.NaN
+    private var rectangularTargetStepDeg = 0f
+    private var rectangularTargetYaw = Float.NaN
 
     private var kind = PanoramaKind.FULL_360
     private val sectors = 12
@@ -126,8 +138,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 row = if (kind == PanoramaKind.FULL_360) 1 else 0
                 calibrated = false
                 frames.clear()
+                if (::targetOverlay.isInitialized) targetOverlay.clear()
+                if (::liveMatchOverlay.isInitialized) liveMatchOverlay.clear()
                 rectangularIndex = 0
                 rectangularDirection = 1
+                rectangularStartYaw = Float.NaN
+                rectangularLastShotYaw = Float.NaN
+                rectangularTargetYaw = Float.NaN
+                rectangularTargetStepDeg = 0f
                 updateModeUi()
             }
             .setCancelable(false)
@@ -149,6 +167,12 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
         cameraGuideOverlay = PanoramaGuideOverlay(this)
         root.addView(cameraGuideOverlay, FrameLayout.LayoutParams(-1, -1))
+
+        liveMatchOverlay = LiveMatchOverlay(this)
+        root.addView(liveMatchOverlay, FrameLayout.LayoutParams(-1, -1))
+
+        targetOverlay = PanoramaTargetOverlay(this)
+        root.addView(targetOverlay, FrameLayout.LayoutParams(-1, -1))
 
         guide = TextView(this).apply {
             gravity = Gravity.CENTER
@@ -327,14 +351,65 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .setTargetRotation(rotation)
                 .build()
+            val analysis = ImageAnalysis.Builder()
+                .setTargetRotation(rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            analysis.setAnalyzer(executor) { image -> analyzeOverlap(image) }
             try {
                 provider.unbindAll()
-                val camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture)
+                val camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture, analysis)
                 cameraCalibration = CameraCalibrationReader.read(this, camera.cameraInfo)
             } catch (e: Exception) {
                 Toast.makeText(this, "Ошибка камеры: " + e.message, Toast.LENGTH_LONG).show()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun analyzeOverlap(image: ImageProxy) {
+        try {
+            if (kind != PanoramaKind.RECTANGULAR || frames.isEmpty() || overlapBusy) return
+            val now = System.currentTimeMillis()
+            if (now - lastOverlapAt < 350L) return
+            lastOverlapAt = now
+            overlapBusy = true
+
+            val plane = image.planes.firstOrNull() ?: return
+            val width = image.width
+            val height = image.height
+            val rowStride = plane.rowStride
+            val pixelStride = plane.pixelStride
+            val buffer = plane.buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+
+            val pixels = IntArray(width * height)
+            var out = 0
+            for (y in 0 until height) {
+                val row = y * rowStride
+                for (x in 0 until width) {
+                    val v = bytes[row + x * pixelStride].toInt() and 0xff
+                    pixels[out++] = 0xff000000.toInt() or (v shl 16) or (v shl 8) or v
+                }
+            }
+            val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+            val previous = frames.lastOrNull()?.file
+            if (previous != null) {
+                liveOverlap = LiveOverlapMatcher.compare(previous, bitmap)
+                val snapshot = liveOverlap
+                runOnUiThread {
+                    if (::liveMatchOverlay.isInitialized) {
+                        liveMatchOverlay.update(snapshot, snapshot.frameWidth, snapshot.frameHeight)
+                    }
+                }
+            }
+            bitmap.recycle()
+        } catch (_: Throwable) {
+            liveOverlap = LiveOverlapResult(0, 0, 0f, false)
+        } finally {
+            overlapBusy = false
+            image.close()
+        }
     }
 
     private fun takeShot() {
@@ -345,7 +420,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 Toast.makeText(this, "Сначала нажмите СТАРТ / 0°", Toast.LENGTH_SHORT).show()
                 return
             }
-            currentSector()
+            val rel = normalize(yaw - baseYaw)
+            val guided = next360Target(rel)
+            if (guided != null) {
+                row = guided.first
+                guided.second
+            } else {
+                currentSector()
+            }
         } else rectangularIndex
 
         frames.firstOrNull { it.row == row && it.index == index }?.file?.delete()
@@ -372,7 +454,19 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                             calibration = cameraCalibration
                         )
                     )
-                    if (kind == PanoramaKind.RECTANGULAR) rectangularIndex++
+                    if (kind == PanoramaKind.RECTANGULAR) {
+                        if (!rectangularStartYaw.isFinite()) rectangularStartYaw = frameYaw
+                        rectangularLastShotYaw = frameYaw
+                        rectangularTargetStepDeg = rectangularStepDeg()
+                        rectangularTargetYaw = normalizeSigned(
+                            frameYaw + rectangularDirection * rectangularTargetStepDeg
+                        )
+                        liveOverlap = LiveOverlapResult()
+                        runOnUiThread {
+                            if (::liveMatchOverlay.isInitialized) liveMatchOverlay.clear()
+                        }
+                        rectangularIndex++
+                    }
                     runOnUiThread {
                         busy = false
                         lastAutoRow = row
@@ -401,14 +495,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
     private fun updateGuide(pitch: Float, stable: Boolean) {
         if (kind == PanoramaKind.RECTANGULAR) {
-            guide.setTextColor(if (stable) 0xFF7CFF9B.toInt() else Color.WHITE)
-            guide.text = if (frames.isEmpty()) {
-                "СНИМИТЕ ПЕРВЫЙ КАДР"
-            } else if (stable) {
-                "✓ ДЕРЖИТЕ ПЕРЕКРЫТИЕ 30–50%"
-            } else {
-                "→ СМЕЩАЙТЕ КАМЕРУ\nСОВМЕСТИТЕ С GHOST"
-            }
+            updateRectangularGuide(stable)
             return
         }
 
@@ -420,46 +507,64 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         }
 
         val rel = normalize(yaw - baseYaw)
+        val target = next360Target(rel)
+        if (target == null) {
+            if (::targetOverlay.isInitialized) targetOverlay.clear()
+            guide.setTextColor(0xFF7CFF9B.toInt())
+            guide.text = "✓ СФЕРА СНЯТА • 36/36"
+            stableSince = 0L
+            return
+        }
+
+        val targetRow = target.first
+        val targetSector = target.second
         val step = 360f / sectors
-        val sector = currentSector()
-        val target = sector * step
-        val signedError = signedAngularError(rel, target)
+        val targetYaw = targetSector * step
+        val signedError = signedAngularError(targetYaw, rel)
         val error = kotlin.math.abs(signedError)
-        val targetPitch = when (row) {
-            0 -> 28f
-            1 -> 0f
-            else -> -28f
-        }
+        val targetPitch = pitchForRow(targetRow)
         val pitchError = targetPitch - pitch
-        val pitchGood = kotlin.math.abs(pitchError) < 8f
-        val captured = frames.any { it.row == row && it.index == sector }
-        val good = stable && error < 5f && pitchGood
+        val pitchGood = kotlin.math.abs(pitchError) < 7f
+        val good = stable && error < 4.5f && pitchGood && kotlin.math.abs(rollNow) < 6f
+        val capturedCount = frames.map { it.row to it.index }.distinct().size.coerceAtMost(sectors * 3)
 
-        guide.setTextColor(
-            when {
-                captured -> 0xFF9AA7B8.toInt()
-                good -> 0xFF7CFF9B.toInt()
-                else -> Color.WHITE
-            }
-        )
-
-        guide.text = when {
-            captured -> "✓ СЕКТОР СНЯТ\nПОВЕРНИТЕСЬ ДАЛЬШЕ →"
-            kotlin.math.abs(pitchError) >= 8f ->
-                if (pitchError > 0f)
-                    "↑ ПОДНИМИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
-                else
-                    "↓ ОПУСТИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
-            good -> "● ГОТОВО\nДЕРЖИТЕ НЕПОДВИЖНО"
-            signedError > 0f -> "← ПОВЕРНИТЕ " + error.toInt() + "°"
-            else -> "ПОВЕРНИТЕ " + error.toInt() + "° →"
+        if (::targetOverlay.isInitialized) {
+            targetOverlay.update(
+                errorDeg = signedError,
+                maxErrorDeg = step,
+                pitchErrorDeg = pitchError,
+                ready = good
+            )
         }
 
-        if (autoCapture && good && !captured && !busy) {
+        guide.setTextColor(if (good) 0xFF7CFF9B.toInt() else Color.WHITE)
+        val rowName = when (targetRow) {
+            0 -> "ВЕРХНИЙ"
+            1 -> "СРЕДНИЙ"
+            else -> "НИЖНИЙ"
+        }
+        guide.text = when {
+            kotlin.math.abs(pitchError) >= 7f ->
+                (if (pitchError > 0f) "↑ ПОДНИМИТЕ " else "↓ ОПУСТИТЕ ") +
+                    kotlin.math.abs(pitchError).toInt() + "° • " + rowName +
+                    "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            kotlin.math.abs(rollNow) >= 6f ->
+                "ВЫРОВНЯЙТЕ ГОРИЗОНТ • " + kotlin.math.abs(rollNow).toInt() + "°" +
+                    "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            good -> "● ГОТОВО • " + rowName + " " + (targetSector + 1) + "/" + sectors +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            signedError > 0f -> "ПОВЕРНИТЕ " + error.toInt() + "° → • " + rowName +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            else -> "← ПОВЕРНИТЕ " + error.toInt() + "° • " + rowName +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+        }
+
+        if (autoCapture && good && !busy) {
+            row = targetRow
             if (stableSince == 0L) stableSince = System.currentTimeMillis()
             if (
-                System.currentTimeMillis() - stableSince > 650L &&
-                !(lastAutoRow == row && lastAutoSector == sector)
+                System.currentTimeMillis() - stableSince > 550L &&
+                !(lastAutoRow == targetRow && lastAutoSector == targetSector)
             ) {
                 takeShot()
                 stableSince = 0L
@@ -467,6 +572,116 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         } else {
             stableSince = 0L
         }
+    }
+
+    private fun pitchForRow(targetRow: Int): Float = when (targetRow) {
+        0 -> 28f
+        1 -> 0f
+        else -> -28f
+    }
+
+    private fun next360Target(relYaw: Float): Pair<Int, Int>? {
+        val preferredRows = intArrayOf(1, 0, 2)
+        for (targetRow in preferredRows) {
+            val missing = (0 until sectors).filter { sector ->
+                frames.none { it.row == targetRow && it.index == sector }
+            }
+            if (missing.isEmpty()) continue
+
+            // Пока ряд не закончен, ведём к ближайшему непроснятому сектору.
+            // Это также автоматически возвращает пользователя к дыркам.
+            val step = 360f / sectors
+            val nearest = missing.minByOrNull { sector ->
+                kotlin.math.abs(signedAngularError(sector * step, relYaw))
+            } ?: continue
+            return targetRow to nearest
+        }
+        return null
+    }
+
+    private fun rectangularStepDeg(): Float {
+        // Целимся примерно в 42% перекрытия. Это достаточно для ORB/RANSAC
+        // и при этом не заставляет делать чрезмерное количество кадров.
+        val hfov = cameraCalibration.horizontalFovDeg
+        val usableFov = if (hfov.isFinite() && hfov in 30f..120f) hfov else 68f
+        return (usableFov * 0.58f).coerceIn(18f, 42f)
+    }
+
+    private fun updateRectangularGuide(stable: Boolean) {
+        if (frames.isEmpty() || !rectangularLastShotYaw.isFinite()) {
+            if (::targetOverlay.isInitialized) targetOverlay.clear()
+            guide.setTextColor(Color.WHITE)
+            guide.text = "СНИМИТЕ ПЕРВЫЙ КАДР"
+            stableSince = 0L
+            return
+        }
+
+        if (!rectangularTargetYaw.isFinite()) {
+            rectangularTargetStepDeg = rectangularStepDeg()
+            rectangularTargetYaw = normalizeSigned(
+                rectangularLastShotYaw + rectangularDirection * rectangularTargetStepDeg
+            )
+        }
+
+        val error = signedAngularError(rectangularTargetYaw, yaw)
+        val absError = kotlin.math.abs(error)
+        val rollGood = kotlin.math.abs(rollNow) < 5.5f
+        val pitchReference = frames.lastOrNull()?.pitchDeg ?: pitchNow
+        val pitchError = kotlin.math.abs(pitchNow - pitchReference)
+        val aligned = absError < 3.5f && pitchError < 5f && rollGood
+        val visualGood = liveOverlap.good
+        val good = stable && aligned && visualGood
+        if (::targetOverlay.isInitialized) {
+            targetOverlay.update(
+                errorDeg = error * rectangularDirection,
+                maxErrorDeg = rectangularTargetStepDeg.coerceAtLeast(24f),
+                pitchErrorDeg = pitchReference - pitchNow,
+                ready = good
+            )
+        }
+
+        guide.setTextColor(
+            when {
+                good -> 0xFF7CFF9B.toInt()
+                absError < 8f -> 0xFFFFD166.toInt()
+                else -> Color.WHITE
+            }
+        )
+
+        val overlap = ((1f - kotlin.math.abs(
+            signedAngularError(yaw, rectangularLastShotYaw)
+        ) / (cameraCalibration.horizontalFovDeg.takeIf {
+            it.isFinite() && it in 30f..120f
+        } ?: 68f)) * 100f).toInt().coerceIn(0, 100)
+
+        guide.text = when {
+            pitchError >= 5f -> "ДЕРЖИТЕ ВЫСОТУ • Δ " + pitchError.toInt() + "°"
+            !rollGood -> "ВЫРОВНЯЙТЕ ГОРИЗОНТ • " + kotlin.math.abs(rollNow).toInt() + "°"
+            aligned && !visualGood ->
+                "ИЩУ СОВПАДЕНИЕ • ORB " + liveOverlap.inliers + "/" + liveOverlap.matches +
+                    " • ПЕРЕКРЫТИЕ ~" + overlap + "%"
+            good -> "● КАДР ГОТОВ • ORB " + liveOverlap.inliers + " • ПЕРЕКРЫТИЕ ~" + overlap + "%"
+            error * rectangularDirection > 0f ->
+                "ЕЩЁ " + absError.toInt() + "° →  •  ПЕРЕКРЫТИЕ ~" + overlap + "%"
+            else ->
+                "← НАЗАД " + absError.toInt() + "°  •  ПЕРЕКРЫТИЕ ~" + overlap + "%"
+        }
+
+        if (autoCapture && good && !busy) {
+            if (stableSince == 0L) stableSince = System.currentTimeMillis()
+            if (System.currentTimeMillis() - stableSince > 500L) {
+                takeShot()
+                stableSince = 0L
+            }
+        } else {
+            stableSince = 0L
+        }
+    }
+
+    private fun normalizeSigned(value: Float): Float {
+        var out = (value + 180f) % 360f
+        if (out < 0f) out += 360f
+        return out - 180f
     }
 
     private fun signedAngularError(a: Float, b: Float): Float {

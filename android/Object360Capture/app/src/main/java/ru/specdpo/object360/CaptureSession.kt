@@ -96,6 +96,16 @@ class CaptureSession(
             .firstOrNull()
             ?.file
 
+    /**
+     * Полностью удаляет проект Object360 вместе со всеми исходными кадрами,
+     * метаданными, превью и производными файлами, находящимися в каталоге сессии.
+     */
+    fun deleteProject(): Boolean {
+        shots.clear()
+        if (!dir.exists()) return true
+        return runCatching { dir.deleteRecursively() }.getOrDefault(false)
+    }
+
     fun resetGrid(newSectors: Int = sectors, newRows: Int = rows) {
         dir.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("row_") }

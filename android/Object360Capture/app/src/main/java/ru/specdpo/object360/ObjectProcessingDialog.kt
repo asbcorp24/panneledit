@@ -184,20 +184,6 @@ object ObjectProcessingDialog {
                 return@execute
             }
 
-            synchronized(session) {
-                session.shots.values.forEach { shot ->
-                    runCatching {
-                        PublicStorage.publishPhoto(
-                            activity,
-                            shot.file,
-                            session.sessionId,
-                            shot.row,
-                            shot.sector
-                        )
-                    }
-                }
-            }
-
             activity.runOnUiThread {
                 progressDialog.dismiss()
 

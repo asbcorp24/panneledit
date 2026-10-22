@@ -1,6 +1,7 @@
 package ru.specdpo.object360
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
@@ -43,36 +44,79 @@ class PanoramaViewerActivity : AppCompatActivity() {
             setBackgroundColor(Color.BLACK)
         }
 
-        val surface = PanoramaSurfaceView(this, file)
-        root.addView(surface, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        val is360 = intent.getBooleanExtra(EXTRA_IS_360, detect360(file))
+        if (is360) {
+            val surface = PanoramaSurfaceView(this, file)
+            root.addView(surface, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
 
-        val cardboard = Button(this).apply {
-            text = "CARDBOARD"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xAA162238.toInt())
-            setOnClickListener {
-                val enabled = surface.toggleCardboard()
-                text = if (enabled) "ВЫХОД" else "CARDBOARD"
+            val cardboard = Button(this).apply {
+                text = "CARDBOARD"
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                setBackgroundColor(0xAA162238.toInt())
+                setOnClickListener {
+                    val enabled = surface.toggleCardboard()
+                    text = if (enabled) "ВЫХОД VR" else "CARDBOARD"
+                    window.decorView.systemUiVisibility = if (enabled) {
+                        android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    } else {
+                        android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                    }
+                }
             }
+            root.addView(
+                cardboard,
+                FrameLayout.LayoutParams(dp(132), dp(48), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(14)
+                    marginEnd = dp(14)
+                }
+            )
+        } else {
+            val bitmap = GhostFrameDecoder.decodeMaxDimension(file, 8192)
+                ?: BitmapFactory.decodeFile(file.absolutePath)
+            if (bitmap == null) {
+                Toast.makeText(this, "Не удалось открыть панораму", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+            root.addView(
+                ZoomablePanoramaView(this, bitmap),
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         }
 
+        val close = Button(this).apply {
+            text = "←"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xAA162238.toInt())
+            setOnClickListener { finish() }
+        }
         root.addView(
-            cardboard,
-            FrameLayout.LayoutParams(
-                dp(132),
-                dp(48),
-                Gravity.TOP or Gravity.END
-            ).apply {
+            close,
+            FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.START).apply {
                 topMargin = dp(14)
-                marginEnd = dp(14)
+                marginStart = dp(14)
             }
         )
 
         setContentView(root)
+    }
+
+    private fun detect360(file: File): Boolean {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, o)
+        if (o.outWidth <= 0 || o.outHeight <= 0) return false
+        val ratio = o.outWidth.toFloat() / o.outHeight
+        return ratio in 1.90f..2.10f
     }
 
     private fun dp(value: Int): Int =
@@ -80,6 +124,7 @@ class PanoramaViewerActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_FILE = "panorama_file"
+        const val EXTRA_IS_360 = "panorama_is_360"
     }
 }
 
@@ -103,6 +148,10 @@ private class PanoramaSurfaceView(
     private var lastX = 0f
     private var lastY = 0f
     private var cardboard = false
+    private val headTracker = CardboardHeadTracker(context) { yaw, pitch, roll ->
+        renderer360.setHeadOrientation(yaw, pitch, roll)
+        requestRender()
+    }
 
     init {
         setEGLContextClientVersion(2)
@@ -114,8 +163,14 @@ private class PanoramaSurfaceView(
     fun toggleCardboard(): Boolean {
         cardboard = !cardboard
         renderer360.setCardboard(cardboard)
+        if (cardboard) headTracker.start() else headTracker.stop()
         requestRender()
         return cardboard
+    }
+
+    override fun onDetachedFromWindow() {
+        headTracker.stop()
+        super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -165,6 +220,9 @@ private class PanoramaRenderer(
     @Volatile private var pitch = 0f
     @Volatile private var fov = 75f
     @Volatile private var cardboard = false
+    @Volatile private var headYaw = 0f
+    @Volatile private var headPitch = 0f
+    @Volatile private var headRoll = 0f
 
     private var program = 0
     private var textureId = 0
@@ -201,14 +259,19 @@ private class PanoramaRenderer(
 
         if (cardboard) {
             val half = (width / 2).coerceAtLeast(1)
-            drawEye(0, 0, half, height)
-            drawEye(half, 0, width - half, height)
+            drawEye(0, 0, half, height, -1)
+            drawEye(half, 0, width - half, height, 1)
+            GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+            GLES20.glScissor(half - 1, 0, 2, height)
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+            GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         } else {
-            drawEye(0, 0, width, height)
+            drawEye(0, 0, width, height, 0)
         }
     }
 
-    private fun drawEye(x: Int, y: Int, w: Int, h: Int) {
+    private fun drawEye(x: Int, y: Int, w: Int, h: Int, eye: Int) {
         val safeW = w.coerceAtLeast(1)
         val safeH = h.coerceAtLeast(1)
 
@@ -216,15 +279,22 @@ private class PanoramaRenderer(
         Matrix.perspectiveM(
             projection,
             0,
-            fov,
+            if (cardboard) fov.coerceIn(55f, 92f) else fov,
             safeW.toFloat() / safeH.toFloat(),
             0.1f,
             200f
         )
 
         Matrix.setIdentityM(model, 0)
-        Matrix.rotateM(model, 0, -pitch, 1f, 0f, 0f)
-        Matrix.rotateM(model, 0, -yaw, 0f, 1f, 0f)
+        if (cardboard) {
+            Matrix.translateM(model, 0, eye * 0.032f, 0f, 0f)
+            Matrix.rotateM(model, 0, -headRoll, 0f, 0f, 1f)
+            Matrix.rotateM(model, 0, -(pitch + headPitch), 1f, 0f, 0f)
+            Matrix.rotateM(model, 0, -(yaw + headYaw), 0f, 1f, 0f)
+        } else {
+            Matrix.rotateM(model, 0, -pitch, 1f, 0f, 0f)
+            Matrix.rotateM(model, 0, -yaw, 0f, 1f, 0f)
+        }
         Matrix.multiplyMM(mv, 0, view, 0, model, 0)
         Matrix.multiplyMM(mvp, 0, projection, 0, mv, 0)
 
@@ -263,6 +333,17 @@ private class PanoramaRenderer(
 
     fun setCardboard(enabled: Boolean) {
         cardboard = enabled
+        if (!enabled) {
+            headYaw = 0f
+            headPitch = 0f
+            headRoll = 0f
+        }
+    }
+
+    fun setHeadOrientation(yaw: Float, pitch: Float, roll: Float) {
+        headYaw = yaw
+        headPitch = pitch.coerceIn(-88f, 88f)
+        headRoll = roll.coerceIn(-45f, 45f)
     }
 
     fun rotate(dx: Float, dy: Float) {

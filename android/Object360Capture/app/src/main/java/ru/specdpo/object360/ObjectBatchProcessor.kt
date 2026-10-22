@@ -80,8 +80,10 @@ object ObjectBatchProcessor {
                 "Анализирую положение объекта…"
         )
         val commonCrop =
-            if (mode == ObjectProcessMode.TRIM_GRAY_BORDERS) findCommonSafeCrop(shots)
-            else findCommonCrop(shots)
+            if (mode == ObjectProcessMode.TRIM_GRAY_BORDERS) {
+                findCommonSafeCropFromAlignment(session, shots)
+                    ?: findCommonSafeCrop(shots)
+            } else findCommonCrop(shots)
 
         var processed = 0
         var failed = 0
@@ -167,6 +169,67 @@ object ObjectBatchProcessor {
             failed = failed,
             transparent = mode == ObjectProcessMode.TRANSPARENT_BACKGROUND
         )
+    }
+
+    /**
+     * После ручного выравнивания серые клинья появляются там, куда Canvas уже
+     * не попал исходный кадр. Цветовой flood-fill не может надёжно отличить их
+     * от реального серого фона, поэтому вычисляем гарантированно покрытую
+     * прямоугольную область непосредственно из сохранённых affine-transform.
+     */
+    private fun findCommonSafeCropFromAlignment(
+        session: CaptureSession,
+        shots: List<ShotInfo>
+    ): NormRect? {
+        if (!ManualAlignmentStore.file(session).exists()) return null
+        val store = ManualAlignmentStore.load(session)
+        var safe = NormRect(0f, 0f, 1f, 1f)
+        var transformed = 0
+
+        shots.forEach { shot ->
+            val t = store.transformFor(shot.row, shot.sector).normalized()
+            if (t.isIdentity()) return@forEach
+
+            val cx = 0.5f + t.offsetX
+            val cy = 0.5f + t.offsetY
+            val halfW = 0.5f * t.scale
+            val halfH = 0.5f * t.scale
+            val rad = Math.toRadians(t.rotation.toDouble())
+            val cos = kotlin.math.abs(kotlin.math.cos(rad)).toFloat().coerceAtLeast(0.0001f)
+            val sin = kotlin.math.abs(kotlin.math.sin(rad)).toFloat()
+
+            // Наибольший осевой прямоугольник, гарантированно лежащий внутри
+            // повёрнутого исходного кадра. Консервативно, зато серых клиньев нет.
+            val denom = (cos * cos - sin * sin)
+            val innerHalfW: Float
+            val innerHalfH: Float
+            if (kotlin.math.abs(denom) > 0.08f) {
+                innerHalfW = ((halfW * cos - halfH * sin) / denom).coerceAtLeast(0.02f)
+                innerHalfH = ((halfH * cos - halfW * sin) / denom).coerceAtLeast(0.02f)
+            } else {
+                val square = (min(halfW, halfH) / (cos + sin).coerceAtLeast(0.1f))
+                innerHalfW = square
+                innerHalfH = square
+            }
+
+            safe.intersect(
+                NormRect(
+                    (cx - innerHalfW).coerceIn(0f, 1f),
+                    (cy - innerHalfH).coerceIn(0f, 1f),
+                    (cx + innerHalfW).coerceIn(0f, 1f),
+                    (cy + innerHalfH).coerceIn(0f, 1f)
+                )
+            )
+            transformed++
+        }
+
+        if (transformed == 0 || !safe.isValid()) return null
+        val inset = 0.006f
+        safe.left += inset
+        safe.top += inset
+        safe.right -= inset
+        safe.bottom -= inset
+        return safe.takeIf { it.isValid() }
     }
 
     /**
