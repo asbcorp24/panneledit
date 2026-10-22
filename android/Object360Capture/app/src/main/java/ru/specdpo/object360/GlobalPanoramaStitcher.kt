@@ -78,7 +78,10 @@ object GlobalPanoramaStitcher {
                 throw IllegalStateException("Некорректный размер холста")
             }
 
-            onProgress("OpenCV: компенсация экспозиции и глобальная склейка")
+            onProgress("OpenCV: компенсация экспозиции")
+            compensateExposure(render)
+
+            onProgress("OpenCV: многомасштабная склейка")
             var result = featherBlend(render, transformsR, bounds)
 
             onProgress("OpenCV: обрезка")
@@ -347,6 +350,31 @@ object GlobalPanoramaStitcher {
             (maxX - minX).roundToInt(),
             (maxY - minY).roundToInt()
         )
+    }
+
+    private fun compensateExposure(images: List<Mat>) {
+        if (images.size < 2) return
+
+        val luminance = images.map { image ->
+            val gray = Mat()
+            Imgproc.cvtColor(image, gray, Imgproc.COLOR_BGR2GRAY)
+            val value = Core.mean(gray).val[0]
+            gray.release()
+            value
+        }
+
+        val valid = luminance.filter { it.isFinite() && it > 2.0 }.sorted()
+        if (valid.isEmpty()) return
+        val target = valid[valid.size / 2]
+
+        images.forEachIndexed { index, image ->
+            val current = luminance[index]
+            if (!current.isFinite() || current <= 2.0) return@forEachIndexed
+            val gain = (target / current).coerceIn(0.72, 1.38)
+            if (kotlin.math.abs(gain - 1.0) > 0.015) {
+                image.convertTo(image, -1, gain, 0.0)
+            }
+        }
     }
 
     private fun featherBlend(images: List<Mat>, transforms: List<Mat>, b: Bounds): Mat {
