@@ -59,7 +59,14 @@ class PanoramaViewerActivity : AppCompatActivity() {
                 setBackgroundColor(0xAA162238.toInt())
                 setOnClickListener {
                     val enabled = surface.toggleCardboard()
-                    text = if (enabled) "ВЫХОД" else "CARDBOARD"
+                    text = if (enabled) "ВЫХОД VR" else "CARDBOARD"
+                    window.decorView.systemUiVisibility = if (enabled) {
+                        android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    } else {
+                        android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                    }
                 }
             }
             root.addView(
