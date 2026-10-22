@@ -500,46 +500,64 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         }
 
         val rel = normalize(yaw - baseYaw)
+        val target = next360Target(rel)
+        if (target == null) {
+            if (::targetOverlay.isInitialized) targetOverlay.clear()
+            guide.setTextColor(0xFF7CFF9B.toInt())
+            guide.text = "✓ СФЕРА СНЯТА • 36/36"
+            stableSince = 0L
+            return
+        }
+
+        val targetRow = target.first
+        val targetSector = target.second
         val step = 360f / sectors
-        val sector = currentSector()
-        val target = sector * step
-        val signedError = signedAngularError(rel, target)
+        val targetYaw = targetSector * step
+        val signedError = signedAngularError(targetYaw, rel)
         val error = kotlin.math.abs(signedError)
-        val targetPitch = when (row) {
-            0 -> 28f
-            1 -> 0f
-            else -> -28f
-        }
+        val targetPitch = pitchForRow(targetRow)
         val pitchError = targetPitch - pitch
-        val pitchGood = kotlin.math.abs(pitchError) < 8f
-        val captured = frames.any { it.row == row && it.index == sector }
-        val good = stable && error < 5f && pitchGood
+        val pitchGood = kotlin.math.abs(pitchError) < 7f
+        val good = stable && error < 4.5f && pitchGood && kotlin.math.abs(rollNow) < 6f
+        val capturedCount = frames.map { it.row to it.index }.distinct().size.coerceAtMost(sectors * 3)
 
-        guide.setTextColor(
-            when {
-                captured -> 0xFF9AA7B8.toInt()
-                good -> 0xFF7CFF9B.toInt()
-                else -> Color.WHITE
-            }
-        )
-
-        guide.text = when {
-            captured -> "✓ СЕКТОР СНЯТ\nПОВЕРНИТЕСЬ ДАЛЬШЕ →"
-            kotlin.math.abs(pitchError) >= 8f ->
-                if (pitchError > 0f)
-                    "↑ ПОДНИМИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
-                else
-                    "↓ ОПУСТИТЕ КАМЕРУ\n" + kotlin.math.abs(pitchError).toInt() + "°"
-            good -> "● ГОТОВО\nДЕРЖИТЕ НЕПОДВИЖНО"
-            signedError > 0f -> "← ПОВЕРНИТЕ " + error.toInt() + "°"
-            else -> "ПОВЕРНИТЕ " + error.toInt() + "° →"
+        if (::targetOverlay.isInitialized) {
+            targetOverlay.update(
+                errorDeg = signedError,
+                maxErrorDeg = step,
+                pitchErrorDeg = pitchError,
+                ready = good
+            )
         }
 
-        if (autoCapture && good && !captured && !busy) {
+        guide.setTextColor(if (good) 0xFF7CFF9B.toInt() else Color.WHITE)
+        val rowName = when (targetRow) {
+            0 -> "ВЕРХНИЙ"
+            1 -> "СРЕДНИЙ"
+            else -> "НИЖНИЙ"
+        }
+        guide.text = when {
+            kotlin.math.abs(pitchError) >= 7f ->
+                (if (pitchError > 0f) "↑ ПОДНИМИТЕ " else "↓ ОПУСТИТЕ ") +
+                    kotlin.math.abs(pitchError).toInt() + "° • " + rowName +
+                    "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            kotlin.math.abs(rollNow) >= 6f ->
+                "ВЫРОВНЯЙТЕ ГОРИЗОНТ • " + kotlin.math.abs(rollNow).toInt() + "°" +
+                    "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            good -> "● ГОТОВО • " + rowName + " " + (targetSector + 1) + "/" + sectors +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            signedError > 0f -> "ПОВЕРНИТЕ " + error.toInt() + "° → • " + rowName +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+            else -> "← ПОВЕРНИТЕ " + error.toInt() + "° • " + rowName +
+                "\nПОКРЫТИЕ " + capturedCount + "/" + (sectors * 3)
+        }
+
+        if (autoCapture && good && !busy) {
+            row = targetRow
             if (stableSince == 0L) stableSince = System.currentTimeMillis()
             if (
-                System.currentTimeMillis() - stableSince > 650L &&
-                !(lastAutoRow == row && lastAutoSector == sector)
+                System.currentTimeMillis() - stableSince > 550L &&
+                !(lastAutoRow == targetRow && lastAutoSector == targetSector)
             ) {
                 takeShot()
                 stableSince = 0L
@@ -547,6 +565,31 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         } else {
             stableSince = 0L
         }
+    }
+
+    private fun pitchForRow(targetRow: Int): Float = when (targetRow) {
+        0 -> 28f
+        1 -> 0f
+        else -> -28f
+    }
+
+    private fun next360Target(relYaw: Float): Pair<Int, Int>? {
+        val preferredRows = intArrayOf(1, 0, 2)
+        for (targetRow in preferredRows) {
+            val missing = (0 until sectors).filter { sector ->
+                frames.none { it.row == targetRow && it.index == sector }
+            }
+            if (missing.isEmpty()) continue
+
+            // Пока ряд не закончен, ведём к ближайшему непроснятому сектору.
+            // Это также автоматически возвращает пользователя к дыркам.
+            val step = 360f / sectors
+            val nearest = missing.minByOrNull { sector ->
+                kotlin.math.abs(signedAngularError(sector * step, relYaw))
+            } ?: continue
+            return targetRow to nearest
+        }
+        return null
     }
 
     private fun rectangularStepDeg(): Float {
