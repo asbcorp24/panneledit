@@ -329,16 +329,8 @@ class TurntableCaptureActivity : AppCompatActivity() {
                         session.register(0, sector, angle, file)
                     }
 
-                    runCatching {
-                        PublicStorage.publishPhoto(
-                            this@TurntableCaptureActivity,
-                            file,
-                            session.sessionId,
-                            0,
-                            sector
-                        )
-                    }
-
+                    // Исходные кадры Object360 остаются внутри проекта.
+                    // В системную галерею публикуем только явный экспорт пользователя.
                     loadGhost(file)
 
                     runOnUiThread {
