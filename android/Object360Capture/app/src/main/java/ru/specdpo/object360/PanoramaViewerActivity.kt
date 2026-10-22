@@ -1,6 +1,7 @@
 package ru.specdpo.object360
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
@@ -43,36 +44,72 @@ class PanoramaViewerActivity : AppCompatActivity() {
             setBackgroundColor(Color.BLACK)
         }
 
-        val surface = PanoramaSurfaceView(this, file)
-        root.addView(surface, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        val is360 = intent.getBooleanExtra(EXTRA_IS_360, detect360(file))
+        if (is360) {
+            val surface = PanoramaSurfaceView(this, file)
+            root.addView(surface, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
 
-        val cardboard = Button(this).apply {
-            text = "CARDBOARD"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xAA162238.toInt())
-            setOnClickListener {
-                val enabled = surface.toggleCardboard()
-                text = if (enabled) "ВЫХОД" else "CARDBOARD"
+            val cardboard = Button(this).apply {
+                text = "CARDBOARD"
+                isAllCaps = false
+                setTextColor(Color.WHITE)
+                setBackgroundColor(0xAA162238.toInt())
+                setOnClickListener {
+                    val enabled = surface.toggleCardboard()
+                    text = if (enabled) "ВЫХОД" else "CARDBOARD"
+                }
             }
+            root.addView(
+                cardboard,
+                FrameLayout.LayoutParams(dp(132), dp(48), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(14)
+                    marginEnd = dp(14)
+                }
+            )
+        } else {
+            val bitmap = GhostFrameDecoder.decodeMaxDimension(file, 8192)
+                ?: BitmapFactory.decodeFile(file.absolutePath)
+            if (bitmap == null) {
+                Toast.makeText(this, "Не удалось открыть панораму", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+            root.addView(
+                ZoomablePanoramaView(this, bitmap),
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
         }
 
+        val close = Button(this).apply {
+            text = "←"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xAA162238.toInt())
+            setOnClickListener { finish() }
+        }
         root.addView(
-            cardboard,
-            FrameLayout.LayoutParams(
-                dp(132),
-                dp(48),
-                Gravity.TOP or Gravity.END
-            ).apply {
+            close,
+            FrameLayout.LayoutParams(dp(52), dp(48), Gravity.TOP or Gravity.START).apply {
                 topMargin = dp(14)
-                marginEnd = dp(14)
+                marginStart = dp(14)
             }
         )
 
         setContentView(root)
+    }
+
+    private fun detect360(file: File): Boolean {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, o)
+        if (o.outWidth <= 0 || o.outHeight <= 0) return false
+        val ratio = o.outWidth.toFloat() / o.outHeight
+        return ratio in 1.90f..2.10f
     }
 
     private fun dp(value: Int): Int =
@@ -80,6 +117,7 @@ class PanoramaViewerActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_FILE = "panorama_file"
+        const val EXTRA_IS_360 = "panorama_is_360"
     }
 }
 
