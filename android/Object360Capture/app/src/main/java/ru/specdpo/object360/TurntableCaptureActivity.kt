@@ -19,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -45,6 +47,9 @@ class TurntableCaptureActivity : AppCompatActivity() {
     private var captureBusy = false
     private var currentSector = 0
     private var interfaceHidden = false
+    @Volatile private var sceneStable = false
+    private var lastLumaSample: ByteArray? = null
+    private var stableFrames = 0
 
     private val angleSteps = floatArrayOf(90f, 45f, 22.5f, 15f, 10f, 5f)
     private var angleIndex = 4
@@ -205,13 +210,20 @@ class TurntableCaptureActivity : AppCompatActivity() {
                 .setTargetRotation(rotation)
                 .build()
 
+            val analysis = ImageAnalysis.Builder()
+                .setTargetRotation(rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            analysis.setAnalyzer(cameraExecutor) { image -> analyzeSceneMotion(image) }
+
             try {
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
-                    imageCapture
+                    imageCapture,
+                    analysis
                 )
             } catch (e: Exception) {
                 Toast.makeText(
@@ -221,6 +233,44 @@ class TurntableCaptureActivity : AppCompatActivity() {
                 ).show()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun analyzeSceneMotion(image: ImageProxy) {
+        try {
+            val plane = image.planes.firstOrNull() ?: return
+            val buffer = plane.buffer
+            val rowStride = plane.rowStride
+            val pixelStride = plane.pixelStride
+            val width = image.width
+            val height = image.height
+            val gridX = 24
+            val gridY = 18
+            val sample = ByteArray(gridX * gridY)
+            var k = 0
+            for (gy in 0 until gridY) {
+                val y = ((gy + 0.5f) * height / gridY).toInt().coerceIn(0, height - 1)
+                for (gx in 0 until gridX) {
+                    val x = ((gx + 0.5f) * width / gridX).toInt().coerceIn(0, width - 1)
+                    sample[k++] = buffer.get(y * rowStride + x * pixelStride)
+                }
+            }
+
+            val previous = lastLumaSample
+            if (previous != null && previous.size == sample.size) {
+                var sum = 0L
+                for (i in sample.indices) {
+                    sum += kotlin.math.abs(
+                        (sample[i].toInt() and 0xff) - (previous[i].toInt() and 0xff)
+                    )
+                }
+                val meanDelta = sum.toFloat() / sample.size
+                stableFrames = if (meanDelta < 3.2f) stableFrames + 1 else 0
+                sceneStable = stableFrames >= 4
+            }
+            lastLumaSample = sample
+        } finally {
+            image.close()
+        }
     }
 
     private fun changeAngleStep(nextIndex: Int) {
@@ -279,10 +329,12 @@ class TurntableCaptureActivity : AppCompatActivity() {
             if (!sequenceRunning) return
 
             if (seconds <= 0) {
-                if (!captureBusy) {
+                if (!captureBusy && sceneStable) {
                     takeShot(true)
                 } else {
-                    handler.postDelayed({ tick() }, 250L)
+                    binding.turntableHint.text =
+                        if (captureBusy) "Жду завершения снимка…" else "Жду, пока объект остановится…"
+                    handler.postDelayed({ tick() }, 180L)
                 }
                 return
             }
@@ -293,6 +345,8 @@ class TurntableCaptureActivity : AppCompatActivity() {
             binding.turntableCleanStatus.text =
                 "${session.completedTotal()} / ${session.requiredTotal()} • $seconds с"
 
+            sceneStable = false
+            stableFrames = 0
             seconds--
             handler.postDelayed({ tick() }, 1000L)
         }
