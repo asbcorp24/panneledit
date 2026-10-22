@@ -436,6 +436,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                         rectangularTargetYaw = normalizeSigned(
                             frameYaw + rectangularDirection * rectangularTargetStepDeg
                         )
+                        liveOverlap = LiveOverlapResult(0, 0, 0f, false)
                         rectangularIndex++
                     }
                     runOnUiThread {
