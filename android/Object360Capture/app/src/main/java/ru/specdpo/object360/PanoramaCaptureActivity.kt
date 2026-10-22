@@ -52,6 +52,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
     private lateinit var btnOrientation: Button
     private lateinit var cameraGuideOverlay: PanoramaGuideOverlay
     private lateinit var liveMatchOverlay: LiveMatchOverlay
+    private lateinit var targetOverlay: PanoramaTargetOverlay
     private var rectangularDirection = 1
     private var rectangularStartYaw = Float.NaN
     private var rectangularLastShotYaw = Float.NaN
@@ -137,6 +138,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 row = if (kind == PanoramaKind.FULL_360) 1 else 0
                 calibrated = false
                 frames.clear()
+                if (::targetOverlay.isInitialized) targetOverlay.clear()
+                if (::liveMatchOverlay.isInitialized) liveMatchOverlay.clear()
                 rectangularIndex = 0
                 rectangularDirection = 1
                 rectangularStartYaw = Float.NaN
@@ -167,6 +170,9 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
         liveMatchOverlay = LiveMatchOverlay(this)
         root.addView(liveMatchOverlay, FrameLayout.LayoutParams(-1, -1))
+
+        targetOverlay = PanoramaTargetOverlay(this)
+        root.addView(targetOverlay, FrameLayout.LayoutParams(-1, -1))
 
         guide = TextView(this).apply {
             gravity = Gravity.CENTER
@@ -553,6 +559,7 @@ class PanoramaCaptureActivity : AppCompatActivity() {
 
     private fun updateRectangularGuide(stable: Boolean) {
         if (frames.isEmpty() || !rectangularLastShotYaw.isFinite()) {
+            if (::targetOverlay.isInitialized) targetOverlay.clear()
             guide.setTextColor(Color.WHITE)
             guide.text = "СНИМИТЕ ПЕРВЫЙ КАДР"
             stableSince = 0L
@@ -574,6 +581,14 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         val aligned = absError < 3.5f && pitchError < 5f && rollGood
         val visualGood = liveOverlap.good
         val good = stable && aligned && visualGood
+        if (::targetOverlay.isInitialized) {
+            targetOverlay.update(
+                errorDeg = error * rectangularDirection,
+                maxErrorDeg = rectangularTargetStepDeg.coerceAtLeast(24f),
+                pitchErrorDeg = pitchReference - pitchNow,
+                ready = good
+            )
+        }
 
         guide.setTextColor(
             when {
