@@ -411,19 +411,12 @@ class ProjectListActivity : AppCompatActivity() {
         }
         card.addView(actions)
 
-        actions.addView(actionButton(if (item.is360) "Смотреть 360°" else "Открыть") {
-            if (item.is360) {
-                startActivity(
-                    Intent(this, PanoramaViewerActivity::class.java)
-                        .putExtra(PanoramaViewerActivity.EXTRA_FILE, item.file.absolutePath)
-                )
-            } else {
-                val uri = FileProvider.getUriForFile(this, packageName + ".files", item.file)
-                startActivity(Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "image/jpeg")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                })
-            }
+        actions.addView(actionButton(if (item.is360) "Смотреть 360°" else "Смотреть") {
+            startActivity(
+                Intent(this, PanoramaViewerActivity::class.java)
+                    .putExtra(PanoramaViewerActivity.EXTRA_FILE, item.file.absolutePath)
+                    .putExtra(PanoramaViewerActivity.EXTRA_IS_360, item.is360)
+            )
         }, actionParams())
 
         actions.addView(actionButton("Редактор") {
