@@ -1,6 +1,11 @@
 name: Object360 Android APK
 
 on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "android/Object360Capture/**"
+      - ".github/workflows/object360-apk.yml"
   push:
     branches: [ main ]
     paths:
