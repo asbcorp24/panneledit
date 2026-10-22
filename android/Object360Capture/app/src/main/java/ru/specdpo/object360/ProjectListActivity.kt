@@ -301,6 +301,49 @@ class ProjectListActivity : AppCompatActivity() {
             actionParams(startMargin = 6)
         )
 
+        val destructiveActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(7), 0, 0)
+        }
+        card.addView(destructiveActions)
+
+        destructiveActions.addView(
+            actionButton("Удалить проект и фото") {
+                AlertDialog.Builder(this)
+                    .setTitle("Удалить Object360?")
+                    .setMessage(
+                        "Проект «${project.title}» будет удалён полностью вместе " +
+                            "со всеми исходными фотографиями и файлами обработки. " +
+                            "Отменить это действие будет нельзя."
+                    )
+                    .setPositiveButton("Удалить всё") { _, _ ->
+                        executor.execute {
+                            val deleted = project.deleteProject()
+                            runOnUiThread {
+                                if (deleted) {
+                                    Toast.makeText(
+                                        this,
+                                        "Проект и все его фото удалены",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    renderProjects()
+                                } else {
+                                    Toast.makeText(
+                                        this,
+                                        "Не удалось полностью удалить проект",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                    .setNegativeButton("Отмена", null)
+                    .show()
+            },
+            actionParams()
+        )
+
         project.coverFile()?.let { file ->
             executor.execute {
                 val bitmap = GhostFrameDecoder.decode(file, 700, 520)
