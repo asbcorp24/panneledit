@@ -141,6 +141,10 @@ private class PanoramaSurfaceView(
     private var lastX = 0f
     private var lastY = 0f
     private var cardboard = false
+    private val headTracker = CardboardHeadTracker(context) { yaw, pitch, roll ->
+        renderer360.setHeadOrientation(yaw, pitch, roll)
+        requestRender()
+    }
 
     init {
         setEGLContextClientVersion(2)
@@ -152,8 +156,14 @@ private class PanoramaSurfaceView(
     fun toggleCardboard(): Boolean {
         cardboard = !cardboard
         renderer360.setCardboard(cardboard)
+        if (cardboard) headTracker.start() else headTracker.stop()
         requestRender()
         return cardboard
+    }
+
+    override fun onDetachedFromWindow() {
+        headTracker.stop()
+        super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -203,6 +213,9 @@ private class PanoramaRenderer(
     @Volatile private var pitch = 0f
     @Volatile private var fov = 75f
     @Volatile private var cardboard = false
+    @Volatile private var headYaw = 0f
+    @Volatile private var headPitch = 0f
+    @Volatile private var headRoll = 0f
 
     private var program = 0
     private var textureId = 0
@@ -239,14 +252,19 @@ private class PanoramaRenderer(
 
         if (cardboard) {
             val half = (width / 2).coerceAtLeast(1)
-            drawEye(0, 0, half, height)
-            drawEye(half, 0, width - half, height)
+            drawEye(0, 0, half, height, -1)
+            drawEye(half, 0, width - half, height, 1)
+            GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
+            GLES20.glScissor(half - 1, 0, 2, height)
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+            GLES20.glDisable(GLES20.GL_SCISSOR_TEST)
         } else {
-            drawEye(0, 0, width, height)
+            drawEye(0, 0, width, height, 0)
         }
     }
 
-    private fun drawEye(x: Int, y: Int, w: Int, h: Int) {
+    private fun drawEye(x: Int, y: Int, w: Int, h: Int, eye: Int) {
         val safeW = w.coerceAtLeast(1)
         val safeH = h.coerceAtLeast(1)
 
@@ -254,15 +272,22 @@ private class PanoramaRenderer(
         Matrix.perspectiveM(
             projection,
             0,
-            fov,
+            if (cardboard) fov.coerceIn(55f, 92f) else fov,
             safeW.toFloat() / safeH.toFloat(),
             0.1f,
             200f
         )
 
         Matrix.setIdentityM(model, 0)
-        Matrix.rotateM(model, 0, -pitch, 1f, 0f, 0f)
-        Matrix.rotateM(model, 0, -yaw, 0f, 1f, 0f)
+        if (cardboard) {
+            Matrix.translateM(model, 0, eye * 0.032f, 0f, 0f)
+            Matrix.rotateM(model, 0, -headRoll, 0f, 0f, 1f)
+            Matrix.rotateM(model, 0, -(pitch + headPitch), 1f, 0f, 0f)
+            Matrix.rotateM(model, 0, -(yaw + headYaw), 0f, 1f, 0f)
+        } else {
+            Matrix.rotateM(model, 0, -pitch, 1f, 0f, 0f)
+            Matrix.rotateM(model, 0, -yaw, 0f, 1f, 0f)
+        }
         Matrix.multiplyMM(mv, 0, view, 0, model, 0)
         Matrix.multiplyMM(mvp, 0, projection, 0, mv, 0)
 
@@ -301,6 +326,17 @@ private class PanoramaRenderer(
 
     fun setCardboard(enabled: Boolean) {
         cardboard = enabled
+        if (!enabled) {
+            headYaw = 0f
+            headPitch = 0f
+            headRoll = 0f
+        }
+    }
+
+    fun setHeadOrientation(yaw: Float, pitch: Float, roll: Float) {
+        headYaw = yaw
+        headPitch = pitch.coerceIn(-88f, 88f)
+        headRoll = roll.coerceIn(-45f, 45f)
     }
 
     fun rotate(dx: Float, dy: Float) {
