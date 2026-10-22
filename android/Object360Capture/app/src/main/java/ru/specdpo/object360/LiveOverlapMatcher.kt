@@ -16,17 +16,20 @@ import org.opencv.imgproc.Imgproc
 import java.io.File
 
 data class LiveOverlapResult(
-    val matches: Int,
-    val inliers: Int,
-    val inlierRatio: Float,
-    val good: Boolean
+    val matches: Int = 0,
+    val inliers: Int = 0,
+    val inlierRatio: Float = 0f,
+    val good: Boolean = false,
+    val points: List<Pair<Float, Float>> = emptyList(),
+    val frameWidth: Int = 1,
+    val frameHeight: Int = 1
 )
 
 object LiveOverlapMatcher {
     fun compare(previous: File, current: Bitmap): LiveOverlapResult {
-        if (!OpenCVLoader.initLocal()) return LiveOverlapResult(0, 0, 0f, false)
+        if (!OpenCVLoader.initLocal()) return LiveOverlapResult()
         val previousBitmap = GhostFrameDecoder.decodeMaxDimension(previous, 720)
-            ?: return LiveOverlapResult(0, 0, 0f, false)
+            ?: return LiveOverlapResult()
         return try {
             val a = gray(previousBitmap)
             val b = gray(current)
@@ -59,7 +62,7 @@ object LiveOverlapMatcher {
         try {
             orb.detectAndCompute(a, Mat(), ka, da)
             orb.detectAndCompute(b, Mat(), kb, db)
-            if (da.empty() || db.empty()) return LiveOverlapResult(0, 0, 0f, false)
+            if (da.empty() || db.empty()) return LiveOverlapResult()
 
             val matcher = BFMatcher.create(Core.NORM_HAMMING, false)
             val knn = ArrayList<MatOfDMatch>()
@@ -76,12 +79,24 @@ object LiveOverlapMatcher {
             val dst = MatOfPoint2f(*good.map { p2[it.trainIdx].pt }.toTypedArray())
             val mask = Mat()
             val h = Calib3d.findHomography(src, dst, Calib3d.RANSAC, 3.0, mask, 1200, 0.995)
-            val inliers = if (mask.empty()) 0 else Core.countNonZero(mask)
+            val maskBytes = ByteArray(mask.rows().coerceAtLeast(0))
+            if (!mask.empty() && maskBytes.isNotEmpty()) mask.get(0, 0, maskBytes)
+            val currentPoints = good.mapIndexedNotNull { index, match ->
+                if (index < maskBytes.size && maskBytes[index].toInt() != 0) {
+                    val pt = p2[match.trainIdx].pt
+                    pt.x.toFloat() to pt.y.toFloat()
+                } else null
+            }
+            val inliers = currentPoints.size
             val ratio = if (good.isEmpty()) 0f else inliers.toFloat() / good.size
             h.release(); mask.release(); src.release(); dst.release()
-            return LiveOverlapResult(good.size, inliers, ratio, inliers >= 12 && ratio >= 0.38f)
+            return LiveOverlapResult(
+                good.size, inliers, ratio,
+                inliers >= 12 && ratio >= 0.38f,
+                currentPoints, b.cols(), b.rows()
+            )
         } catch (_: Throwable) {
-            return LiveOverlapResult(0, 0, 0f, false)
+            return LiveOverlapResult()
         } finally {
             ka.release(); kb.release(); da.release(); db.release(); orb.clear()
         }
