@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.Gravity
 import android.view.Surface
@@ -19,6 +20,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -33,6 +36,9 @@ import kotlin.math.floor
 class PanoramaCaptureActivity : AppCompatActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var imageCapture: ImageCapture? = null
+    @Volatile private var liveOverlap = LiveOverlapResult(0, 0, 0f, false)
+    @Volatile private var overlapBusy = false
+    private var lastOverlapAt = 0L
     private lateinit var preview: PreviewView
     private lateinit var status: TextView
     private lateinit var hint: TextView
@@ -335,14 +341,57 @@ class PanoramaCaptureActivity : AppCompatActivity() {
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .setTargetRotation(rotation)
                 .build()
+            val analysis = ImageAnalysis.Builder()
+                .setTargetRotation(rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            analysis.setAnalyzer(executor) { image -> analyzeOverlap(image) }
             try {
                 provider.unbindAll()
-                val camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture)
+                val camera = provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageCapture, analysis)
                 cameraCalibration = CameraCalibrationReader.read(this, camera.cameraInfo)
             } catch (e: Exception) {
                 Toast.makeText(this, "Ошибка камеры: " + e.message, Toast.LENGTH_LONG).show()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun analyzeOverlap(image: ImageProxy) {
+        try {
+            if (kind != PanoramaKind.RECTANGULAR || frames.isEmpty() || overlapBusy) return
+            val now = System.currentTimeMillis()
+            if (now - lastOverlapAt < 350L) return
+            lastOverlapAt = now
+            overlapBusy = true
+
+            val plane = image.planes.firstOrNull() ?: return
+            val width = image.width
+            val height = image.height
+            val rowStride = plane.rowStride
+            val pixelStride = plane.pixelStride
+            val buffer = plane.buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+
+            val pixels = IntArray(width * height)
+            var out = 0
+            for (y in 0 until height) {
+                val row = y * rowStride
+                for (x in 0 until width) {
+                    val v = bytes[row + x * pixelStride].toInt() and 0xff
+                    pixels[out++] = 0xff000000.toInt() or (v shl 16) or (v shl 8) or v
+                }
+            }
+            val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+            val previous = frames.lastOrNull()?.file
+            if (previous != null) liveOverlap = LiveOverlapMatcher.compare(previous, bitmap)
+            bitmap.recycle()
+        } catch (_: Throwable) {
+            liveOverlap = LiveOverlapResult(0, 0, 0f, false)
+        } finally {
+            overlapBusy = false
+            image.close()
+        }
     }
 
     private fun takeShot() {
@@ -507,7 +556,8 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         val pitchReference = frames.lastOrNull()?.pitchDeg ?: pitchNow
         val pitchError = kotlin.math.abs(pitchNow - pitchReference)
         val aligned = absError < 3.5f && pitchError < 5f && rollGood
-        val good = stable && aligned
+        val visualGood = liveOverlap.good
+        val good = stable && aligned && visualGood
 
         guide.setTextColor(
             when {
@@ -526,7 +576,10 @@ class PanoramaCaptureActivity : AppCompatActivity() {
         guide.text = when {
             pitchError >= 5f -> "ДЕРЖИТЕ ВЫСОТУ • Δ " + pitchError.toInt() + "°"
             !rollGood -> "ВЫРОВНЯЙТЕ ГОРИЗОНТ • " + kotlin.math.abs(rollNow).toInt() + "°"
-            good -> "● КАДР ГОТОВ • ПЕРЕКРЫТИЕ ~" + overlap + "%"
+            aligned && !visualGood ->
+                "ИЩУ СОВПАДЕНИЕ • ORB " + liveOverlap.inliers + "/" + liveOverlap.matches +
+                    " • ПЕРЕКРЫТИЕ ~" + overlap + "%"
+            good -> "● КАДР ГОТОВ • ORB " + liveOverlap.inliers + " • ПЕРЕКРЫТИЕ ~" + overlap + "%"
             error * rectangularDirection > 0f ->
                 "ЕЩЁ " + absError.toInt() + "° →  •  ПЕРЕКРЫТИЕ ~" + overlap + "%"
             else ->
