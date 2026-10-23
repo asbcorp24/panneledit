@@ -53,8 +53,13 @@ class Scan3DPointCloud(
     private fun trimIfNeeded() {
         if (voxels.size <= maxPoints) return
         val remove = voxels.size - maxPoints
-        val it = voxels.entries.iterator()
-        repeat(remove) { if (it.hasNext()) { it.next(); it.remove() } }
+        val iterator = voxels.entries.iterator()
+        var removed = 0
+        while (removed < remove && iterator.hasNext()) {
+            iterator.next()
+            iterator.remove()
+            removed++
+        }
     }
 
     @Synchronized
