@@ -32,6 +32,7 @@ class Scan3DActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var project: Scan3DProject? = null
     @Volatile private var scanning = false
     private var lastDepthNs = 0L
+    private val cloud = Scan3DPointCloud()
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) startAr() else finish()
@@ -63,7 +64,21 @@ class Scan3DActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 status.text = if (scanning) "3D SCAN • идёт захват RGB/Depth/Pose" else "3D SCAN • пауза"
             }
         })
-        controls.addView(Button(this).apply { text = "ГОТОВО"; setOnClickListener { finish() } })
+        controls.addView(Button(this).apply {
+            text = "ГОТОВО"
+            setOnClickListener {
+                scanning = false
+                status.text = "3D SCAN • сохраняю облако точек…"
+                io.execute {
+                    val out = java.io.File(project?.root, "model/cloud.ply")
+                    cloud.writePly(out)
+                    runOnUiThread {
+                        Toast.makeText(this@Scan3DActivity, "PLY: "+cloud.size+" точек", Toast.LENGTH_LONG).show()
+                        status.text = "3D SCAN • готово: "+cloud.size+" точек"
+                    }
+                }
+            }
+        })
         root.addView(status)
         root.addView(surface, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(controls)
@@ -131,7 +146,8 @@ class Scan3DActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             image.close(); lastDepthNs = frame.timestamp
             io.execute {
                 project?.saveDepth(index, width, height, depth, pose, intrinsics)
-                runOnUiThread { status.text = "3D SCAN • Depth/Pose: "+(index+1)+" кадров" }
+                cloud.integrate(depth, width, height, pose, intrinsics)
+                runOnUiThread { status.text = "3D SCAN • "+(index+1)+" depth • "+cloud.size+" точек" }
             }
         } catch (_: NotYetAvailableException) { }
     }
