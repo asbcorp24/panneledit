@@ -111,6 +111,10 @@ class MainActivity : AppCompatActivity() {
         binding.btnCleanShutter.setOnClickListener { takeShot(false) }
         binding.btnGhost.setOnClickListener { toggleGhost() }
 
+        binding.btnArMode.setOnLongClickListener {
+            startActivity(Intent(this, Scan3DActivity::class.java))
+            true
+        }
         binding.btnArMode.setOnClickListener {
             session.setCaptureMode("ar")
             startActivity(
