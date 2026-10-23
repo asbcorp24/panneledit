@@ -33,6 +33,7 @@ class Scan3DActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var scanning = false
     private var lastDepthNs = 0L
     private val cloud = Scan3DPointCloud()
+    private val meshBuilder = Scan3DMeshBuilder()
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) startAr() else finish()
@@ -72,9 +73,13 @@ class Scan3DActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 io.execute {
                     val out = java.io.File(project?.root, "model/cloud.ply")
                     cloud.writePly(out)
+                    val snapshot = cloud.snapshot()
+                    val mesh = meshBuilder.build(snapshot)
+                    val obj = java.io.File(project?.root, "model/model.obj")
+                    meshBuilder.writeObj(obj, mesh.first, mesh.second)
                     runOnUiThread {
-                        Toast.makeText(this@Scan3DActivity, "PLY: "+cloud.size+" точек", Toast.LENGTH_LONG).show()
-                        status.text = "3D SCAN • готово: "+cloud.size+" точек"
+                        Toast.makeText(this@Scan3DActivity, "Готово: "+cloud.size+" точек, "+mesh.second.size+" треугольников", Toast.LENGTH_LONG).show()
+                        status.text = "3D SCAN • "+cloud.size+" точек • "+mesh.second.size+" △"
                     }
                 }
             }
